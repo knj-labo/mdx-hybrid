@@ -1,0 +1,41 @@
+{
+  "name": "@mdx-hybrid/engine-rust",
+  "version": "0.0.0",
+  "description": "Rust engine for mdx-hybrid using mdxjs-rs",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "test": "vitest",
+    "prepublishOnly": "napi prepublish -t npm",
+    "artifacts": "napi artifacts",
+    "clean": "rm -rf *.node target .turbo"
+  },
+  "napi": {
+    "name": "mdx-hybrid-engine-rust",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "x86_64-unknown-linux-musl"
+      ]
+    }
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.4",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
