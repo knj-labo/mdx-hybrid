@@ -1,0 +1,45 @@
+{
+  "name": "mdx-hybrid",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Hybrid MDX compiler combining Rust speed with JavaScript compatibility",
+  "author": "Kenji Labo",
+  "license": "MIT",
+  "homepage": "https://github.com/knj-labo/mdx-hybrid#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/knj-labo/mdx-hybrid.git"
+  },
+  "bugs": {
+    "url": "https://github.com/knj-labo/mdx-hybrid/issues"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "lint": "biome check --apply .",
+    "format": "biome format --write .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:ui": "turbo run test:ui",
+    "build": "turbo run build",
+    "bench": "turbo run bench",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "turbo run build && changeset publish"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.8.3",
+    "@changesets/cli": "^2.27.7",
+    "@vitest/ui": "^2.0.5",
+    "husky": "^9.1.4",
+    "lint-staged": "^15.2.8",
+    "tsup": "^8.2.4",
+    "turbo": "^2.0.12",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  },
+  "packageManager": "pnpm@9.6.0",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
