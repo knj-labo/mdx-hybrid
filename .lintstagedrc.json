@@ -1,11 +1,5 @@
 {
-  "*.{ts,tsx,js,jsx,json}": [
-    "biome check --apply --no-errors-on-unmatched"
-  ],
-  "*.{md,mdx}": [
-    "biome format --write --no-errors-on-unmatched"
-  ],
-  "*.rs": [
-    "cargo fmt --"
-  ]
+  "*.{ts,tsx,js,jsx,json}": ["biome check --apply --no-errors-on-unmatched"],
+  "*.{md,mdx}": ["biome format --write --no-errors-on-unmatched"],
+  "*.rs": ["cargo fmt --"]
 }

@@ -4,11 +4,7 @@
   "description": "Rust engine for mdx-hybrid using mdxjs-rs",
   "main": "index.js",
   "types": "index.d.ts",
-  "files": [
-    "index.js",
-    "index.d.ts",
-    "*.node"
-  ],
+  "files": ["index.js", "index.d.ts", "*.node"],
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
@@ -21,9 +17,7 @@
     "name": "mdx-hybrid-engine-rust",
     "triples": {
       "defaults": true,
-      "additional": [
-        "x86_64-unknown-linux-musl"
-      ]
+      "additional": ["x86_64-unknown-linux-musl"]
     }
   },
   "devDependencies": {

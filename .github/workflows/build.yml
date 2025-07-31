@@ -1,0 +1,127 @@
+name: Build Rust Engine
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # macOS
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            node_arch: x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            node_arch: arm64
+          
+          # Linux
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            node_arch: x64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            node_arch: x64
+            setup: |
+              sudo apt-get update
+              sudo apt-get install -y musl-tools
+          
+          # Windows
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            node_arch: x64
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup system dependencies
+        if: matrix.setup
+        run: ${{ matrix.setup }}
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Rust engine
+        working-directory: packages/engines/rust
+        run: |
+          pnpm exec napi build --platform --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: binaries-${{ matrix.target }}
+          path: packages/engines/rust/*.node
+          if-no-files-found: error
+
+  universal-macos:
+    name: Build universal macOS binary
+    needs: build
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Download x64 binary
+        uses: actions/download-artifact@v3
+        with:
+          name: binaries-x86_64-apple-darwin
+          path: packages/engines/rust/
+
+      - name: Download arm64 binary
+        uses: actions/download-artifact@v3
+        with:
+          name: binaries-aarch64-apple-darwin
+          path: packages/engines/rust/
+
+      - name: Create universal binary
+        working-directory: packages/engines/rust
+        run: |
+          lipo -create -output mdx-hybrid-engine-rust.darwin-universal.node \
+            mdx-hybrid-engine-rust.darwin-x64.node \
+            mdx-hybrid-engine-rust.darwin-arm64.node
+
+      - name: Upload universal binary
+        uses: actions/upload-artifact@v3
+        with:
+          name: binaries-darwin-universal
+          path: packages/engines/rust/mdx-hybrid-engine-rust.darwin-universal.node

@@ -1,0 +1,112 @@
+# Medium MDX File
+
+This is a medium-sized MDX file with approximately 100 lines of content.
+
+## Introduction
+
+MDX is a powerful format that combines Markdown with JSX, allowing you to write content with embedded React components.
+
+### Why MDX?
+
+1. **Component Integration**: Seamlessly use React components in your content
+2. **Markdown Simplicity**: Write content using familiar Markdown syntax
+3. **Dynamic Content**: Create interactive documentation and blog posts
+4. **Type Safety**: Full TypeScript support when configured properly
+
+## Code Examples
+
+Here's a simple example of using MDX:
+
+```jsx
+import { useState } from 'react'
+
+export function Counter() {
+  const [count, setCount] = useState(0)
+  
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>
+        Increment
+      </button>
+    </div>
+  )
+}
+```
+
+<Counter />
+
+## Advanced Features
+
+### Custom Components
+
+You can map HTML elements to custom components:
+
+```js
+const components = {
+  h1: CustomH1,
+  p: CustomParagraph,
+  code: CustomCode,
+}
+```
+
+### Frontmatter Support
+
+```yaml
+---
+title: My Article
+date: 2024-01-01
+author: John Doe
+---
+```
+
+## Tables
+
+| Feature | Support | Notes |
+|---------|---------|-------|
+| Markdown | ✅ | Full support |
+| JSX | ✅ | React components |
+| Vue | ❌ | Not supported |
+| Svelte | ❌ | Not supported |
+
+## Lists
+
+### Ordered List
+
+1. First item
+2. Second item
+3. Third item
+   1. Nested item
+   2. Another nested item
+
+### Unordered List
+
+- Bullet point one
+- Bullet point two
+  - Nested bullet
+  - Another nested bullet
+- Bullet point three
+
+## Blockquotes
+
+> MDX is an authorable format that lets you seamlessly use JSX in your markdown documents.
+> You can import components, like interactive charts or notifications, and export metadata.
+> This makes writing long-form content with components a blast.
+
+## Images and Media
+
+![Alt text for image](https://via.placeholder.com/600x400)
+
+## Custom Components
+
+<Alert type="info">
+  This is an informational alert component embedded in MDX.
+</Alert>
+
+<Card title="Feature Card">
+  This is a custom card component with a title prop.
+</Card>
+
+## Conclusion
+
+MDX provides a powerful way to create rich, interactive content by combining the simplicity of Markdown with the power of React components.

@@ -25,6 +25,9 @@ pnpm prepare
 
 ### Development Workflow
 ```bash
+# Start development mode
+pnpm dev           # Watch and rebuild on changes
+
 # Lint and format code with Biome
 pnpm lint          # Check and auto-fix issues
 pnpm format        # Format code only
@@ -229,6 +232,10 @@ This project uses:
 - **Changesets**: For version management
 - **Husky**: For git hooks (pre-commit, pre-push)
 - **Biome**: For fast linting and formatting
+- **lint-staged**: Automatically formats and lints staged files on commit:
+  - TypeScript/JavaScript files: Biome check and format
+  - Markdown/MDX files: Biome format
+  - Rust files: cargo fmt
 
 ## Troubleshooting
 
