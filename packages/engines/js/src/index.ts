@@ -1,1 +1,1 @@
-export { JSEngine } from './engine.js'
+export { createJSEngine } from './engine.js'
