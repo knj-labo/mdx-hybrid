@@ -1,5 +1,5 @@
 import react from '@astrojs/react'
-import { mdxHybrid } from '@mdx-hybrid/core/astro'
+import mdxHybrid from '@mdx-hybrid/astro'
 import { defineConfig } from 'astro/config'
 
 export default defineConfig({

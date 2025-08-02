@@ -1,6 +1,6 @@
 {
   "name": "@mdx-hybrid/engine-js",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "JavaScript engine for mdx-hybrid using @mdx-js/mdx",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,11 +9,13 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",

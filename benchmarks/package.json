@@ -1,6 +1,6 @@
 {
   "name": "@mdx-hybrid/benchmarks",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Performance benchmarks for mdx-hybrid",
   "type": "module",

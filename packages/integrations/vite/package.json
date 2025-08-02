@@ -1,6 +1,6 @@
 {
   "name": "@mdx-hybrid/vite",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Vite plugin for mdx-hybrid",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,11 +9,13 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",

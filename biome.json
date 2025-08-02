@@ -1,24 +1,4 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.8.3/schema.json",
-  "organizeImports": {
-    "enabled": true
-  },
-  "linter": {
-    "enabled": true,
-    "rules": {
-      "recommended": true,
-      "complexity": {
-        "noUselessFragments": "error"
-      },
-      "style": {
-        "noNonNullAssertion": "off",
-        "useConst": "error"
-      },
-      "suspicious": {
-        "noExplicitAny": "off"
-      }
-    }
-  },
   "formatter": {
     "enabled": true,
     "formatWithErrors": false,
