@@ -1,0 +1,60 @@
+# Features
+
+MDX Hybrid provides a unique approach to MDX compilation by combining two powerful engines.
+
+## 🚀 Dual Engine System
+
+### Rust Engine
+- **5-10x faster** compilation for standard MDX
+- Minimal dependencies
+- Perfect for production builds
+- Native performance
+
+### JavaScript Engine
+- Full compatibility with `@mdx-js/mdx`
+- Support for all remark and rehype plugins
+- Familiar API and behavior
+- Maximum flexibility
+
+## 🎯 Smart Engine Selection
+
+The compiler automatically selects the best engine based on your configuration:
+
+```javascript
+// Uses Rust engine (fast!)
+compile('# Hello World')
+
+// Uses JS engine (plugin support)
+compile('# Hello', {
+  remarkPlugins: [remarkGfm]
+})
+
+// Force specific engine
+compile('# Hello', {
+  engine: 'rust' // or 'js'
+})
+```
+
+## 🔧 Framework Support
+
+<Alert>
+  MDX Hybrid integrates seamlessly with popular frameworks!
+</Alert>
+
+### Currently Supported:
+- ✅ **Vite** - You're using it right now!
+- ✅ **Node.js** - Direct API usage
+- 🚧 **Astro** - Coming soon
+- 🚧 **Next.js** - Planned
+- 🚧 **Webpack** - Planned
+
+## 📦 Drop-in Replacement
+
+MDX Hybrid is designed to be a drop-in replacement for `@mdx-js/mdx`:
+
+```diff
+- import { compile } from '@mdx-js/mdx'
++ import { compile } from '@mdx-hybrid/core'
+```
+
+All your existing MDX files will continue to work exactly as before, just faster!

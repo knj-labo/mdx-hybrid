@@ -1,0 +1,39 @@
+# Welcome to MDX Hybrid! 🚀
+
+<Alert type="success">
+  This page is compiled using MDX Hybrid, providing blazing-fast compilation with automatic engine selection!
+</Alert>
+
+MDX Hybrid combines the **speed of Rust** with the **flexibility of JavaScript** to give you the best MDX compilation experience.
+
+## What is MDX?
+
+MDX lets you use JSX in your markdown content. You can import components, export data, and write JSX directly in your markdown files.
+
+<Button onClick={() => alert('Hello from MDX!')}>
+  Click me! I'm a React component in MDX
+</Button>
+
+## Getting Started
+
+To use MDX Hybrid in your Vite project:
+
+```javascript
+// vite.config.js
+import { mdxHybrid } from '@mdx-hybrid/vite'
+
+export default {
+  plugins: [
+    mdxHybrid() // That's it!
+  ]
+}
+```
+
+The plugin will automatically:
+- Detect if you're using remark/rehype plugins
+- Choose the fastest available engine
+- Provide full MDX compatibility
+
+## Live Editing
+
+Try editing the MDX files in `src/content/` to see hot module replacement in action! ⚡
