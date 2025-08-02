@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { Compiler, compile, compileSync } from '../src/compiler.js'
+import { createCompiler, compile, compileSync } from '../src/compiler.js'
 
 describe('Compiler', () => {
-  const compiler = new Compiler()
+  const compiler = createCompiler()
   const simpleMDX = '# Hello\n\nThis is MDX'
   const jsxMDX = '# Title\n\n<Button>Click me</Button>'
 
@@ -74,7 +74,7 @@ describe('Compiler', () => {
   describe('getEngineInfo', () => {
     it('should return engine availability info', async () => {
       // Use async version to ensure engine is loaded
-      const compiler = new Compiler()
+      const compiler = createCompiler()
       await compiler.compile('# Test')
       const info = compiler.getEngineInfo()
       expect(info.js).toBe(true)

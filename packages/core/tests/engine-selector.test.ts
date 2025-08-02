@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { EngineSelector } from '../src/engine-selector.js'
+import { createEngineSelector } from '../src/engine-selector.js'
 import { RustUnavailableError } from '../src/errors.js'
 
 describe('EngineSelector', () => {
-  const selector = new EngineSelector()
+  const selector = createEngineSelector()
 
   describe('selectEngineAsync', () => {
     it('should select JS engine when explicitly requested', async () => {
@@ -27,8 +27,8 @@ describe('EngineSelector', () => {
 
     it('should throw when Rust engine is explicitly requested but unavailable', async () => {
       // Create a new selector without rust available
-      const mockSelector = new EngineSelector()
-      
+      const mockSelector = createEngineSelector()
+
       // Since we can't easily mock the rust engine availability,
       // we'll skip this test if rust is available
       try {

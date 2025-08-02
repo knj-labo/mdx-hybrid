@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { JSEngine } from '../src/engine.js'
+import { createJSEngine } from '../src/engine.js'
 
 describe('JSEngine', () => {
-  const engine = new JSEngine()
+  const engine = createJSEngine()
 
   describe('getName', () => {
     it('should return "js"', () => {
