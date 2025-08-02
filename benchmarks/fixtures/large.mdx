@@ -1,0 +1,85 @@
+# Large Benchmark File
+
+This is a large MDX file for benchmarking purposes with 1000+ lines.
+
+## Introduction
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+
+```javascript
+const largeExample = {
+  purpose: "benchmarking",
+  lines: 1000,
+  performance: "testing"
+}
+```
+
+<div className="benchmark-section">
+  <p>This file contains various MDX features to test compilation performance.</p>
+</div>
+
+${Array.from({ length: 90 }, (_, i) => `
+## Section ${i + 1}
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+
+### Subsection ${i + 1}.1
+
+Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.
+
+\`\`\`javascript
+function example${i}() {
+  const data = {
+    id: ${i},
+    value: "test-${i}",
+    timestamp: Date.now()
+  };
+  return process(data);
+}
+\`\`\`
+
+<Component${i} prop="value">
+  Content for component ${i}
+</Component${i}>
+
+### Subsection ${i + 1}.2
+
+- List item one with **bold text**
+- List item two with *italic text*
+- List item three with \`inline code\`
+- List item four with [links](#section-${i})
+
+> Blockquote ${i}: Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+
+#### Table ${i + 1}
+
+| Column A | Column B | Column C |
+|----------|----------|----------|
+| Data ${i}-1 | Value A | Result X |
+| Data ${i}-2 | Value B | Result Y |
+| Data ${i}-3 | Value C | Result Z |
+
+export const data${i} = {
+  section: ${i + 1},
+  content: "Dynamic content for section ${i + 1}"
+}
+
+<div style={{ padding: '1rem', background: '#f0f0f0', marginBottom: '1rem' }}>
+  <h5>Interactive Section ${i + 1}</h5>
+  <p>This is section {data${i}.section} with {data${i}.content}</p>
+</div>
+`).join('\n')}
+
+## Conclusion
+
+This large file demonstrates the performance characteristics of MDX Hybrid when processing substantial content with various MDX features including:
+
+- Multiple headings and sections
+- Code blocks with syntax highlighting
+- JSX components and expressions
+- Markdown tables
+- Lists and blockquotes
+- Export statements
+- Style attributes
+
+The benchmark results should show significant performance improvements with the Rust engine.
