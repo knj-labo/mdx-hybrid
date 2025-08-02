@@ -17,6 +17,11 @@
       "import": "./dist/vite.js",
       "require": "./dist/vite.cjs"
     },
+    "./astro": {
+      "types": "./dist/astro.d.ts",
+      "import": "./dist/astro.js",
+      "require": "./dist/astro.cjs"
+    },
     "./package.json": "./package.json"
   },
   "files": ["dist", "src"],
@@ -31,6 +36,9 @@
   "dependencies": {
     "@mdx-hybrid/engine-js": "workspace:*",
     "@mdx-hybrid/engine-rust": "workspace:*"
+  },
+  "optionalDependencies": {
+    "@mdx-hybrid/astro": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
