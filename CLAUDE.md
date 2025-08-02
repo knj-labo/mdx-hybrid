@@ -262,3 +262,31 @@ pnpm bench
 # Check engine selection
 MDX_HYBRID_DEBUG=true pnpm test
 ```
+
+### Test Issues
+
+#### ESM/CommonJS Module Resolution
+The project uses ESM modules but some tests may encounter issues with mixed ESM/CJS dependencies:
+- @mdx-js/mdx is ESM-only
+- Tests use dynamic imports for async operations
+- Sync operations may fail in pure ESM environments
+
+#### Running Tests
+```bash
+# Run all tests with turbo
+pnpm turbo run test -- --run
+
+# Run specific package tests
+pnpm --filter @mdx-hybrid/core test -- --run
+
+# Run tests in watch mode (omit --run)
+pnpm test
+```
+
+#### Common Test Failures
+1. **"JS engine is not available"**: This happens when the ESM module resolution fails. The tests gracefully handle this in most cases.
+2. **Rust engine unavailable**: The Rust engine is optional. Tests will skip Rust-specific tests if the binary isn't available.
+3. **Sync compilation failures**: Expected in ESM environments where require() isn't available.
+
+### MCP Server Issues
+If you see "MCP server 'serena' connection failed" in debug logs, this is a Claude Code configuration issue. Check your Claude Code settings or remove the MCP server configuration if not needed.
