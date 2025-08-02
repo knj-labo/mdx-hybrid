@@ -1,4 +1,4 @@
-import { createEngineSelector } from './engine-selector.js'
+import { createEngineRouter } from './engine-router.js'
 import { CompilerError } from './errors.js'
 import type { CompileOptions, CompileResult } from './types.js'
 
@@ -7,7 +7,7 @@ import type { CompileOptions, CompileResult } from './types.js'
  * @returns Compiler with compile methods and engine info
  */
 export function createCompiler() {
-  const engineSelector = createEngineSelector()
+  const engineRouter = createEngineRouter()
 
   return {
     /**
@@ -19,7 +19,7 @@ export function createCompiler() {
      */
     async compile(content: string, options?: CompileOptions): Promise<CompileResult> {
       try {
-        const { result, warning } = await engineSelector.compileWithFallback(content, options)
+        const { result, warning } = await engineRouter.compileWithFallback(content, options)
 
         if (warning && process.env.MDX_HYBRID_DEBUG) {
           console.warn(warning.message)
@@ -44,7 +44,7 @@ export function createCompiler() {
      */
     compileSync(content: string, options?: CompileOptions): CompileResult {
       try {
-        const { result, warning } = engineSelector.compileWithFallbackSync(content, options)
+        const { result, warning } = engineRouter.compileWithFallbackSync(content, options)
 
         if (warning && process.env.MDX_HYBRID_DEBUG) {
           console.warn(warning.message)
@@ -69,14 +69,14 @@ export function createCompiler() {
       let rustAvailable = false
 
       try {
-        engineSelector.selectEngine({ engine: 'js' })
+        engineRouter.routeEngine({ engine: 'js' })
         jsAvailable = true
       } catch {
         // JS not available
       }
 
       try {
-        engineSelector.selectEngine({ engine: 'rust' })
+        engineRouter.routeEngine({ engine: 'rust' })
         rustAvailable = true
       } catch {
         // Rust not available

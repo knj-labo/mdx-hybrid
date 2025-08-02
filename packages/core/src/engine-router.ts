@@ -2,10 +2,10 @@ import { RustPanicWarning, RustUnavailableError } from './errors.js'
 import type { CompileOptions, Engine } from './types.js'
 
 /**
- * Creates an engine selector that manages MDX compilation engines
- * @returns Engine selector with methods for engine selection and compilation
+ * Creates an engine router that routes MDX compilation to the appropriate engine
+ * @returns Engine router with methods for engine routing and compilation
  */
-export function createEngineSelector() {
+export function createEngineRouter() {
   // Private state
   let jsEngine: Engine | undefined
   let rustEngine: Engine | undefined
@@ -21,7 +21,9 @@ export function createEngineSelector() {
       try {
         // For sync operations, use require with proper module resolution
         const jsEngineModule = require('@mdx-hybrid/engine-js')
-        const { createJSEngine } = jsEngineModule.createJSEngine ? jsEngineModule : jsEngineModule.default || jsEngineModule
+        const { createJSEngine } = jsEngineModule.createJSEngine
+          ? jsEngineModule
+          : jsEngineModule.default || jsEngineModule
         jsEngine = createJSEngine()
       } catch (error) {
         console.error('Failed to load JS engine:', error)
@@ -106,12 +108,12 @@ export function createEngineSelector() {
   }
 
   /**
-   * Selects the appropriate engine based on options (synchronous)
+   * Routes to the appropriate engine based on options (synchronous)
    * @param options - Compile options
    * @returns Selected engine instance
    * @throws RustUnavailableError if Rust engine is explicitly requested but not available
    */
-  const selectEngine = (options?: CompileOptions): Engine => {
+  const routeEngine = (options?: CompileOptions): Engine => {
     const engineType = options?.engine || 'auto'
 
     // Case 1: Explicit engine selection
@@ -131,7 +133,7 @@ export function createEngineSelector() {
     // Check if plugins are present (requires JS engine)
     if (options?.remarkPlugins?.length || options?.rehypePlugins?.length) {
       if (process.env.MDX_HYBRID_DEBUG) {
-        console.log('Selecting JS engine due to plugin usage')
+        console.log('Routing to JS engine due to plugin usage')
       }
       return getJSEngineSync()
     }
@@ -140,25 +142,25 @@ export function createEngineSelector() {
     const engine = getRustEngine()
     if (engine) {
       if (process.env.MDX_HYBRID_DEBUG) {
-        console.log('Selecting Rust engine for performance')
+        console.log('Routing to Rust engine for performance')
       }
       return engine
     }
 
     // Case 4: Fallback to JS engine
     if (process.env.MDX_HYBRID_DEBUG) {
-      console.log('Selecting JS engine as fallback')
+      console.log('Routing to JS engine as fallback')
     }
     return getJSEngineSync()
   }
 
   /**
-   * Selects the appropriate engine based on options (asynchronous)
+   * Routes to the appropriate engine based on options (asynchronous)
    * @param options - Compile options
    * @returns Promise resolving to selected engine instance
    * @throws RustUnavailableError if Rust engine is explicitly requested but not available
    */
-  const selectEngineAsync = async (options?: CompileOptions): Promise<Engine> => {
+  const routeEngineAsync = async (options?: CompileOptions): Promise<Engine> => {
     const engineType = options?.engine || 'auto'
 
     // Case 1: Explicit engine selection
@@ -178,7 +180,7 @@ export function createEngineSelector() {
     // Check if plugins are present (requires JS engine)
     if (options?.remarkPlugins?.length || options?.rehypePlugins?.length) {
       if (process.env.MDX_HYBRID_DEBUG) {
-        console.log('Selecting JS engine due to plugin usage')
+        console.log('Routing to JS engine due to plugin usage')
       }
       return getJSEngine()
     }
@@ -187,14 +189,14 @@ export function createEngineSelector() {
     const engine = getRustEngine()
     if (engine) {
       if (process.env.MDX_HYBRID_DEBUG) {
-        console.log('Selecting Rust engine for performance')
+        console.log('Routing to Rust engine for performance')
       }
       return engine
     }
 
     // Case 4: Fallback to JS engine
     if (process.env.MDX_HYBRID_DEBUG) {
-      console.log('Selecting JS engine as fallback')
+      console.log('Routing to JS engine as fallback')
     }
     return getJSEngine()
   }
@@ -209,7 +211,7 @@ export function createEngineSelector() {
     content: string,
     options?: CompileOptions
   ): Promise<{ result: any; engine: Engine; warning?: RustPanicWarning }> => {
-    const selectedEngine = await selectEngineAsync(options)
+    const selectedEngine = await routeEngineAsync(options)
 
     try {
       const result = await selectedEngine.compile(content, options)
@@ -239,7 +241,7 @@ export function createEngineSelector() {
     content: string,
     options?: CompileOptions
   ): { result: any; engine: Engine; warning?: RustPanicWarning } => {
-    const selectedEngine = selectEngine(options)
+    const selectedEngine = routeEngine(options)
 
     try {
       const result = selectedEngine.compileSync(content, options)
@@ -261,8 +263,8 @@ export function createEngineSelector() {
 
   // Return public API
   return {
-    selectEngine,
-    selectEngineAsync,
+    routeEngine,
+    routeEngineAsync,
     compileWithFallback,
     compileWithFallbackSync,
   }

@@ -1,5 +1,5 @@
 export { createCompiler, compile, compileSync } from './compiler.js'
-export { createEngineSelector } from './engine-selector.js'
+export { createEngineRouter } from './engine-router.js'
 export {
   RustUnavailableError,
   RustPanicWarning,

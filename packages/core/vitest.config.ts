@@ -6,11 +6,11 @@ export default defineConfig({
     environment: 'node',
     server: {
       deps: {
-        inline: ['@mdx-hybrid/engine-js', '@mdx-js/mdx']
-      }
-    }
+        inline: ['@mdx-hybrid/engine-js', '@mdx-js/mdx'],
+      },
+    },
   },
   resolve: {
-    conditions: ['node', 'import', 'module', 'default']
-  }
+    conditions: ['node', 'import', 'module', 'default'],
+  },
 })
