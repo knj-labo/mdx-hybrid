@@ -6,20 +6,34 @@ export class EngineSelector {
   private rustEngine?: Engine
   private rustChecked = false
 
-  private getJSEngine(): Engine {
+  private getJSEngineSync(): Engine {
     if (!this.jsEngine) {
       try {
-        // Use createRequire to handle ESM modules
-        const { createRequire } = require('node:module')
-        const requireESM = createRequire(import.meta.url)
-        const { JSEngine } = requireESM('@mdx-hybrid/engine-js')
+        // For sync operations, use require with proper module resolution
+        const jsEngineModule = require('@mdx-hybrid/engine-js')
+        const { JSEngine } = jsEngineModule.JSEngine ? jsEngineModule : jsEngineModule.default || jsEngineModule
         this.jsEngine = new JSEngine()
       } catch (error) {
         console.error('Failed to load JS engine:', error)
         throw new Error('JS engine is not available')
       }
     }
-    return this.jsEngine
+    return this.jsEngine!
+  }
+
+  private async getJSEngine(): Promise<Engine> {
+    if (!this.jsEngine) {
+      try {
+        // Dynamically import ESM module
+        const jsEngineModule = await import('@mdx-hybrid/engine-js')
+        const { JSEngine } = jsEngineModule
+        this.jsEngine = new JSEngine()
+      } catch (error) {
+        console.error('Failed to load JS engine:', error)
+        throw new Error('JS engine is not available')
+      }
+    }
+    return this.jsEngine!
   }
 
   private getRustEngine(): Engine | undefined {
@@ -54,6 +68,47 @@ export class EngineSelector {
   }
 
   selectEngine(options?: CompileOptions): Engine {
+    const engineType = options?.engine || 'auto'
+
+    // Case 1: Explicit engine selection
+    if (engineType === 'rust') {
+      const rustEngine = this.getRustEngine()
+      if (!rustEngine) {
+        throw new RustUnavailableError()
+      }
+      return rustEngine
+    }
+
+    if (engineType === 'js') {
+      return this.getJSEngineSync()
+    }
+
+    // Case 2: Auto selection
+    // Check if plugins are present (requires JS engine)
+    if (options?.remarkPlugins?.length || options?.rehypePlugins?.length) {
+      if (process.env.MDX_HYBRID_DEBUG) {
+        console.log('Selecting JS engine due to plugin usage')
+      }
+      return this.getJSEngineSync()
+    }
+
+    // Case 3: Prefer Rust engine if available
+    const rustEngine = this.getRustEngine()
+    if (rustEngine) {
+      if (process.env.MDX_HYBRID_DEBUG) {
+        console.log('Selecting Rust engine for performance')
+      }
+      return rustEngine
+    }
+
+    // Case 4: Fallback to JS engine
+    if (process.env.MDX_HYBRID_DEBUG) {
+      console.log('Selecting JS engine as fallback')
+    }
+    return this.getJSEngineSync()
+  }
+
+  async selectEngineAsync(options?: CompileOptions): Promise<Engine> {
     const engineType = options?.engine || 'auto'
 
     // Case 1: Explicit engine selection
@@ -112,7 +167,7 @@ export class EngineSelector {
     content: string,
     options?: CompileOptions
   ): Promise<{ result: any; engine: Engine; warning?: RustPanicWarning }> {
-    const selectedEngine = this.selectEngine(options)
+    const selectedEngine = await this.selectEngineAsync(options)
 
     try {
       const result = await selectedEngine.compile(content, options)
@@ -120,7 +175,7 @@ export class EngineSelector {
     } catch (error) {
       // If Rust engine fails and we're in auto mode, try falling back to JS
       if (selectedEngine.getName() === 'rust' && (!options?.engine || options.engine === 'auto')) {
-        const jsEngine = this.getJSEngine()
+        const jsEngine = await this.getJSEngine()
         if (process.env.MDX_HYBRID_DEBUG) {
           console.log('Rust engine failed, falling back to JS:', error)
         }
@@ -144,7 +199,7 @@ export class EngineSelector {
     } catch (error) {
       // If Rust engine fails and we're in auto mode, try falling back to JS
       if (selectedEngine.getName() === 'rust' && (!options?.engine || options.engine === 'auto')) {
-        const jsEngine = this.getJSEngine()
+        const jsEngine = this.getJSEngineSync()
         if (process.env.MDX_HYBRID_DEBUG) {
           console.log('Rust engine failed, falling back to JS:', error)
         }

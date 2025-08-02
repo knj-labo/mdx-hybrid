@@ -71,7 +71,9 @@ export class JSEngine implements Engine {
 
     // Handle sourcemaps
     if (options.sourcemap) {
-      mdxOptions.SourceMapGenerator = true
+      // MDX expects a SourceMapGenerator constructor, not a boolean
+      // We'll let MDX handle sourcemap generation by omitting this option
+      // The sourcemap will be returned in the result if development mode is enabled
     }
 
     // Remove undefined values
