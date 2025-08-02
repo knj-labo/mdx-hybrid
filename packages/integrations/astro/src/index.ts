@@ -1,7 +1,6 @@
 import { compile } from '@mdx-hybrid/core'
 import type { CompileOptions } from '@mdx-hybrid/core'
 import type { AstroIntegration } from 'astro'
-import { VFile } from 'vfile'
 
 export interface AstroMDXHybridOptions extends Omit<CompileOptions, 'development'> {
   /**
@@ -16,15 +15,13 @@ export interface AstroMDXHybridOptions extends Omit<CompileOptions, 'development
   exclude?: RegExp | RegExp[]
 }
 
-export function mdxHybrid(options: AstroMDXHybridOptions = {}): AstroIntegration {
+export default function mdxHybrid(options: AstroMDXHybridOptions = {}): AstroIntegration {
   const { include = /\.mdx$/, exclude, ...compileOptions } = options
 
   return {
     name: '@mdx-hybrid/astro',
     hooks: {
-      'astro:config:setup': ({ config, command, addPageExtension, updateConfig }) => {
-        // Add .mdx as a valid page extension
-        addPageExtension('.mdx')
+      'astro:config:setup': ({ command, updateConfig }) => {
 
         // Add vite plugin for MDX processing
         updateConfig({
@@ -48,8 +45,6 @@ export function mdxHybrid(options: AstroMDXHybridOptions = {}): AstroIntegration
                       jsx: true,
                       jsxRuntime: 'automatic',
                       jsxImportSource: 'astro',
-                      // Astro uses its own provider for components
-                      providerImportSource: '@mdx-js/react',
                       // Output format for Astro
                       outputFormat: 'function-body',
                     })
@@ -124,3 +119,6 @@ export const file = ${JSON.stringify(filePath)};
 
 // Re-export types
 export type { CompileOptions } from '@mdx-hybrid/core'
+
+// Named export for compatibility
+export { mdxHybrid }
