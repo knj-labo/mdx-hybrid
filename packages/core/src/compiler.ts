@@ -11,6 +11,14 @@ export function createCompiler() {
 
   return {
     /**
+     * Preload engines for synchronous compilation in ESM environments
+     * @returns Promise that resolves when engines are loaded
+     */
+    async preloadEngines(): Promise<void> {
+      return engineRouter.preloadEngines()
+    },
+
+    /**
      * Compile MDX to JavaScript asynchronously
      * @param content - MDX content to compile
      * @param options - Compile options
@@ -124,4 +132,13 @@ export async function compile(content: string, options?: CompileOptions): Promis
  */
 export function compileSync(content: string, options?: CompileOptions): CompileResult {
   return getDefaultCompiler().compileSync(content, options)
+}
+
+/**
+ * Preload engines for synchronous compilation in ESM environments
+ * Call this once at application startup if you need to use sync methods
+ * @returns Promise that resolves when engines are loaded
+ */
+export async function preloadEngines(): Promise<void> {
+  return getDefaultCompiler().preloadEngines()
 }

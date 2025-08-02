@@ -22,7 +22,10 @@ export function createEngineRouter() {
   const getJSEngineSync = (): Engine => {
     if (!jsEngine) {
       // In ESM-only mode, we can't use sync loading for JS engine
-      throw new Error('Synchronous JS engine loading is not supported in ESM-only mode. Use async methods instead.')
+      throw new Error(
+        'Synchronous JS engine loading is not supported in ESM-only mode. ' +
+        'Either use async methods or call preloadEngines() before using sync methods.'
+      )
     }
     return jsEngine!
   }
@@ -266,11 +269,25 @@ export function createEngineRouter() {
     }
   }
 
+  /**
+   * Preloads engines for synchronous usage in ESM environments
+   * Call this once at application startup if you need to use sync methods
+   * @returns Promise that resolves when engines are loaded
+   */
+  const preloadEngines = async (): Promise<void> => {
+    // Load JS engine
+    await getJSEngine()
+    
+    // Load Rust engine if available
+    await getRustEngineAsync()
+  }
+
   // Return public API
   return {
     routeEngine,
     routeEngineAsync,
     compileWithFallback,
     compileWithFallbackSync,
+    preloadEngines,
   }
 }

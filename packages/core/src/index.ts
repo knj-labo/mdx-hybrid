@@ -1,4 +1,4 @@
-export { createCompiler, compile, compileSync } from './compiler.js'
+export { createCompiler, compile, compileSync, preloadEngines } from './compiler.js'
 export { createEngineRouter } from './engine-router.js'
 export {
   RustUnavailableError,
