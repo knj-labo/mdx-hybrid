@@ -17,8 +17,5 @@ export interface CompileResult {
   map?: string
   timing: number
 }
-export declare function compileSync(
-  content: string,
-  options?: CompileOptions | undefined | null
-): CompileResult
+export declare function compileSync(content: string, options?: CompileOptions | undefined | null): CompileResult
 export declare function isAvailable(): boolean

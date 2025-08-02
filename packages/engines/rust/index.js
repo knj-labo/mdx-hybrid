@@ -44,9 +44,7 @@ switch (platform) {
         }
         break
       case 'arm':
-        localFileExisted = existsSync(
-          join(__dirname, 'mdx-hybrid-engine-rust.android-arm-eabi.node')
-        )
+        localFileExisted = existsSync(join(__dirname, 'mdx-hybrid-engine-rust.android-arm-eabi.node'))
         try {
           if (localFileExisted) {
             nativeBinding = require('./mdx-hybrid-engine-rust.android-arm-eabi.node')
@@ -64,7 +62,9 @@ switch (platform) {
   case 'win32':
     switch (arch) {
       case 'x64':
-        localFileExisted = existsSync(join(__dirname, 'mdx-hybrid-engine-rust.win32-x64-msvc.node'))
+        localFileExisted = existsSync(
+          join(__dirname, 'mdx-hybrid-engine-rust.win32-x64-msvc.node')
+        )
         try {
           if (localFileExisted) {
             nativeBinding = require('./mdx-hybrid-engine-rust.win32-x64-msvc.node')
@@ -131,7 +131,9 @@ switch (platform) {
         }
         break
       case 'arm64':
-        localFileExisted = existsSync(join(__dirname, 'mdx-hybrid-engine-rust.darwin-arm64.node'))
+        localFileExisted = existsSync(
+          join(__dirname, 'mdx-hybrid-engine-rust.darwin-arm64.node')
+        )
         try {
           if (localFileExisted) {
             nativeBinding = require('./mdx-hybrid-engine-rust.darwin-arm64.node')
