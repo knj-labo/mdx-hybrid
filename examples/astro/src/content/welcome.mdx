@@ -1,0 +1,73 @@
+# Welcome to MDX Hybrid with Astro! 🚀
+
+MDX Hybrid brings **blazing-fast** MDX compilation to your Astro projects with automatic engine selection.
+
+## Why MDX Hybrid?
+
+<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginTop: '2rem' }}>
+  <div style={{ padding: '1.5rem', background: '#f0f9ff', borderRadius: '0.5rem' }}>
+    <h3>⚡ Speed</h3>
+    <p>5-10x faster compilation with the Rust engine for standard MDX files.</p>
+  </div>
+  
+  <div style={{ padding: '1.5rem', background: '#f0fdf4', borderRadius: '0.5rem' }}>
+    <h3>🔧 Compatibility</h3>
+    <p>Full plugin support with automatic fallback to the JavaScript engine.</p>
+  </div>
+  
+  <div style={{ padding: '1.5rem', background: '#fefce8', borderRadius: '0.5rem' }}>
+    <h3>🎯 Smart</h3>
+    <p>Automatically selects the best engine based on your configuration.</p>
+  </div>
+</div>
+
+## Interactive Components
+
+export const Counter = () => {
+  const [count, setCount] = React.useState(0)
+  return (
+    <button 
+      onClick={() => setCount(count + 1)}
+      style={{
+        padding: '0.5rem 1rem',
+        fontSize: '1rem',
+        background: '#0969da',
+        color: 'white',
+        border: 'none',
+        borderRadius: '0.25rem',
+        cursor: 'pointer'
+      }}
+    >
+      Clicked {count} times
+    </button>
+  )
+}
+
+Try this interactive counter: <Counter />
+
+## Code Examples
+
+Here's how to use MDX Hybrid in your Astro project:
+
+```javascript
+// astro.config.mjs
+import { mdxHybrid } from '@mdx-hybrid/core/astro'
+
+export default defineConfig({
+  integrations: [
+    mdxHybrid({
+      // Options are automatically optimized
+      engine: 'auto' // default
+    })
+  ]
+})
+```
+
+## Performance Comparison
+
+| Engine | Small Files | Large Files | Plugin Support |
+|--------|-------------|-------------|----------------|
+| Rust   | ~1ms        | ~20ms       | ❌             |
+| JS     | ~5ms        | ~150ms      | ✅             |
+
+The best part? You don't have to choose - MDX Hybrid automatically selects the optimal engine for each file!

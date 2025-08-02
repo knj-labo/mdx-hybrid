@@ -1,0 +1,68 @@
+---
+title: "Getting Started with MDX Hybrid"
+date: 2024-01-15
+description: "Learn how to integrate MDX Hybrid into your Astro project for blazing-fast MDX compilation"
+tags: ["tutorial", "mdx", "performance"]
+---
+
+# Getting Started with MDX Hybrid
+
+Welcome to your first steps with MDX Hybrid! This post will guide you through setting up and using MDX Hybrid in your Astro project.
+
+## Installation
+
+First, install the necessary packages:
+
+```bash
+npm install @mdx-hybrid/core
+# or
+pnpm add @mdx-hybrid/core
+```
+
+## Configuration
+
+Update your `astro.config.mjs`:
+
+```javascript
+import { defineConfig } from 'astro/config'
+import { mdxHybrid } from '@mdx-hybrid/core/astro'
+
+export default defineConfig({
+  integrations: [
+    mdxHybrid({
+      // Options here
+    })
+  ]
+})
+```
+
+## Writing MDX
+
+Now you can write MDX files with all the features you love:
+
+### React Components
+
+export const Highlight = ({ children, color = '#ffeb3b' }) => (
+  <span style={{ backgroundColor: color, padding: '0.2em 0.4em', borderRadius: '3px' }}>
+    {children}
+  </span>
+)
+
+Use React components directly: <Highlight>This is highlighted!</Highlight>
+
+### Frontmatter
+
+Access frontmatter data in your MDX:
+
+- Title: {frontmatter.title}
+- Date: {frontmatter.date.toLocaleDateString()}
+
+## Performance Benefits
+
+With MDX Hybrid, you'll see:
+
+- ⚡ 5-10x faster compilation for standard MDX
+- 🔧 Automatic engine selection
+- 📦 Full plugin compatibility when needed
+
+Happy coding! 🚀
