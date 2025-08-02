@@ -1,5 +1,8 @@
+import { createRequire } from 'node:module'
 import { RustPanicWarning, RustUnavailableError } from './errors.js'
 import type { CompileOptions, Engine } from './types.js'
+
+const require = createRequire(import.meta.url)
 
 /**
  * Creates an engine router that routes MDX compilation to the appropriate engine
@@ -18,17 +21,8 @@ export function createEngineRouter() {
    */
   const getJSEngineSync = (): Engine => {
     if (!jsEngine) {
-      try {
-        // For sync operations, use require with proper module resolution
-        const jsEngineModule = require('@mdx-hybrid/engine-js')
-        const { createJSEngine } = jsEngineModule.createJSEngine
-          ? jsEngineModule
-          : jsEngineModule.default || jsEngineModule
-        jsEngine = createJSEngine()
-      } catch (error) {
-        console.error('Failed to load JS engine:', error)
-        throw new Error('JS engine is not available')
-      }
+      // In ESM-only mode, we can't use sync loading for JS engine
+      throw new Error('Synchronous JS engine loading is not supported in ESM-only mode. Use async methods instead.')
     }
     return jsEngine!
   }
@@ -54,13 +48,14 @@ export function createEngineRouter() {
   }
 
   /**
-   * Gets the Rust engine if available
-   * @returns The Rust engine instance or undefined if not available
+   * Gets the Rust engine if available (async)
+   * @returns Promise resolving to the Rust engine instance or undefined if not available
    */
-  const getRustEngine = (): Engine | undefined => {
+  const getRustEngineAsync = async (): Promise<Engine | undefined> => {
     if (!rustChecked) {
       rustChecked = true
       try {
+        // Use createRequire to load CommonJS module in ESM context
         const rustModule = require('@mdx-hybrid/engine-rust')
         if (rustModule.isAvailable?.()) {
           // Create a wrapper for the Rust engine
@@ -85,6 +80,15 @@ export function createEngineRouter() {
         }
       }
     }
+    return rustEngine
+  }
+
+  /**
+   * Gets the Rust engine if available (sync)
+   * @returns The Rust engine instance or undefined if not available
+   */
+  const getRustEngine = (): Engine | undefined => {
+    // For sync access, return already loaded engine or undefined
     return rustEngine
   }
 
@@ -114,13 +118,14 @@ export function createEngineRouter() {
    * @throws RustUnavailableError if Rust engine is explicitly requested but not available
    */
   const routeEngine = (options?: CompileOptions): Engine => {
+    // In ESM-only mode, we can only use engines that have been pre-loaded via async methods
     const engineType = options?.engine || 'auto'
 
     // Case 1: Explicit engine selection
     if (engineType === 'rust') {
       const engine = getRustEngine()
       if (!engine) {
-        throw new RustUnavailableError()
+        throw new RustUnavailableError('Rust engine not loaded. Use async methods to load engines first.')
       }
       return engine
     }
@@ -165,7 +170,7 @@ export function createEngineRouter() {
 
     // Case 1: Explicit engine selection
     if (engineType === 'rust') {
-      const engine = getRustEngine()
+      const engine = await getRustEngineAsync()
       if (!engine) {
         throw new RustUnavailableError()
       }
@@ -186,7 +191,7 @@ export function createEngineRouter() {
     }
 
     // Case 3: Prefer Rust engine if available
-    const engine = getRustEngine()
+    const engine = await getRustEngineAsync()
     if (engine) {
       if (process.env.MDX_HYBRID_DEBUG) {
         console.log('Routing to Rust engine for performance')
