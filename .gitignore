@@ -143,3 +143,13 @@ target/
 
 # turbo cache
 .turbo
+
+# Example projects
+example/astro/.astro
+example/astro/src/env.d.ts
+
+# editor
+.idea/
+
+# mcp
+.serena/
