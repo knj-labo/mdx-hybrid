@@ -84,6 +84,7 @@ export function createJSEngine(): Engine {
           code: String(result.value),
           map: result.map,
           timing,
+          data: result.data,
         }
       } catch (error) {
         throw new Error(
@@ -110,6 +111,7 @@ export function createJSEngine(): Engine {
           code: String(result.value),
           map: result.map,
           timing,
+          data: result.data,
         }
       } catch (error) {
         throw new Error(

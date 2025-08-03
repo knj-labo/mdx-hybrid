@@ -20,6 +20,7 @@ pub struct CompileResult {
   pub code: String,
   pub map: Option<String>,
   pub timing: f64,
+  // Currently not implemented - mdxjs crate doesn't provide VFile data
 }
 
 #[napi]

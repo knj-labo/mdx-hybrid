@@ -101,6 +101,11 @@ export interface CompileResult {
    * Compilation time in milliseconds
    */
   timing: number
+
+  /**
+   * VFile data (frontmatter, exports, etc.)
+   */
+  data?: Record<string, any>
 }
 
 export interface Engine {

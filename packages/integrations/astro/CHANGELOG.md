@@ -1,5 +1,20 @@
 # @jp-knj/mdx-hybrid-astro
 
+## 0.0.3
+
+### Patch Changes
+
+- Add minimal required fixes for v0.0.3
+
+  - ✅ JSX pragma imports are always included in output (both engines)
+  - ✅ Added `data` field to CompileResult interface for VFile data storage
+  - ✅ Export format unified as `export default` (both engines already compliant)
+
+  The `data` field contains VFile data from the JS engine (frontmatter, exports, etc.) and is undefined for the Rust engine (which doesn't currently provide this data).
+
+- Updated dependencies
+  - @jp-knj/mdx-hybrid-core@0.1.0
+
 ## 0.0.2
 
 ### Patch Changes

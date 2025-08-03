@@ -19,6 +19,7 @@ export interface CompileResult {
   code: string
   map?: any
   timing: number
+  data?: Record<string, any>
 }
 
 export interface Engine {

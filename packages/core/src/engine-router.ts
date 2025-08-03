@@ -76,11 +76,14 @@ export function createEngineRouter() {
             compile: async (content: string, options?: CompileOptions) => {
               const rustOptions = transformOptionsForRust(options)
               const result = rustModule.compileSync(content, rustOptions)
-              return result
+              // Add data field for compatibility (Rust engine doesn't provide VFile data)
+              return { ...result, data: undefined }
             },
             compileSync: (content: string, options?: CompileOptions) => {
               const rustOptions = transformOptionsForRust(options)
-              return rustModule.compileSync(content, rustOptions)
+              const result = rustModule.compileSync(content, rustOptions)
+              // Add data field for compatibility (Rust engine doesn't provide VFile data)
+              return { ...result, data: undefined }
             },
           }
         }
