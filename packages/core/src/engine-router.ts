@@ -43,8 +43,16 @@ export function createEngineRouter() {
         const { createJSEngine } = jsEngineModule
         jsEngine = createJSEngine()
       } catch (error) {
-        console.error('Failed to load JS engine:', error)
-        throw new Error('JS engine is not available')
+        // More detailed error logging
+        if (process.env.MDX_HYBRID_DEBUG) {
+          console.error('Failed to load JS engine:', error)
+        }
+        // Try to provide more helpful error message
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        if (errorMessage.includes('ERR_REQUIRE_ESM') || errorMessage.includes('style-to-object')) {
+          throw new Error('JS engine failed to load due to ESM compatibility issues. Rust engine may still be available.')
+        }
+        throw new Error(`JS engine is not available: ${errorMessage}`)
       }
     }
     return jsEngine!
@@ -147,19 +155,27 @@ export function createEngineRouter() {
     }
 
     // Case 3: Prefer Rust engine if available
-    const engine = getRustEngine()
-    if (engine) {
+    const rustEngine = getRustEngine()
+    if (rustEngine) {
       if (process.env.MDX_HYBRID_DEBUG) {
         console.log('Routing to Rust engine for performance')
       }
-      return engine
+      return rustEngine
     }
 
-    // Case 4: Fallback to JS engine
-    if (process.env.MDX_HYBRID_DEBUG) {
-      console.log('Routing to JS engine as fallback')
+    // Case 4: Try JS engine as fallback
+    try {
+      if (process.env.MDX_HYBRID_DEBUG) {
+        console.log('Routing to JS engine as fallback')
+      }
+      return getJSEngineSync()
+    } catch (jsError) {
+      // If JS engine fails and we couldn't get Rust engine, throw a more helpful error
+      throw new Error(
+        'No MDX engine available for sync operation. Rust engine not found and JS engine not loaded. ' +
+        'Call preloadEngines() first or use async methods.'
+      )
     }
-    return getJSEngineSync()
   }
 
   /**
@@ -194,19 +210,28 @@ export function createEngineRouter() {
     }
 
     // Case 3: Prefer Rust engine if available
-    const engine = await getRustEngineAsync()
-    if (engine) {
+    const rustEngine = await getRustEngineAsync()
+    if (rustEngine) {
       if (process.env.MDX_HYBRID_DEBUG) {
         console.log('Routing to Rust engine for performance')
       }
-      return engine
+      return rustEngine
     }
 
-    // Case 4: Fallback to JS engine
-    if (process.env.MDX_HYBRID_DEBUG) {
-      console.log('Routing to JS engine as fallback')
+    // Case 4: Try JS engine as fallback
+    try {
+      if (process.env.MDX_HYBRID_DEBUG) {
+        console.log('Routing to JS engine as fallback')
+      }
+      return await getJSEngine()
+    } catch (jsError) {
+      // If JS engine fails and we couldn't get Rust engine, throw a more helpful error
+      throw new Error(
+        'No MDX engine available. Rust engine not found and JS engine failed to load. ' +
+        'This is likely due to ESM compatibility issues. ' +
+        'Try explicitly specifying engine: "rust" if Rust binaries are available.'
+      )
     }
-    return getJSEngine()
   }
 
   /**
