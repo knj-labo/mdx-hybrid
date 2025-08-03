@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { compile, compileSync } from '@jp-knj/mdx-hybrid-core'
+import { compile, compileSync, preloadEngines } from '@jp-knj/mdx-hybrid-core'
 import { compile as mdxCompile, compileSync as mdxCompileSync } from '@mdx-js/mdx'
 import chalk from 'chalk'
 import { table } from 'table'
@@ -25,12 +25,17 @@ async function benchmark(name, content, iterations = 10) {
     native: [],
   }
 
+  // Preload engines for sync operations
+  await preloadEngines()
+
   // Warmup
   await compile(content, { engine: 'js' })
   await mdxCompile(content)
 
+  let rustAvailable = false
   try {
     compileSync(content, { engine: 'rust' })
+    rustAvailable = true
   } catch (e) {
     console.log(chalk.yellow('⚠️  Rust engine not available, skipping Rust benchmarks'))
   }
@@ -43,14 +48,12 @@ async function benchmark(name, content, iterations = 10) {
   }
 
   // Benchmark Rust engine (if available)
-  try {
+  if (rustAvailable) {
     for (let i = 0; i < iterations; i++) {
       const start = performance.now()
       compileSync(content, { engine: 'rust' })
       results.rust.push(performance.now() - start)
     }
-  } catch (e) {
-    // Rust not available
   }
 
   // Benchmark native @mdx-js/mdx for comparison
