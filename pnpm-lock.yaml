@@ -38,7 +38,7 @@ importers:
 
   benchmarks:
     dependencies:
-      '@mdx-hybrid/core':
+      '@jp-knj/mdx-hybrid-core':
         specifier: workspace:*
         version: link:../packages/core
       '@mdx-js/mdx':
@@ -70,7 +70,7 @@ importers:
       '@astrojs/react':
         specifier: ^3.6.0
         version: 3.6.3(@types/node@20.19.9)(@types/react-dom@18.3.7(@types/react@18.3.23))(@types/react@18.3.23)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@mdx-hybrid/core':
+      '@jp-knj/mdx-hybrid-core':
         specifier: workspace:*
         version: link:../../packages/core
       '@types/react':
@@ -82,7 +82,7 @@ importers:
 
   examples/node:
     dependencies:
-      '@mdx-hybrid/core':
+      '@jp-knj/mdx-hybrid-core':
         specifier: workspace:*
         version: link:../../packages/core
     devDependencies:
@@ -102,7 +102,7 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
     devDependencies:
-      '@mdx-hybrid/vite':
+      '@jp-knj/mdx-hybrid-vite':
         specifier: workspace:*
         version: link:../../packages/integrations/vite
       '@types/react':
@@ -120,10 +120,10 @@ importers:
 
   packages/core:
     dependencies:
-      '@mdx-hybrid/engine-js':
+      '@jp-knj/mdx-hybrid-engine-js':
         specifier: workspace:*
         version: link:../engines/js
-      '@mdx-hybrid/engine-rust':
+      '@jp-knj/mdx-hybrid-engine-rust':
         specifier: workspace:*
         version: link:../engines/rust
     devDependencies:
@@ -176,7 +176,7 @@ importers:
 
   packages/integrations/astro:
     dependencies:
-      '@mdx-hybrid/core':
+      '@jp-knj/mdx-hybrid-core':
         specifier: workspace:*
         version: link:../../core
       vfile:
@@ -201,7 +201,7 @@ importers:
 
   packages/integrations/vite:
     dependencies:
-      '@mdx-hybrid/core':
+      '@jp-knj/mdx-hybrid-core':
         specifier: workspace:*
         version: link:../../core
     devDependencies:

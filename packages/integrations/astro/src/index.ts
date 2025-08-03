@@ -1,5 +1,5 @@
-import { compile } from '@mdx-hybrid/core'
-import type { CompileOptions } from '@mdx-hybrid/core'
+import { compile } from '@jp-knj/mdx-hybrid-core'
+import type { CompileOptions } from '@jp-knj/mdx-hybrid-core'
 import type { AstroIntegration } from 'astro'
 
 export interface AstroMDXHybridOptions extends Omit<CompileOptions, 'development'> {
@@ -19,7 +19,7 @@ export default function mdxHybrid(options: AstroMDXHybridOptions = {}): AstroInt
   const { include = /\.mdx$/, exclude, ...compileOptions } = options
 
   return {
-    name: '@mdx-hybrid/astro',
+    name: '@jp-knj/mdx-hybrid-astro',
     hooks: {
       'astro:config:setup': ({ command, updateConfig }) => {
 
@@ -118,7 +118,7 @@ export const file = ${JSON.stringify(filePath)};
 }
 
 // Re-export types
-export type { CompileOptions } from '@mdx-hybrid/core'
+export type { CompileOptions } from '@jp-knj/mdx-hybrid-core'
 
 // Named export for compatibility
 export { mdxHybrid }

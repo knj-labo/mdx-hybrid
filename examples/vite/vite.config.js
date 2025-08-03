@@ -1,4 +1,4 @@
-import { mdxHybrid } from '@mdx-hybrid/vite'
+import { mdxHybrid } from '@jp-knj/mdx-hybrid-vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 

@@ -1,5 +1,5 @@
 {
-  "name": "@mdx-hybrid/example-astro",
+  "name": "@jp-knj/mdx-hybrid-example-astro",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "@astrojs/react": "^3.6.0",
-    "@mdx-hybrid/core": "workspace:*",
+    "@jp-knj/mdx-hybrid-core": "workspace:*",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0"
   }

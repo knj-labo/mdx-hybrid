@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { compile } from '@mdx-hybrid/core'
+import { compile } from '@jp-knj/mdx-hybrid-core'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 

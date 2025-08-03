@@ -1,4 +1,4 @@
-# @mdx-hybrid/engine-js
+# @jp-knj/mdx-hybrid-engine-js
 
 ## 0.0.1
 

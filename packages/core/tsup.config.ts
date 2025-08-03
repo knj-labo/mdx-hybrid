@@ -8,5 +8,5 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   treeshake: true,
-  external: ['@mdx-hybrid/astro'],
+  external: ['@jp-knj/mdx-hybrid-astro'],
 })

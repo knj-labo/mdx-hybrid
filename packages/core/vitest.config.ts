@@ -6,7 +6,7 @@ export default defineConfig({
     environment: 'node',
     server: {
       deps: {
-        inline: ['@mdx-hybrid/engine-js', '@mdx-js/mdx'],
+        inline: ['@jp-knj/mdx-hybrid-engine-js', '@mdx-js/mdx'],
       },
     },
   },

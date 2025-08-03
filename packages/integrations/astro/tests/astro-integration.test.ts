@@ -4,7 +4,7 @@ import { mdxHybrid } from '../src/index.js'
 describe('Astro Integration', () => {
   it('should create an astro integration', () => {
     const integration = mdxHybrid()
-    expect(integration.name).toBe('@mdx-hybrid/astro')
+    expect(integration.name).toBe('@jp-knj/mdx-hybrid-astro')
     expect(integration.hooks).toBeDefined()
     expect(integration.hooks['astro:config:setup']).toBeDefined()
   })

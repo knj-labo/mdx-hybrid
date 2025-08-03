@@ -13,11 +13,11 @@ A hybrid MDX compiler that combines Rust's compilation speed with JavaScript's p
 ## Installation
 
 ```bash
-npm install @mdx-hybrid/core
+npm install @jp-knj/mdx-hybrid-core
 # or
-pnpm add @mdx-hybrid/core
+pnpm add @jp-knj/mdx-hybrid-core
 # or
-yarn add @mdx-hybrid/core
+yarn add @jp-knj/mdx-hybrid-core
 ```
 
 ## Usage
@@ -25,7 +25,7 @@ yarn add @mdx-hybrid/core
 ### Basic Usage
 
 ```javascript
-import { compile } from '@mdx-hybrid/core'
+import { compile } from '@jp-knj/mdx-hybrid-core'
 
 const result = await compile('# Hello MDX!')
 console.log(result.code)
@@ -34,7 +34,7 @@ console.log(result.code)
 ### With Options
 
 ```javascript
-import { compile } from '@mdx-hybrid/core'
+import { compile } from '@jp-knj/mdx-hybrid-core'
 
 const result = await compile(mdxContent, {
   // Force specific engine
@@ -52,7 +52,7 @@ const result = await compile(mdxContent, {
 
 ```javascript
 // vite.config.js
-import { mdxHybrid } from '@mdx-hybrid/vite'
+import { mdxHybrid } from '@jp-knj/mdx-hybrid-vite'
 
 export default {
   plugins: [mdxHybrid()]
@@ -63,7 +63,7 @@ export default {
 
 ```javascript
 // astro.config.mjs
-import { mdxHybrid } from '@mdx-hybrid/core/astro'
+import { mdxHybrid } from '@jp-knj/mdx-hybrid-astro'
 
 export default {
   integrations: [mdxHybrid()]

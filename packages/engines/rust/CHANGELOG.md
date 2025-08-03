@@ -1,4 +1,4 @@
-# @mdx-hybrid/engine-rust
+# @jp-knj/mdx-hybrid-engine-rust
 
 ## 0.0.1
 

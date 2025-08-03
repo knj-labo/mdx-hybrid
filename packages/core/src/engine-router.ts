@@ -39,7 +39,7 @@ export function createEngineRouter() {
     if (!jsEngine) {
       try {
         // Dynamically import ESM module
-        const jsEngineModule = await import('@mdx-hybrid/engine-js')
+        const jsEngineModule = await import('@jp-knj/mdx-hybrid-engine-js')
         const { createJSEngine } = jsEngineModule
         jsEngine = createJSEngine()
       } catch (error) {
@@ -59,7 +59,7 @@ export function createEngineRouter() {
       rustChecked = true
       try {
         // Use createRequire to load CommonJS module in ESM context
-        const rustModule = require('@mdx-hybrid/engine-rust')
+        const rustModule = require('@jp-knj/mdx-hybrid-engine-rust')
         if (rustModule.isAvailable?.()) {
           // Create a wrapper for the Rust engine
           rustEngine = {

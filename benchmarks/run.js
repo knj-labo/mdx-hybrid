@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { compile, compileSync } from '@mdx-hybrid/core'
+import { compile, compileSync } from '@jp-knj/mdx-hybrid-core'
 import { compile as mdxCompile, compileSync as mdxCompileSync } from '@mdx-js/mdx'
 import chalk from 'chalk'
 import { table } from 'table'

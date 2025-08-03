@@ -1,5 +1,5 @@
 {
-  "name": "@mdx-hybrid/benchmarks",
+  "name": "@jp-knj/mdx-hybrid-benchmarks",
   "version": "0.0.1",
   "private": true,
   "description": "Performance benchmarks for mdx-hybrid",
@@ -9,7 +9,7 @@
     "generate-fixtures": "node generate-fixtures.js"
   },
   "dependencies": {
-    "@mdx-hybrid/core": "workspace:*",
+    "@jp-knj/mdx-hybrid-core": "workspace:*",
     "@mdx-js/mdx": "^3.0.1"
   },
   "devDependencies": {

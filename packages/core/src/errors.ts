@@ -3,7 +3,7 @@
  */
 export class RustUnavailableError extends Error {
   constructor(
-    message = 'Rust engine is not available. Please ensure @mdx-hybrid/engine-rust is properly installed.'
+    message = 'Rust engine is not available. Please ensure @jp-knj/mdx-hybrid-engine-rust is properly installed.'
   ) {
     super(message)
     this.name = 'RustUnavailableError'

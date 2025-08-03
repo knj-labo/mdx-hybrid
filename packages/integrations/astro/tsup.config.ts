@@ -6,5 +6,5 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
-  external: ['astro', '@mdx-hybrid/core'],
+  external: ['astro', '@jp-knj/mdx-hybrid-core'],
 })

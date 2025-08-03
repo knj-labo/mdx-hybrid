@@ -140,7 +140,7 @@ interface CompileResult {
 ### Running Tests
 ```bash
 # Run specific package tests
-pnpm --filter @mdx-hybrid/core test
+pnpm --filter @jp-knj/mdx-hybrid-core test
 
 # Run tests with coverage
 pnpm test -- --coverage
@@ -200,7 +200,7 @@ compile(content, { engine: 'rust' })
 ### Astro Integration
 ```typescript
 // packages/integrations/astro/
-import { mdxHybrid } from '@mdx-hybrid/core/astro'
+import { mdxHybrid } from '@jp-knj/mdx-hybrid-core/astro'
 
 export default defineConfig({
   integrations: [mdxHybrid()]
@@ -210,7 +210,7 @@ export default defineConfig({
 ### Vite Plugin
 ```typescript
 // packages/integrations/vite/
-import { mdxHybrid } from '@mdx-hybrid/core/vite'
+import { mdxHybrid } from '@jp-knj/mdx-hybrid-core/vite'
 
 export default {
   plugins: [mdxHybrid()]
@@ -242,7 +242,7 @@ This project uses:
 ### Rust Binary Not Found
 ```bash
 # Rebuild the Rust engine
-pnpm --filter @mdx-hybrid/engine-rust build
+pnpm --filter @jp-knj/mdx-hybrid-engine-rust build
 
 # Check binary location
 ls packages/engines/rust/*.node
@@ -251,7 +251,7 @@ ls packages/engines/rust/*.node
 ### Type Errors
 ```bash
 # Rebuild TypeScript declarations
-pnpm turbo run build --filter=@mdx-hybrid/core^...
+pnpm turbo run build --filter=@jp-knj/mdx-hybrid-core^...
 ```
 
 ### Performance Issues
@@ -277,7 +277,7 @@ The project uses ESM modules but some tests may encounter issues with mixed ESM/
 pnpm turbo run test -- --run
 
 # Run specific package tests
-pnpm --filter @mdx-hybrid/core test -- --run
+pnpm --filter @jp-knj/mdx-hybrid-core test -- --run
 
 # Run tests in watch mode (omit --run)
 pnpm test

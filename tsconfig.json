@@ -21,9 +21,9 @@
     "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "paths": {
-      "@mdx-hybrid/core": ["packages/core/src"],
-      "@mdx-hybrid/engine-js": ["packages/engines/js/src"],
-      "@mdx-hybrid/engine-rust": ["packages/engines/rust"]
+      "@jp-knj/mdx-hybrid-core": ["packages/core/src"],
+      "@jp-knj/mdx-hybrid-engine-js": ["packages/engines/js/src"],
+      "@jp-knj/mdx-hybrid-engine-rust": ["packages/engines/rust"]
     }
   },
   "exclude": ["node_modules", "dist", "coverage", ".turbo"]

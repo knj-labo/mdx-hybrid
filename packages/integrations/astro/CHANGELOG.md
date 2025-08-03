@@ -1,4 +1,4 @@
-# @mdx-hybrid/astro
+# @jp-knj/mdx-hybrid-astro
 
 ## 0.0.1
 
@@ -13,4 +13,4 @@
   - ESM-only architecture with preloadEngines() for sync support
 
 - Updated dependencies
-  - @mdx-hybrid/core@0.0.1
+  - @jp-knj/mdx-hybrid-core@0.0.1

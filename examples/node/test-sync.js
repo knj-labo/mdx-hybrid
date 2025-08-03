@@ -1,4 +1,4 @@
-import { preloadEngines, compileSync } from '@mdx-hybrid/core'
+import { preloadEngines, compileSync } from '@jp-knj/mdx-hybrid-core'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { fileURLToPath } from 'url'

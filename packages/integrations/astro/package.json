@@ -1,5 +1,5 @@
 {
-  "name": "@mdx-hybrid/astro",
+  "name": "@jp-knj/mdx-hybrid-astro",
   "version": "0.0.1",
   "description": "Astro integration for mdx-hybrid",
   "type": "module",
@@ -24,7 +24,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
-    "@mdx-hybrid/core": "workspace:*",
+    "@jp-knj/mdx-hybrid-core": "workspace:*",
     "vfile": "^6.0.1"
   },
   "devDependencies": {

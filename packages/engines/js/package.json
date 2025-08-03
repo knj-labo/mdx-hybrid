@@ -1,5 +1,5 @@
 {
-  "name": "@mdx-hybrid/engine-js",
+  "name": "@jp-knj/mdx-hybrid-engine-js",
   "version": "0.0.1",
   "description": "JavaScript engine for mdx-hybrid using @mdx-js/mdx",
   "type": "module",

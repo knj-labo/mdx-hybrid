@@ -1,5 +1,5 @@
 {
-  "name": "@mdx-hybrid/engine-rust",
+  "name": "@jp-knj/mdx-hybrid-engine-rust",
   "version": "0.0.1",
   "description": "Rust engine for mdx-hybrid using mdxjs-rs",
   "main": "index.js",
@@ -37,5 +37,11 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "optionalDependencies": {
+    "@jp-knj/mdx-hybrid-engine-rust-win32-x64-msvc": "0.0.1",
+    "@jp-knj/mdx-hybrid-engine-rust-darwin-x64": "0.0.1",
+    "@jp-knj/mdx-hybrid-engine-rust-linux-x64-gnu": "0.0.1",
+    "@jp-knj/mdx-hybrid-engine-rust-linux-x64-musl": "0.0.1"
   }
 }

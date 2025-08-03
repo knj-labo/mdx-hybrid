@@ -26,7 +26,7 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "turbo run build && changeset publish"
+    "release": "turbo run build --filter='!@jp-knj/mdx-hybrid-example-*' && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.8.3",

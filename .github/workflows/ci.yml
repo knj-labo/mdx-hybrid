@@ -94,7 +94,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       
       - name: Build Rust binary
-        run: pnpm --filter @mdx-hybrid/engine-rust build
+        run: pnpm --filter @jp-knj/mdx-hybrid-engine-rust build
         env:
           CARGO_BUILD_TARGET: ${{ matrix.target }}
       

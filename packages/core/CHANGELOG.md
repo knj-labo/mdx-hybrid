@@ -1,4 +1,4 @@
-# @mdx-hybrid/core
+# @jp-knj/mdx-hybrid-core
 
 ## 0.0.1
 
@@ -13,5 +13,5 @@
   - ESM-only architecture with preloadEngines() for sync support
 
 - Updated dependencies
-  - @mdx-hybrid/engine-js@0.0.1
-  - @mdx-hybrid/engine-rust@0.0.1
+  - @jp-knj/mdx-hybrid-engine-js@0.0.1
+  - @jp-knj/mdx-hybrid-engine-rust@0.0.1

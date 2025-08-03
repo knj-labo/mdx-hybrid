@@ -1,5 +1,5 @@
 {
-  "name": "@mdx-hybrid/example-node",
+  "name": "@jp-knj/mdx-hybrid-example-node",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "compile:benchmark": "node benchmark.js"
   },
   "dependencies": {
-    "@mdx-hybrid/core": "workspace:*"
+    "@jp-knj/mdx-hybrid-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.14.0"
