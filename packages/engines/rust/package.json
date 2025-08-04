@@ -12,9 +12,11 @@
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
+    "build:all": "./scripts/build-all-platforms.sh",
     "test": "vitest",
     "prepublishOnly": "napi prepublish -t npm",
     "artifacts": "napi artifacts",
+    "publish:binaries": "node scripts/publish-binaries.js",
     "clean": "rm -rf *.node target .turbo"
   },
   "napi": {
@@ -39,9 +41,11 @@
     "access": "public"
   },
   "optionalDependencies": {
-    "@jp-knj/mdx-hybrid-engine-rust-win32-x64-msvc": "0.0.1",
-    "@jp-knj/mdx-hybrid-engine-rust-darwin-x64": "0.0.1",
-    "@jp-knj/mdx-hybrid-engine-rust-linux-x64-gnu": "0.0.1",
-    "@jp-knj/mdx-hybrid-engine-rust-linux-x64-musl": "0.0.1"
+    "@jp-knj/mdx-hybrid-engine-rust-win32-x64-msvc": "0.0.3",
+    "@jp-knj/mdx-hybrid-engine-rust-darwin-x64": "0.0.3",
+    "@jp-knj/mdx-hybrid-engine-rust-darwin-arm64": "0.0.3",
+    "@jp-knj/mdx-hybrid-engine-rust-linux-x64-gnu": "0.0.3",
+    "@jp-knj/mdx-hybrid-engine-rust-linux-x64-musl": "0.0.3",
+    "@jp-knj/mdx-hybrid-engine-rust-darwin-universal": "0.0.3"
   }
 }

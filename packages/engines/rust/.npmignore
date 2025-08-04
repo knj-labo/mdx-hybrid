@@ -1,0 +1,34 @@
+# Rust build artifacts
+target/
+Cargo.lock
+*.rs.bk
+
+# Platform-specific binaries (published separately)
+npm/
+*.darwin-*.node
+*.win32-*.node
+*.linux-*.node
+!mdx-hybrid-engine-rust.*.node
+
+# Scripts and configuration
+scripts/
+.cargo/
+rust-toolchain
+
+# Development files
+tests/
+benches/
+examples/
+*.test.*
+*.spec.*
+
+# Build and IDE files
+.turbo/
+.vscode/
+.idea/
+*.log
+*.tmp
+.DS_Store
+
+# Keep only the main binary for the current platform
+# The correct binary will be selected during prepublishOnly

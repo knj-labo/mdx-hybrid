@@ -1,0 +1,23 @@
+{
+  "name": "@jp-knj/mdx-hybrid-engine-rust-linux-x64-gnu",
+  "version": "0.0.3",
+  "description": "Linux x64 GNU binary for mdx-hybrid Rust engine",
+  "main": "mdx-hybrid-engine-rust.linux-x64-gnu.node",
+  "files": [
+    "mdx-hybrid-engine-rust.linux-x64-gnu.node"
+  ],
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "libc": ["glibc"],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/knj-labo/mdx-hybrid.git"
+  },
+  "license": "MIT"
+}

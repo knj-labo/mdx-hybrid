@@ -1,0 +1,11 @@
+# Ignore everything except the binary and package files
+*
+!package.json
+!*.node
+!README.md
+
+# Ignore any test or temporary files
+*.test.*
+*.tmp
+.DS_Store
+node_modules/

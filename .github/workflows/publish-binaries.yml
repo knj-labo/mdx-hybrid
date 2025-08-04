@@ -1,0 +1,280 @@
+name: Publish Binary Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 0.0.3)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run (build only, no publish)'
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to publish'
+        required: true
+        type: string
+
+jobs:
+  validate-secrets:
+    name: Validate NPM Token
+    runs-on: ubuntu-latest
+    outputs:
+      has_npm_token: ${{ steps.check.outputs.has_npm_token }}
+    
+    steps:
+      - name: Check for NPM_TOKEN secret
+        id: check
+        run: |
+          if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "has_npm_token=true" >> $GITHUB_OUTPUT
+            echo "✅ NPM_TOKEN is configured"
+          else
+            echo "has_npm_token=false" >> $GITHUB_OUTPUT
+            echo "⚠️ NPM_TOKEN is not configured - publishing will be skipped"
+          fi
+
+  build-and-publish:
+    name: Build and publish ${{ matrix.package }}
+    needs: validate-secrets
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS ARM64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            package: darwin-arm64
+            build_arch: arm64
+          
+          # macOS x64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            package: darwin-x64
+            build_arch: x64
+          
+          # Windows x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            package: win32-x64-msvc
+            build_arch: x64
+          
+          # Linux x64 GNU
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            package: linux-x64-gnu
+            build_arch: x64
+          
+          # Linux x64 musl
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            package: linux-x64-musl
+            build_arch: x64
+            setup: |
+              sudo apt-get update
+              sudo apt-get install -y musl-tools
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup system dependencies
+        if: matrix.setup
+        run: ${{ matrix.setup }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Update version in platform package
+        working-directory: packages/engines/rust/npm/${{ matrix.package }}
+        run: |
+          npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
+
+      - name: Build binary
+        working-directory: packages/engines/rust
+        run: |
+          pnpm exec napi build --platform --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+
+      - name: Copy binary to platform package
+        shell: bash
+        run: |
+          cp packages/engines/rust/*.node packages/engines/rust/npm/${{ matrix.package }}/
+
+      - name: Verify binary
+        shell: bash
+        working-directory: packages/engines/rust/npm/${{ matrix.package }}
+        run: |
+          echo "Verifying binary existence and size..."
+          BINARY_FILE=$(ls *.node 2>/dev/null | head -n1)
+          if [ -z "$BINARY_FILE" ]; then
+            echo "❌ No binary file found!"
+            exit 1
+          fi
+          
+          FILE_SIZE=$(stat -f%z "$BINARY_FILE" 2>/dev/null || stat -c%s "$BINARY_FILE" 2>/dev/null || echo "0")
+          if [ "$FILE_SIZE" -lt 1000000 ]; then
+            echo "❌ Binary file seems too small: $FILE_SIZE bytes"
+            exit 1
+          fi
+          
+          echo "✅ Binary verified: $BINARY_FILE ($FILE_SIZE bytes)"
+          ls -la
+
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run && needs.validate-secrets.outputs.has_npm_token == 'true' }}
+        working-directory: packages/engines/rust/npm/${{ matrix.package }}
+        run: |
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      
+      - name: Dry run message
+        if: ${{ inputs.dry_run || needs.validate-secrets.outputs.has_npm_token != 'true' }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "📦 Dry run mode - package not published"
+          else
+            echo "⚠️ Skipping publish - NPM_TOKEN not configured"
+          fi
+
+  update-main-package:
+    name: Update main package with new binary versions
+    needs: build-and-publish
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Update optional dependencies versions
+        working-directory: packages/engines/rust
+        run: |
+          # Update the package.json with new optional dependency versions
+          node -e "
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const version = '${{ inputs.version }}';
+          
+          if (pkg.optionalDependencies) {
+            Object.keys(pkg.optionalDependencies).forEach(dep => {
+              if (dep.startsWith('@jp-knj/mdx-hybrid-engine-rust-')) {
+                pkg.optionalDependencies[dep] = version;
+              }
+            });
+          }
+          
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Commit and push updates
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add packages/engines/rust/package.json
+          git diff --staged --quiet || git commit -m "chore: update rust engine optional dependencies to v${{ inputs.version }}"
+          git push
+
+  create-universal-macos:
+    name: Create universal macOS binary
+    needs: build-and-publish
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download macOS binaries from npm
+        run: |
+          mkdir -p temp
+          cd temp
+          npm pack @jp-knj/mdx-hybrid-engine-rust-darwin-x64@${{ inputs.version }}
+          npm pack @jp-knj/mdx-hybrid-engine-rust-darwin-arm64@${{ inputs.version }}
+          
+          tar -xzf jp-knj-mdx-hybrid-engine-rust-darwin-x64-*.tgz
+          tar -xzf jp-knj-mdx-hybrid-engine-rust-darwin-arm64-*.tgz
+
+      - name: Create universal binary
+        run: |
+          lipo -create -output mdx-hybrid-engine-rust.darwin-universal.node \
+            temp/package/mdx-hybrid-engine-rust.darwin-x64.node \
+            temp/package/mdx-hybrid-engine-rust.darwin-arm64.node
+
+      - name: Create universal package
+        run: |
+          mkdir -p packages/engines/rust/npm/darwin-universal
+          cp mdx-hybrid-engine-rust.darwin-universal.node packages/engines/rust/npm/darwin-universal/
+          
+          cat > packages/engines/rust/npm/darwin-universal/package.json << EOF
+          {
+            "name": "@jp-knj/mdx-hybrid-engine-rust-darwin-universal",
+            "version": "${{ inputs.version }}",
+            "description": "Darwin universal binary for mdx-hybrid Rust engine",
+            "main": "mdx-hybrid-engine-rust.darwin-universal.node",
+            "files": [
+              "mdx-hybrid-engine-rust.darwin-universal.node"
+            ],
+            "os": ["darwin"],
+            "engines": {
+              "node": ">=18.0.0"
+            },
+            "publishConfig": {
+              "access": "public"
+            },
+            "repository": {
+              "type": "git",
+              "url": "git+https://github.com/knj-labo/mdx-hybrid.git"
+            },
+            "license": "MIT"
+          }
+          EOF
+
+      - name: Publish universal package
+        working-directory: packages/engines/rust/npm/darwin-universal
+        run: |
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
