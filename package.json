@@ -1,6 +1,6 @@
 {
   "name": "mdx-hybrid",
-  "version": "0.0."
+  "version": "0.0.4",
   "type": "module",
   "description": "Hybrid MDX compiler combining Rust speed with JavaScript compatibility",
   "author": "Kenji Labo",
