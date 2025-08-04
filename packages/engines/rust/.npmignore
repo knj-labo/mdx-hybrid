@@ -1,14 +1,19 @@
+# Source files (only dist is published)
+src/
+tsup.config.ts
+
+# Rust source files
+*.rs
+Cargo.toml
+build.rs
+
 # Rust build artifacts
 target/
 Cargo.lock
 *.rs.bk
 
-# Platform-specific binaries (published separately)
+# Platform-specific package directories (published separately)
 npm/
-*.darwin-*.node
-*.win32-*.node
-*.linux-*.node
-!mdx-hybrid-engine-rust.*.node
 
 # Scripts and configuration
 scripts/
@@ -21,6 +26,7 @@ benches/
 examples/
 *.test.*
 *.spec.*
+vitest.config.ts
 
 # Build and IDE files
 .turbo/
@@ -30,5 +36,13 @@ examples/
 *.tmp
 .DS_Store
 
-# Keep only the main binary for the current platform
-# The correct binary will be selected during prepublishOnly
+# Old generated files (no longer used)
+index.js
+index.d.ts
+
+# TypeScript config (not needed in published package)
+tsconfig.json
+
+# Keep dist folder and platform binaries
+!dist/
+!*.node

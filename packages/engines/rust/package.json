@@ -1,23 +1,35 @@
 {
   "name": "@jp-knj/mdx-hybrid-engine-rust",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "description": "Rust engine for mdx-hybrid using mdxjs-rs",
-  "main": "index.js",
-  "types": "index.d.ts",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
   "files": [
-    "index.js",
-    "index.d.ts",
+    "dist",
     "*.node"
   ],
   "scripts": {
-    "build": "napi build --platform --release",
+    "build:rust": "napi build --platform --release",
+    "build:ts": "tsup",
+    "build": "pnpm build:rust && pnpm build:ts",
     "build:debug": "napi build --platform",
     "build:all": "./scripts/build-all-platforms.sh",
+    "dev": "tsup --watch",
     "test": "vitest",
-    "prepublishOnly": "napi prepublish -t npm",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "napi prepublish -t npm && pnpm build:ts",
     "artifacts": "napi artifacts",
     "publish:binaries": "node scripts/publish-binaries.js",
-    "clean": "rm -rf *.node target .turbo"
+    "clean": "rm -rf dist *.node target .turbo"
   },
   "napi": {
     "name": "mdx-hybrid-engine-rust",
@@ -31,6 +43,7 @@
   "devDependencies": {
     "@napi-rs/cli": "^2.18.4",
     "@types/node": "^20.14.0",
+    "tsup": "^8.2.4",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5"
   },
@@ -41,11 +54,11 @@
     "access": "public"
   },
   "optionalDependencies": {
-    "@jp-knj/mdx-hybrid-engine-rust-win32-x64-msvc": "0.0.3",
-    "@jp-knj/mdx-hybrid-engine-rust-darwin-x64": "0.0.3",
-    "@jp-knj/mdx-hybrid-engine-rust-darwin-arm64": "0.0.3",
-    "@jp-knj/mdx-hybrid-engine-rust-linux-x64-gnu": "0.0.3",
-    "@jp-knj/mdx-hybrid-engine-rust-linux-x64-musl": "0.0.3",
-    "@jp-knj/mdx-hybrid-engine-rust-darwin-universal": "0.0.3"
+    "@jp-knj/mdx-hybrid-engine-rust-win32-x64-msvc": "0.0.5",
+    "@jp-knj/mdx-hybrid-engine-rust-darwin-x64": "0.0.5",
+    "@jp-knj/mdx-hybrid-engine-rust-darwin-arm64": "0.0.5",
+    "@jp-knj/mdx-hybrid-engine-rust-linux-x64-gnu": "0.0.5",
+    "@jp-knj/mdx-hybrid-engine-rust-linux-x64-musl": "0.0.5",
+    "@jp-knj/mdx-hybrid-engine-rust-darwin-universal": "0.0.5"
   }
 }

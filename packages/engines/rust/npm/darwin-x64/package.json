@@ -1,6 +1,6 @@
 {
   "name": "@jp-knj/mdx-hybrid-engine-rust-darwin-x64",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "description": "Darwin x64 binary for mdx-hybrid Rust engine",
   "main": "mdx-hybrid-engine-rust.darwin-x64.node",
   "files": [

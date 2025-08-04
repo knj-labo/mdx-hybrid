@@ -1,6 +1,6 @@
 {
   "name": "@jp-knj/mdx-hybrid-engine-rust-linux-x64-gnu",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "description": "Linux x64 GNU binary for mdx-hybrid Rust engine",
   "main": "mdx-hybrid-engine-rust.linux-x64-gnu.node",
   "files": [

@@ -1,6 +1,6 @@
 {
   "name": "@jp-knj/mdx-hybrid-engine-rust-win32-x64-msvc",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "description": "Windows x64 MSVC binary for mdx-hybrid Rust engine",
   "main": "mdx-hybrid-engine-rust.win32-x64-msvc.node",
   "files": [
