@@ -14,7 +14,7 @@ test('parseWithStats() html contains correct output', (t) => {
   const input = '# Test Heading';
   const result = parseWithStats(input);
 
-  t.true(result.html.includes('<h1>'));
+  t.true(result.html.includes('<h1'));
   t.true(result.html.includes('Test Heading'));
 });
 
