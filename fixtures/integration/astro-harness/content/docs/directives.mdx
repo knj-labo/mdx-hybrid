@@ -1,0 +1,34 @@
+---
+title: Directives & Shortcodes
+---
+
+# Directive Playground
+
+:::note
+Markflow must stream custom directives without buffering.
+:::
+
+```mdx
+:::tabs
+@tab setup
+pnpm add markflow
+@tab usage
+const html = markflow.parse(markdown)
+:::
+```
+
+### Frontmatter + Markdown combo
+
+```yaml
+---
+title: Directive Sample
+layout: doc
+author: Markflow Team
+---
+```
+
+Inline JSX components still render:
+
+<Aside title="Heads up">
+Remember: streaming rewrites happen after Markdown → HTML.
+</Aside>

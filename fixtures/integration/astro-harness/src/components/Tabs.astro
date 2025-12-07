@@ -1,0 +1,15 @@
+---
+const tabs = Astro.slots.renderAll ? await Astro.slots.renderAll() : []
+---
+<div class="tabs">
+  <div class="tabs__nav">
+    {tabs.map((tab, idx) => (
+      <button data-index={idx}>{tab?.props?.['data-title'] ?? `Tab ${idx + 1}`}</button>
+    ))}
+  </div>
+  <div class="tabs__panes">
+    {tabs.map((tab) => (
+      <div class="tabs__pane" set:html={tab?.html ?? ''} />
+    ))}
+  </div>
+</div>
