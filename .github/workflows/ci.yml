@@ -61,3 +61,35 @@ jobs:
       - name: Smoke test NAPI binding
         working-directory: crates/napi
         run: pnpm run smoke:napi -- samples/large.md
+
+      - name: Install Astro harness dependencies
+        working-directory: fixtures/integration/astro-harness
+        run: pnpm install --frozen-lockfile
+
+      - name: Compare Astro harness (markflow vs baseline)
+        run: node scripts/compare-astro-harness.mjs --runs=2 --summary harness-summary.json
+
+      - name: Publish Astro harness summary
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+          if (!fs.existsSync('harness-summary.json')) {
+            console.warn('harness-summary.json not found; skipping summary output')
+            process.exit(0)
+          }
+          const summary = JSON.parse(fs.readFileSync('harness-summary.json', 'utf8'))
+          const formatRow = (label, stats) => `| ${label} | ${stats.avg.toFixed(2)} | ${stats.min.toFixed(2)} | ${stats.max.toFixed(2)} |`
+          const lines = [
+            '### Astro Harness Comparison',
+            '',
+            `Runs: ${summary.runs}`,
+            '',
+            '| Mode | Avg (ms) | Min (ms) | Max (ms) |',
+            '| --- | --- | --- | --- |',
+            formatRow('Markflow', summary.markflow),
+            formatRow('Baseline', summary.baseline),
+            '',
+            `Speedup (baseline / markflow): ${summary.speedup.toFixed(2)}x`,
+          ]
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n')
+          NODE

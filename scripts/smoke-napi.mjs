@@ -9,7 +9,7 @@ import { parse, parseWithOptions, parseWithStats } from '../crates/napi/index.js
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = resolve(__dirname, '..')
 const userArgs = process.argv.slice(2).filter((arg) => arg !== '--')
-const [inputArg = 'fixtures/markdown/hello.md'] = userArgs
+const [inputArg = 'fixtures/core/markdown/hello.md'] = userArgs
 const inputPath = resolve(repoRoot, inputArg)
 
 const markdown = await readFile(inputPath, 'utf8')

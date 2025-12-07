@@ -16,7 +16,7 @@ Phase 1 (Core Engine Refactoring) in [ROADMAP.md](../../ROADMAP.md) requires rep
 - Add targeted unit tests covering the new iterator invariants (tight vs. loose lists, task-list marker ordering) to prevent regressions.
 
 ## Definition of Done
-1. `MarkdownRsEventIter` streams events directly into `HtmlRenderer`/`StreamingRewriter` without allocating an intermediate `Vec<Event>`.
+1. `MarkdownParser` streams events directly into `HtmlRenderer`/`StreamingRewriter` without allocating an intermediate `Vec<Event>`.
 2. `cargo test --package markflow-core` passes locally and in CI.
 3. The new tests cover both tight and loose lists plus task-list marker ordering, and the module docs explain the iterator’s behavior after the refactor.
 4. Backlog and spec references remain in sync by running `node scripts/check-backlog.mjs`.

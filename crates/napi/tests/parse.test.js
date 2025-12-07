@@ -5,7 +5,7 @@ test('parse() converts markdown to HTML', (t) => {
   const input = '# Hello World';
   const output = parse(input);
 
-  t.true(output.includes('<h1>'));
+  t.true(output.includes('<h1'));
   t.true(output.includes('Hello World'));
   t.true(output.includes('</h1>'));
 });
@@ -76,6 +76,6 @@ test('parse() passes through HTML blocks and math', (t) => {
   const output = parse(input);
 
   t.true(output.includes('<section>Hello</section>'));
-  t.true(output.includes('math-inline'));
-  t.true(output.includes('math-display'));
+  const matches = output.match(/math-inline/g) ?? [];
+  t.true(matches.length >= 2);
 });

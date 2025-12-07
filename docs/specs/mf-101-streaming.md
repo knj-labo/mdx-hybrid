@@ -25,4 +25,4 @@ Streaming Rewriter の挙動をデバッグする際、HTML 断片やリライ�
 ## 受け入れテスト
 1. `cargo test --package markflow-core streaming_rewriter::tests::stats_toggle` が統計のオン/オフを確認できる。
 2. `pnpm test --filter markflow -- run parseWithStats smoke`（新規 AVA ケース）で Node バインディングが数値を返す。
-3. `node ../../scripts/smoke-napi.mjs fixtures/markdown/table.md --emit-stats` 実行ログに `processingTimeMs` と `htmlBytes` の両方が表示される。
+3. `node ../../scripts/smoke-napi.mjs fixtures/core/markdown/table.md --emit-stats` 実行ログに `processingTimeMs` と `htmlBytes` の両方が表示される。

@@ -32,10 +32,8 @@ pub enum MarkflowError {
 }
 
 /// Returns an iterator over Markdown events backed by `markdown-rs`.
-pub fn get_event_iterator(
-    input: &str,
-) -> Result<markdown_adapter::MarkdownRsEventIter, MarkflowError> {
-    markdown_adapter::MarkdownRsEventIter::new(input)
+pub fn get_event_iterator(input: &str) -> Result<markdown_adapter::MarkdownParser, MarkflowError> {
+    markdown_adapter::MarkdownParser::new(input)
         .map_err(|err| MarkflowError::MarkdownAdapter(err.to_string()))
 }
 
@@ -52,11 +50,21 @@ pub fn parse(input: &str) -> Result<String, MarkflowError> {
 }
 
 /// Iterator alias so callers don't need to depend on the adapter module path.
-pub type MarkdownEventStream = markdown_adapter::MarkdownRsEventIter;
+pub type MarkdownEventStream = markdown_adapter::MarkdownParser;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn fixtures_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/core")
+    }
+
+    fn read_fixture(path: &str) -> String {
+        fs::read_to_string(fixtures_dir().join(path)).unwrap()
+    }
 
     #[test]
     fn test_parse() {
@@ -99,5 +107,56 @@ mod tests {
         let output = parse(input).unwrap();
         assert!(output.contains("frontmatter"));
         assert!(output.contains("title: test"));
+    }
+
+    #[test]
+    fn test_reference_link_resolves_definition() {
+        let input = "[Example][ref]\n\n[ref]: https://example.com \"Example Site\"";
+        let output = parse(input).unwrap();
+        assert!(output.contains("<a href=\"https://example.com\""));
+        assert!(output.contains("title=\"Example Site\""));
+    }
+
+    #[test]
+    fn test_reference_image_resolves_definition() {
+        let input = "![Alt][logo]\n\n[logo]: https://cdn.example.com/logo.png \"Logo\"";
+        let output = parse(input).unwrap();
+        assert!(output.contains("<img src=\"https://cdn.example.com/logo.png\""));
+        assert!(output.contains("title=\"Logo\""));
+    }
+
+    #[test]
+    fn test_mdx_embedded_jsx_preserved() {
+        let input = read_fixture("mdx/embedded-jsx/component.mdx");
+        let output = parse(&input).unwrap();
+        assert!(output.contains("<Aside title=\"Heads up\">"));
+        assert!(output.contains("</Aside>"));
+    }
+
+    #[test]
+    fn test_mdx_inline_expression_preserved() {
+        let input = read_fixture("mdx/expressions/inline.mdx");
+        let output = parse(&input).unwrap();
+        assert!(
+            output.contains("props.name ?? &#39;friend&#39;"),
+            "output: {output}"
+        );
+    }
+
+    #[test]
+    fn test_mdx_flow_expression_preserved() {
+        let input = read_fixture("mdx/expressions/flow.mdx");
+        let output = parse(&input).unwrap();
+        assert!(
+            output.contains("steps.join(&#39; → &#39;);"),
+            "output: {output}"
+        );
+    }
+
+    #[test]
+    fn test_mdx_esm_import_preserved() {
+        let input = read_fixture("mdx/esm/imports.mdx");
+        let output = parse(&input).unwrap();
+        assert!(output.contains("import Tabs from"));
     }
 }

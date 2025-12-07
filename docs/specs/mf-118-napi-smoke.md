@@ -15,13 +15,13 @@
 
 ## 完了条件
 1. `pnpm test` に新しい AVA テストが含まれている。
-2. `node ../../scripts/smoke-napi.mjs fixtures/markdown/hello.md` のログを PR に貼る。
+2. `node ../../scripts/smoke-napi.mjs fixtures/core/markdown/hello.md` のログを PR に貼る。
 3. ドキュメント更新（AGENTS.md, docs/development/guidelines*.md）が含まれている。
 
 ## メモ
-必要に応じて `fixtures/markdown/` に追加サンプルを置いてよい。
+必要に応じて `fixtures/core/markdown/` に追加サンプルを置いてよい。
 
 ## 受け入れテスト
 1. `pnpm test --filter markflow -- match smoke-parity` が `parse`, `parseWithOptions`, `parseWithStats` の 3 ケースを通過する。
-2. `node ../../scripts/smoke-napi.mjs fixtures/markdown/hello.md` の実行結果を CI artifact としてアップロードできる。
+2. `node ../../scripts/smoke-napi.mjs fixtures/core/markdown/hello.md` の実行結果を CI artifact としてアップロードできる。
 3. `AGENTS.md` と `docs/development/guidelines*.md` に「AVA smoke + スクリプト」を追記した差分が存在する。

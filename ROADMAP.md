@@ -9,14 +9,14 @@ Backlog relationship: day-to-day ownership now lives in [Backlog.md](./Backlog.m
 ## In Progress
 ### Phase 1: Core Engine Refactoring
 Goal: transition from the prototype parser to `markdown-rs` for spec compliance and streaming performance.
-- [ ] Core Parser Implementation
+- [x] Core Parser Implementation
     - [x] Remove `pulldown-cmark` dependency (HTML renderer implemented internally)
     - [x] Introduce [`markdown-rs`](https://github.com/wooorm/markdown-rs) as the default parser
     - [x] Verify basic Markdown parsing functionality with the new parser
     - [x] Define internal `Event` enum (rendering bridge still converts to `pulldown-cmark` events)
     - [x] Stream `markdown-rs` events directly into the renderer (drop the `Vec<Event>` buffer)
-- [ ] WASM Bindings (Enhancement)
-    - [ ] Expand `crates/wasm` to support streaming APIs (currently minimal wrapper)
+- [x] WASM Bindings (Enhancement)
+    - [x] Expand `crates/wasm` to support streaming APIs (currently minimal wrapper)
 
 ## Done
 ### Phase 0: Initialization
