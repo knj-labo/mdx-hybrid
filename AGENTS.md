@@ -11,6 +11,7 @@
 - `cargo test --workspace` executes the Rust unit tests, including the inline suites in `crates/core/src/lib.rs`.
 - `pnpm install --filter markflow` (run inside `crates/napi`) bootstraps the Node toolchain with the repo `.npmrc` settings.
 - `pnpm run build` compiles the N-API binary for supported targets; follow with `node ../../scripts/smoke-napi.mjs fixtures/core/markdown/hello.md` to sanity-check outputs.
+- `pnpm run build --filter @markflow/astro-loader` uses `tsdown@0.15.0` to bundle the Astro loader package and emit ESM + `.d.ts` artifacts under `dist/`.
 
 ## Coding Style & Naming Conventions
 - Rust code depends on the default `rustfmt` profile (edition 2024); prefer module-oriented files (`streaming_rewriter.rs` vs. monoliths) and snake_case identifiers.
