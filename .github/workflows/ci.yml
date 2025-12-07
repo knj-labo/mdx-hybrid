@@ -73,6 +73,10 @@ jobs:
         run: |
           node <<'NODE'
           const fs = require('fs')
+          if (!fs.existsSync('harness-summary.json')) {
+            console.warn('harness-summary.json not found; skipping summary output')
+            process.exit(0)
+          }
           const summary = JSON.parse(fs.readFileSync('harness-summary.json', 'utf8'))
           const formatRow = (label, stats) => `| ${label} | ${stats.avg.toFixed(2)} | ${stats.min.toFixed(2)} | ${stats.max.toFixed(2)} |`
           const lines = [
