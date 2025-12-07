@@ -1,0 +1,37 @@
+---
+title: Migration Guide
+description: Steps for swapping remark/rehype to Markflow.
+---
+
+# Migration Guide
+
+import Callout from '../src/components/Callout.astro'
+
+Moving large Astro sites to Markflow can be done incrementally.
+
+## Step 1: Local Harness
+
+1. Clone your site and install markflow (`pnpm add markflow`).
+2. Configure the NAPI entry point and ensure `pnpm run build` passes locally.
+
+## Step 2: Smoke Tests
+
+Run the shared smoke script:
+
+```bash
+pnpm run smoke:napi -- fixtures/core/markdown/hello.md
+```
+
+## Step 3: CI Rollout
+
+<Callout type="warning" title="Staged rollout">
+Enable Markflow for a subset of collections first, then monitor build times and HTML diffs before flipping the global flag.
+</Callout>
+
+## FAQ
+
+### Do I need a fallback?
+Yes. Keep the baseline compiler wired for at least one release cycle and guard with an env flag.
+
+### How do I inspect HTML diffs?
+Use the Astro harness along with `git diff dist/` to ensure no structural changes occur before shipping.

@@ -1,0 +1,35 @@
+---
+title: MDX Components
+---
+
+# MDX Components
+
+import Tabs from '../src/components/Tabs.astro'
+import FileTree from '../src/components/FileTree.astro'
+import FileTreeItem from '../src/components/FileTreeItem.astro'
+
+Markflow must preserve JSX islands, so this page reuses component-heavy examples.
+
+<Tabs>
+  <div slot="tab" data-title="Rust">
+    ```rust
+    fn main() {
+        println!("Hello from Rust");
+    }
+    ```
+  </div>
+  <div slot="tab" data-title="TypeScript">
+    ```ts
+    export function hello() {
+      console.log('hi')
+    }
+    ```
+  </div>
+</Tabs>
+
+### Embedded JSX
+
+<FileTree>
+  <FileTreeItem path="src/components/Tabs.astro" />
+  <FileTreeItem path="src/pages/index.astro" />
+</FileTree>

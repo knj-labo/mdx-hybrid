@@ -1,0 +1,29 @@
+---
+import { docs } from 'virtual:markflow-docs'
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Markflow Astro Harness</title>
+  </head>
+  <body>
+    <main>
+      <h1>Harness Docs ({docs.length})</h1>
+      {docs
+        .slice()
+        .sort((a, b) => a.slug.localeCompare(b.slug))
+        .map((doc) => (
+          <article>
+            <header>
+              <h2>{doc.title}</h2>
+              <p class="doc-meta">
+                <code>{doc.slug}</code>
+                {doc.description && <span>{doc.description}</span>}
+              </p>
+            </header>
+            <div set:html={doc.html} />
+          </article>
+        ))}
+    </main>
+  </body>
+</html>

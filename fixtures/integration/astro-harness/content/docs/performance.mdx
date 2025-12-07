@@ -1,0 +1,34 @@
+---
+title: Performance Benchmarks
+description: Early metrics comparing Markflow vs. unified pipelines.
+---
+
+# Performance Benchmarks
+
+import Steps from '../src/components/Steps.astro'
+import Callout from '../src/components/Callout.astro'
+
+Markflow focuses on predictable streaming throughput. The following steps outline the workflow we use in CI.
+
+<Steps steps={[
+  'Build the Astro harness with Markflow (`node scripts/run-astro-harness.mjs markflow`).',
+  'Repeat with the baseline compiler (`node scripts/run-astro-harness.mjs baseline`).',
+  'Compare averaged timings via `node scripts/compare-astro-harness.mjs --runs=5` and post the summary to CI.',
+]} />
+
+## Sample Metrics
+
+| Mode | Avg (ms) | Min | Max |
+| ---- | ------: | ---:| ---:|
+| Markflow | 1065 | 1059 | 1084 |
+| Baseline | 1083 | 1075 | 1095 |
+
+<Callout type="success" title="Speedup">
+Baseline / Markflow = **1.02x** on the larger harness content.
+</Callout>
+
+## What to watch
+
+- **Cold-start penalty**: NAPI bindings incur an upfront cost; measure with multiple runs.
+- **I/O pressure**: Streaming rewrites keep memory stable even when docs exceed 1MB.
+- **WASM parity**: The same harness can target `markflow-wasm` for edge runtimes.
