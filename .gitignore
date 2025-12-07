@@ -149,6 +149,8 @@ crates/*/Cargo.lock
 # Example projects
 example/astro/.astro
 example/astro/src/env.d.ts
+fixtures/integration/astro-harness/.astro
+fixtures/integration/astro-harness/src/env.d.ts
 
 # editor
 .idea/
