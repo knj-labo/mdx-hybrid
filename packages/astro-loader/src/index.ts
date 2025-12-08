@@ -67,7 +67,9 @@ export function markflowLoader({
             }
             const digest = String(digestValue);
 
-            if (previousDigests.get(id) === digest) {
+            const previousDigest = previousDigests.get(id);
+            const digestMatchesPrevious = previousDigest === digest;
+            if (digestMatchesPrevious) {
               nextDigests.set(id, digest);
               return;
             }
@@ -81,9 +83,11 @@ export function markflowLoader({
               existingEntry: entry,
             });
 
-            if (synced) {
-              nextDigests.set(id, digest);
+            if (!synced) {
+              return;
             }
+
+            nextDigests.set(id, digest);
           } catch (error) {
             logger.error?.(`Failed to load ${relativePath}: ${(error as Error).message}`);
           }
