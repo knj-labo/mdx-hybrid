@@ -39,10 +39,10 @@ Goal: transition from the prototype parser to `markdown-rs` for spec compliance 
 ## Backlog
 ### Phase 2: Astro + Starlight MVP (Hybrid Loader + Vite)
 Goal: ship Markflow as the MDX compiler for `withastro/docs` by combining the Content Layer loader with a pre-transform Vite plugin (Option 1 compiler path).
-- [ ] Content Loader Glue
-    - [ ] Mirror `src/content/config.ts` loader contract (glob discovery, slug generation, digest tracking)
-    - [ ] Extract and store frontmatter for Starlight navigation/hero metadata in the DataStore
-    - [ ] Keep non-Markflow entries compatible by reusing the default loader fallbacks
+- [x] Content Loader Glue
+    - [x] Mirror `src/content/config.ts` loader contract (glob discovery, slug generation, digest tracking)
+    - [x] Extract and store frontmatter for Starlight navigation/hero metadata in the DataStore
+    - [x] Keep non-Markflow entries compatible by reusing the default loader fallbacks
 - [ ] Vite Plugin Interception
     - [ ] Publish `vite-plugin-markflow` with `enforce: 'pre'` to intercept `.mdx` before `@astrojs/mdx`
     - [ ] Call the NAPI `compile()` binding and emit JSX modules (source maps optional for MVP)

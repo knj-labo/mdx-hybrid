@@ -44,6 +44,11 @@ Markdown Input
 - **Performance**: Target sub-100ms processing for 10MB files
 - **Extensibility**: Plugin-based rewriter hooks
 
+## Astro Loader Contract
+
+- The custom `@markflow/astro-loader` keeps raw Markdown bodies in the store so the Vite plugin can compile JSX/MDX, while slug IDs follow the normalized `dir/name` pattern (forward slashes, `index` fallback) to stay stable across OSes.
+- Pass `throwOnFrontmatterError: true` when defining a collection if frontmatter validation should fail the build; by default the loader logs the Rust parser errors but continues so authors can see partially processed content.
+
 ## References
 
 - Full implementation roadmap: [ROADMAP.md](../../ROADMAP.md)
