@@ -507,12 +507,12 @@ impl HeadingCollector {
     }
 
     fn end_heading(&mut self, level: HeadingLevel) {
-        if let Some(capture) = self.current_heading.take() {
-            if level == capture.level {
-                let text = capture.buffer.trim();
-                if !text.is_empty() {
-                    self.record_heading(text, level);
-                }
+        if let Some(capture) = self.current_heading.take()
+            && level == capture.level
+        {
+            let text = capture.buffer.trim();
+            if !text.is_empty() {
+                self.record_heading(text, level);
             }
         }
     }
@@ -619,7 +619,7 @@ fn generate_module_code(
     .map_err(|err| Error::from_reason(err.to_string()))?;
 
     let url_literal = url
-        .map(|value| js_string_literal(value))
+        .map(js_string_literal)
         .unwrap_or_else(|| "undefined".to_string());
     writeln!(code, "export const url = {};", url_literal)
         .map_err(|err| Error::from_reason(err.to_string()))?;
