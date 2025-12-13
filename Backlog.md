@@ -9,6 +9,7 @@ Codex と一緒に仕様駆動開発を進めるためのタスク一覧。各�
 | MF-130 | Blocked | WASM streaming adapter parity | docs/specs/mf-130-wasm.md | Miki | TBD (post API decision) | Awaiting API decision from core team |
 | MF-140 | Review | Core Engine Streaming Adapter | docs/specs/mf-140-core-engine.md | Kenji | 2026-01-15 | Collect perf baselines + merge PR |
 | MF-150 | Draft | Astro/MDX NAPI Integration | docs/specs/mf-150-astro-mdx-napi.md | Kenji | TBD | Socialize spec + wire roadmap tasks |
+| MF-160 | Draft | withastro/docs Starlight harness | docs/specs/mf-160-withastro-docs-harness.md | Kenji | TBD | Choose import strategy (subtree vs script) and bootstrap harness |
 
 ## 運用メモ
 - `Status` は `Backlog -> Ready -> In Progress -> Review -> Done` の順で遷移させ、Codex の作業終了時に `Review` へ切り替えます。

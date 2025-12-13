@@ -44,8 +44,8 @@ Goal: ship Markflow as the MDX compiler for `withastro/docs` by combining the Co
     - [x] Extract and store frontmatter for Starlight navigation/hero metadata in the DataStore
     - [x] Keep non-Markflow entries compatible by reusing the default loader fallbacks
 - [ ] Vite Plugin Interception
-    - [ ] Publish `vite-plugin-markflow` with `enforce: 'pre'` to intercept `.mdx` before `@astrojs/mdx`
-    - [ ] Call the NAPI `compile()` binding and emit JSX modules (source maps optional for MVP)
+    - [x] Publish `vite-plugin-markflow` with `enforce: 'pre'` to intercept `.mdx` before `@astrojs/mdx` (Astro harness validated; Starlight verification pending)
+    - [x] Call the NAPI `compile()` binding and emit JSX modules (source maps optional for MVP)
     - [ ] Verify coexistence with `@astrojs/starlight` auto-imported MDX integration
 - [ ] Rust Compiler Option 1
     - [ ] YAML frontmatter extraction that emits `export const frontmatter`
