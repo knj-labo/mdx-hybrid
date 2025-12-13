@@ -1,7 +1,9 @@
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const DEFAULT_EXTENSIONS = new Set(['.md', '.mdx'])
 let bindingPromise
+const VIRTUAL_PREFIX = '\0markflow:'
 
 async function loadMarkflowBinding() {
   if (!bindingPromise) {
@@ -17,6 +19,7 @@ async function loadMarkflowBinding() {
 }
 
 const stripQuery = (id) => {
+  if (!id) return id
   const queryIndex = id.indexOf('?')
   return queryIndex >= 0 ? id.slice(0, queryIndex) : id
 }
@@ -64,10 +67,7 @@ function deriveFileOptions(id, rootDir) {
   return options
 }
 
-const shouldCompile = (id) => {
-  const cleanPath = stripQuery(id)
-  return DEFAULT_EXTENSIONS.has(path.extname(cleanPath))
-}
+const shouldCompile = (id) => DEFAULT_EXTENSIONS.has(path.extname(stripQuery(id)))
 
 /**
  * Creates the Markflow Vite plugin that intercepts `.md`/`.mdx` files
@@ -79,6 +79,8 @@ export function markflowPlugin(userOptions = {}) {
 
   const compilerOptions = userOptions.compiler ?? null
   const include = userOptions.include ?? shouldCompile
+  const unwrapVirtual = (value) =>
+    value && value.startsWith(VIRTUAL_PREFIX) ? value.slice(VIRTUAL_PREFIX.length) : value
 
   return {
     name: 'vite-plugin-markflow',
@@ -91,15 +93,51 @@ export function markflowPlugin(userOptions = {}) {
         : (cfg) => new binding.MarkflowCompiler(cfg)
       compiler = createCompiler(compilerOptions)
     },
-    transform(code, id) {
-      if (!include(id)) {
+    async resolveId(sourceId, importer) {
+      if (sourceId.startsWith(VIRTUAL_PREFIX)) {
+        return sourceId
+      }
+      const normalizedImporter = stripQuery(unwrapVirtual(importer))
+      const normalizedSource = unwrapVirtual(sourceId)
+      const cleanId = stripQuery(normalizedSource)
+      if (!include(cleanId)) {
+        if (
+          importer?.startsWith(VIRTUAL_PREFIX) &&
+          normalizedImporter &&
+          !path.isAbsolute(sourceId) &&
+          sourceId.startsWith('.')
+        ) {
+          return path.resolve(path.dirname(normalizedImporter), sourceId)
+        }
+        return null
+      }
+      const resolved = await this.resolve(cleanId, normalizedImporter, { skipSelf: true })
+      const fallback = () => {
+        if (path.isAbsolute(cleanId)) {
+          return cleanId
+        }
+        if (normalizedImporter) {
+          return path.resolve(path.dirname(normalizedImporter), cleanId)
+        }
+        return cleanId
+      }
+      const resolvedId =
+        resolved && resolved.id
+          ? stripQuery(unwrapVirtual(resolved.id))
+          : fallback()
+      return `${VIRTUAL_PREFIX}${resolvedId}`
+    },
+    async load(id) {
+      if (!id.startsWith(VIRTUAL_PREFIX)) {
         return null
       }
       if (!compiler) {
         throw new Error('Markflow compiler has not been initialized')
       }
-      const fileOptions = deriveFileOptions(id, resolvedConfig?.root)
-      const result = compiler.compile(code, stripQuery(id), fileOptions)
+      const filename = id.slice(VIRTUAL_PREFIX.length)
+      const source = await readFile(filename, 'utf8')
+      const fileOptions = deriveFileOptions(filename, resolvedConfig?.root)
+      const result = compiler.compile(source, filename, fileOptions)
       if (Array.isArray(result?.imports)) {
         for (const dep of result.imports) {
           if (dep?.path) {
