@@ -1,0 +1,36 @@
+---
+const { frontmatter, ...rest } = Astro.props
+---
+<section class="docs-layout">
+  <header>
+    <p class="eyebrow">Markflow MDX</p>
+    <h1>{frontmatter?.title ?? 'Untitled'}</h1>
+    {frontmatter?.description && <p class="description">{frontmatter.description}</p>}
+  </header>
+  <article {...rest}>
+    <slot />
+  </article>
+</section>
+
+<style>
+  .docs-layout {
+    padding: 2rem;
+    margin: 0 auto;
+    max-width: 48rem;
+  }
+
+  .eyebrow {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #7250ff;
+  }
+
+  h1 {
+    margin-bottom: 0.5rem;
+  }
+
+  .description {
+    color: #4c4c4c;
+  }
+</style>

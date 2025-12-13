@@ -1,5 +1,9 @@
 ---
 import { docs } from 'virtual:markflow-docs'
+import {
+  Content as GettingStartedContent,
+  frontmatter as gettingStartedMeta,
+} from '../content/docs/getting-started.mdx'
 ---
 <html lang="en">
   <head>
@@ -24,6 +28,16 @@ import { docs } from 'virtual:markflow-docs'
             <div set:html={doc.html} />
           </article>
         ))}
+      <section class="mdx-preview">
+        <header>
+          <h2>{gettingStartedMeta.title}</h2>
+          <p>{gettingStartedMeta.description}</p>
+        </header>
+        <GettingStartedContent />
+      </section>
     </main>
+    <footer>
+      <p>MDX above is rendered via the Markflow Vite plugin.</p>
+    </footer>
   </body>
 </html>
