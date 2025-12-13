@@ -1,0 +1,30 @@
+---
+title: Getting Started
+description: Compile high-volume Markdown through Markflow at Vite speed.
+layout: ../../layouts/DocsLayout.astro
+---
+
+# Welcome to Markflow + Astro
+
+Markflow ships a Rust-powered Markdown pipeline that now plugs directly into the Astro build through our Vite plugin. This page exercises the plugin end to end.
+
+## Features
+
+- MD/MDX requests are intercepted before `@astrojs/mdx`.
+- Frontmatter is extracted inside the native binding.
+- The compiled module exports `frontmatter`, `file`, `url`, and `getHeadings()`.
+
+## Layout Support
+
+This document uses a `.astro` layout referenced via frontmatter. The plugin ensures the layout stays in Vite's watch graph so edits hot-reload instantly.
+
+## Next Steps
+
+Run `pnpm --filter markflow-astro-harness dev` to experiment locally, or import this module elsewhere in Astro via:
+
+```astro
+---
+import Doc from './docs/getting-started.mdx'
+---
+<Doc />
+```

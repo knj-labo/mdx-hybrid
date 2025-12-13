@@ -1,0 +1,26 @@
+{
+  "name": "vite-plugin-markflow",
+  "version": "0.0.1",
+  "description": "Vite plugin that intercepts Astro MDX/Markdown files and compiles them with Markflow",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "astro",
+    "mdx",
+    "vite",
+    "markdown",
+    "markflow"
+  ],
+  "peerDependencies": {
+    "vite": ">=5.0.0"
+  },
+  "dependencies": {
+    "markflow-napi": "npm:markflow@file:../../crates/napi"
+  }
+}
