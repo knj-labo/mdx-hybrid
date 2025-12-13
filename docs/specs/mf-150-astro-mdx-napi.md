@@ -242,3 +242,37 @@ AstroへのMarkflow統合は、Astroが期待するモジュールインター�
 5. **Vite Plugin（TypeScript）**：`vite-plugin-markflow` を提供し、Astro設定で簡単に導入できるようにする。
 
 特に `layout` ハンドリングと `getHeadings` の正確な実装が互換性確保の鍵となる。これらを満たすことで、既存プロジェクトのDXを維持しつつビルド時間を大幅に短縮できる。
+
+## 8. コンパイラ実装の詳細
+`MarkflowCompiler` は `compile()` を通して以下の処理を一度に行う。
+
+- **Frontmatter抽出**：`extract_frontmatter_block()` がYAML/TOML区間を検出し、Rust側で `serde_json::Value` に変換。エラー時は `Status::InvalidArg` を返す。
+- **Markdown→HTMLレンダリング**：`HeadingTrackingStream` が `markflow_core::MarkdownParser` から流れるイベントを盗聴し、`StreamingRewriter` へストリーミングしながら見出しテキストを収集する。Rust側でHTMLを生成するため、JSへ戻るデータは純粋な文字列のみ。
+- **見出しメタデータ**：`HeadingCollector` が Github Slugger 互換の `slugify` を用いて `[depth, slug, text]` を生成し、`getHeadings()` エクスポートに焼き付ける。
+- **モジュール生成**：`generate_module_code()` が
+  - `import { createComponent, markHTMLString } from 'astro/runtime/server/index.js'`
+  - （必要に応じて）`renderComponentToString` と layout import
+  - `frontmatter` / `file` / `url` / `getHeadings` エクスポート
+  - `_MarkflowContent`（HTMLを返すAstroコンポーネント）と、layout指定時の `_MarkflowPage`
+  を持つ文字列を構築する。生成結果は `code` フィールドとしてNode側に渡る。
+- **依存関係トラッキング**：Frontmatter内に `layout` があれば、`ImportedModule { kind: "layout", path }` として絶対パスを記録し、Viteのwatch graphへ転送できるようにする。
+
+`CompileResult` には `map`（当面 `null`）、`frontmatterJson`、`headings`、`imports` が含まれ、NAPIクライアントはこれをそのままViteへ返せる。
+
+## 9. Viteプラグイン構成
+`packages/vite-plugin-markflow` はEsmベースのプラグインを提供する。
+
+- `enforce: 'pre'` で `.md` / `.mdx` を最優先でフック。
+- `configResolved` で NAPI バインディングをロード。通常は `import('markflow-napi')` を使用し、Mono-repo内では `../../../crates/napi/index.js` へのフォールバックを持つ。
+- `transform()` 内で `compiler.compile(code, id, { file, url })` を呼び出し、`imports` に含まれるファイルを `this.addWatchFile()` へ登録。結果の `code` / `map` をそのままViteへ返してAstroの後段へ流す。
+- URL推定: `src/pages` 以下のファイルを `/${relative}` 形式に正規化し、`index.mdx` は `/` または親ディレクトリのルートへマップする。
+- 公開APIは `markflowPlugin({ compiler, include })` としてエクスポートされ、Astro以外のVite環境からも再利用可能。
+
+## 10. Astroハーネス統合
+`fixtures/integration/astro-harness` では新しい配線を使ってE2Eを確認できる。
+
+- `astro.config.mjs` の `vite.plugins` に `markflowPlugin()` を先頭で差し込み、既存の `virtual:markflow-docs` ハーネスはそのまま並列で動かす。
+- `src/layouts/DocsLayout.astro` と `src/content/docs/getting-started.mdx` を追加し、Frontmatter経由で layout を指定。Viteプラグインが `.mdx` をハイジャックして layout import を解決しつつ `getHeadings()` / `frontmatter` をエクスポートする。
+- `src/pages/index.astro` に MDX プレビューセクションを追加し、ビルド済みHTMLを `<GettingStartedContent />` として描画することでパイプラインの結果を直接確認できる。
+
+この構成により、「RustでFrontmatter抽出→HTML生成→Astro互換モジュール出力→Viteプラグイン→Astro harness表示」という一連の流れがローカルで再現できる。
