@@ -1,0 +1,7 @@
+repo/
+node_modules/
+.astro/
+dist/
+!.gitignore
+!README.md
+!harness-summary.json
