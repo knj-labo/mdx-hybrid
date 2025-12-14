@@ -635,7 +635,7 @@ fn empty_frontmatter() -> JsonValue {
 
 #[cfg(test)]
 mod tests {
-    use super::{compile_document, empty_frontmatter, parse_frontmatter, InternalCompilerConfig};
+    use super::{InternalCompilerConfig, compile_document, empty_frontmatter, parse_frontmatter};
     use serde_json::Value as JsonValue;
 
     #[test]
@@ -666,7 +666,9 @@ mod tests {
             compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
         assert_eq!(result.frontmatter_json, "{\"title\":\"Test\"}");
         assert!(
-            result.code.contains("export const frontmatter = {\"title\":\"Test\"};"),
+            result
+                .code
+                .contains("export const frontmatter = {\"title\":\"Test\"};"),
             "code: {}",
             result.code
         );
