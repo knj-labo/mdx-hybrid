@@ -48,7 +48,7 @@ Goal: ship Markflow as the MDX compiler for `withastro/docs` by combining the Co
     - [x] Call the NAPI `compile()` binding and emit JSX modules (source maps optional for MVP)
     - [x] Verify coexistence with `@astrojs/starlight` auto-imported MDX integration
 - [ ] Rust Compiler Option 1
-    - [ ] YAML frontmatter extraction that emits `export const frontmatter`
+    - [x] YAML frontmatter extraction that emits `export const frontmatter`
     - [ ] Code-fence-aware import hoisting (state machine + multi-line support)
     - [ ] Markdown → JSX renderer with raw JSX passthrough to preserve components
     - [ ] `:::directive` → `<Aside>` transclusion plus auto-import injection

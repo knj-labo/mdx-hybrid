@@ -11,3 +11,6 @@ thiserror = "2.0.17"
 markdown = "1.0.0-alpha.16"
 log = "0.4"
 html-escape = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"

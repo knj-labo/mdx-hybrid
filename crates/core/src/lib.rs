@@ -6,16 +6,21 @@ pub mod adapter;
 /// Core event types that decouple Markflow from pulldown-cmark specifics.
 #[allow(missing_docs)]
 pub mod event;
+/// YAML frontmatter extraction helpers.
+pub mod frontmatter;
 pub mod streaming_rewriter;
 
 mod html_renderer;
 
 pub use adapter::MarkdownStream;
+pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
+pub use parse_config::{ParseConfig, ParseConstructs};
 pub use streaming_rewriter::{RewriteOptions, StreamingRewriter};
 
 use thiserror::Error;
 
 mod markdown_adapter;
+mod parse_config;
 
 /// Errors that can occur during Markdown processing.
 #[derive(Debug, Error)]
@@ -33,7 +38,15 @@ pub enum MarkflowError {
 
 /// Returns an iterator over Markdown events backed by `markdown-rs`.
 pub fn get_event_iterator(input: &str) -> Result<markdown_adapter::MarkdownParser, MarkflowError> {
-    markdown_adapter::MarkdownParser::new(input)
+    get_event_iterator_with_config(input, ParseConfig::mdx())
+}
+
+/// Returns an iterator using the specified parse configuration.
+pub fn get_event_iterator_with_config(
+    input: &str,
+    config: ParseConfig,
+) -> Result<markdown_adapter::MarkdownParser, MarkflowError> {
+    markdown_adapter::MarkdownParser::new_with_config(input, config)
         .map_err(|err| MarkflowError::MarkdownAdapter(err.to_string()))
 }
 
@@ -138,7 +151,7 @@ mod tests {
         let input = read_fixture("mdx/expressions/inline.mdx");
         let output = parse(&input).unwrap();
         assert!(
-            output.contains("props.name ?? &#39;friend&#39;"),
+            output.contains("{props.name ?? 'friend'}"),
             "output: {output}"
         );
     }
@@ -147,10 +160,7 @@ mod tests {
     fn test_mdx_flow_expression_preserved() {
         let input = read_fixture("mdx/expressions/flow.mdx");
         let output = parse(&input).unwrap();
-        assert!(
-            output.contains("steps.join(&#39; → &#39;);"),
-            "output: {output}"
-        );
+        assert!(output.contains("steps.join(' → ');"), "output: {output}");
     }
 
     #[test]
