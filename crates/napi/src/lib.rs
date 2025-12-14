@@ -4,7 +4,10 @@
 use markflow_core::event::{
     Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd,
 };
-use markflow_core::{MarkdownStream, MarkflowError, RewriteOptions, StreamingRewriter};
+use markflow_core::{
+    MarkdownStream, MarkflowError, ParseConfig, RewriteOptions, StreamingRewriter,
+    extract_frontmatter,
+};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::Serialize;
@@ -96,24 +99,14 @@ pub fn parse_with_stats(input: String) -> napi::Result<ParseResult> {
 /// Extracts YAML or TOML frontmatter without compiling the entire Markdown document.
 #[napi]
 pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
-    match extract_frontmatter_block(&content) {
-        Ok(Some((kind, block, _body_start))) => match deserialize_frontmatter(kind, &block) {
-            Ok(frontmatter) => Ok(FrontmatterResult {
-                frontmatter,
-                errors: Vec::new(),
-            }),
-            Err(err) => Ok(FrontmatterResult {
-                frontmatter: empty_frontmatter(),
-                errors: vec![err],
-            }),
-        },
-        Ok(None) => Ok(FrontmatterResult {
-            frontmatter: empty_frontmatter(),
+    match extract_frontmatter(&content) {
+        Ok(result) => Ok(FrontmatterResult {
+            frontmatter: result.value,
             errors: Vec::new(),
         }),
         Err(err) => Ok(FrontmatterResult {
             frontmatter: empty_frontmatter(),
-            errors: vec![err],
+            errors: vec![err.to_string()],
         }),
     }
 }
@@ -140,6 +133,49 @@ pub struct FileOptions {
     pub url: Option<String>,
     /// Absolute file path (overrides the `filepath` argument when provided).
     pub file: Option<String>,
+    /// Explicitly sets the file type so callers can override extension-based detection.
+    pub file_type: Option<FileInputType>,
+}
+
+/// File categories supported by the compiler.
+#[napi(string_enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileInputType {
+    /// Standard Markdown (.md) without MDX extensions.
+    Markdown,
+    /// Full MDX documents (.mdx) with JSX/ESM hoisting.
+    Mdx,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileType {
+    Markdown,
+    Mdx,
+}
+
+impl FileType {
+    fn from_path(path: &Path) -> Self {
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("mdx"))
+            .map(|is_mdx| {
+                if is_mdx {
+                    FileType::Mdx
+                } else {
+                    FileType::Markdown
+                }
+            })
+            .unwrap_or(FileType::Markdown)
+    }
+}
+
+impl From<FileInputType> for FileType {
+    fn from(value: FileInputType) -> Self {
+        match value {
+            FileInputType::Markdown => FileType::Markdown,
+            FileInputType::Mdx => FileType::Mdx,
+        }
+    }
 }
 
 /// Heading metadata returned from the compiler.
@@ -236,24 +272,17 @@ fn compile_document(
     filepath: String,
     options: Option<FileOptions>,
 ) -> napi::Result<CompileResult> {
-    let (frontmatter, body_start) = match extract_frontmatter_block(&source) {
-        Ok(Some((kind, block, body_index))) => match deserialize_frontmatter(kind, &block) {
-            Ok(frontmatter) => (frontmatter, body_index),
-            Err(err) => {
-                return Err(convert_error(MarkflowError::MarkdownAdapter(format!(
-                    "Frontmatter parse error: {err}"
-                ))));
-            }
-        },
-        Ok(None) => (empty_frontmatter(), 0),
-        Err(err) => {
-            return Err(convert_error(MarkflowError::MarkdownAdapter(format!(
-                "Frontmatter parse error: {err}"
-            ))));
-        }
-    };
+    let options = options.unwrap_or_default();
+    let effective_path = options.file.clone().unwrap_or_else(|| filepath.clone());
+    let file_type = options
+        .file_type
+        .map(FileType::from)
+        .unwrap_or_else(|| FileType::from_path(Path::new(&effective_path)));
 
-    let body = source[body_start..].to_string();
+    let frontmatter_extraction = extract_frontmatter(&source)
+        .map_err(|err| convert_error(MarkflowError::MarkdownAdapter(err.to_string())))?;
+    let frontmatter = frontmatter_extraction.value;
+    let body = source[frontmatter_extraction.body_start..].to_string();
     let mut heading_collector = HeadingCollector::new();
     let layout_import: Option<String> = frontmatter
         .get("layout")
@@ -261,13 +290,10 @@ fn compile_document(
         .map(|s| s.to_string());
 
     let runtime_import = config.jsx_import_source.clone();
-    let file_tag = options
-        .as_ref()
-        .and_then(|opts| opts.file.clone())
-        .unwrap_or_else(|| filepath.clone());
-    let url = options.and_then(|opts| opts.url);
+    let file_tag = effective_path.clone();
+    let url = options.url.clone();
 
-    let html = render_document_to_html(&body, &mut heading_collector)?;
+    let html = render_document_to_html(&body, &mut heading_collector, file_type)?;
     let headings = heading_collector.into_entries();
 
     let code = generate_module_code(
@@ -280,7 +306,7 @@ fn compile_document(
         &headings,
     )?;
 
-    let imports = build_import_list(layout_import.as_deref(), Path::new(&filepath));
+    let imports = build_import_list(layout_import.as_deref(), Path::new(&file_tag));
     let frontmatter_json = serde_json::to_string(&frontmatter).unwrap_or_else(|_| "{}".to_string());
 
     Ok(CompileResult {
@@ -308,111 +334,17 @@ fn convert_error<E: Into<MarkflowError>>(err: E) -> Error {
     }
 }
 
-#[derive(Copy, Clone)]
-enum FrontmatterFormat {
-    Yaml,
-    Toml,
-}
-
-impl FrontmatterFormat {
-    fn delimiter(self) -> &'static str {
-        match self {
-            FrontmatterFormat::Yaml => "---",
-            FrontmatterFormat::Toml => "+++",
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            FrontmatterFormat::Yaml => "YAML",
-            FrontmatterFormat::Toml => "TOML",
-        }
-    }
-
-    fn from_line(line: &str) -> Option<Self> {
-        match normalize_line(line) {
-            "---" => Some(FrontmatterFormat::Yaml),
-            "+++" => Some(FrontmatterFormat::Toml),
-            _ => None,
-        }
-    }
-}
-
-fn extract_frontmatter_block(
-    input: &str,
-) -> std::result::Result<Option<(FrontmatterFormat, String, usize)>, String> {
-    let (without_bom, bom_len) = if let Some(stripped) = input.strip_prefix('\u{feff}') {
-        (stripped, '\u{feff}'.len_utf8())
-    } else {
-        (input, 0)
-    };
-
-    let mut cursor = 0usize;
-
-    // Skip leading blank lines while tracking byte offset.
-    loop {
-        match next_line(without_bom, cursor) {
-            Some((line, next_cursor)) => {
-                if line.trim().is_empty() {
-                    cursor = next_cursor;
-                    continue;
-                }
-                let kind = match FrontmatterFormat::from_line(line) {
-                    Some(kind) => kind,
-                    None => return Ok(None),
-                };
-                let block_start = next_cursor;
-                let mut scan_cursor = next_cursor;
-
-                loop {
-                    match next_line(without_bom, scan_cursor) {
-                        Some((block_line, next_line_cursor)) => {
-                            if normalize_line(block_line) == kind.delimiter() {
-                                let block_slice = &without_bom[block_start..scan_cursor];
-                                let body_index = bom_len + next_line_cursor;
-                                return Ok(Some((
-                                    kind,
-                                    block_slice.trim_end_matches(['\r', '\n']).to_string(),
-                                    body_index,
-                                )));
-                            }
-                            scan_cursor = next_line_cursor;
-                        }
-                        None => {
-                            return Err(format!(
-                                "Unterminated {} frontmatter block. Expected closing '{}' line.",
-                                kind.label(),
-                                kind.delimiter()
-                            ));
-                        }
-                    }
-                }
-            }
-            None => return Ok(None),
-        }
-    }
-}
-
-fn next_line(input: &str, start: usize) -> Option<(&str, usize)> {
-    if start >= input.len() {
-        return None;
-    }
-
-    let bytes = &input.as_bytes()[start..];
-    if let Some(pos) = bytes.iter().position(|b| *b == b'\n') {
-        let line_end = start + pos;
-        let line = &input[start..line_end];
-        Some((line, line_end + 1))
-    } else {
-        Some((&input[start..], input.len()))
-    }
-}
-
 fn render_document_to_html(
     body: &str,
     heading_collector: &mut HeadingCollector,
+    file_type: FileType,
 ) -> napi::Result<String> {
-    let events = markflow_core::get_event_iterator(body).map_err(convert_error)?;
+    let parse_config = match file_type {
+        FileType::Markdown => ParseConfig::markdown(),
+        FileType::Mdx => ParseConfig::mdx(),
+    };
+    let events =
+        markflow_core::get_event_iterator_with_config(body, parse_config).map_err(convert_error)?;
     let tracked_events = HeadingTrackingStream::new(events, heading_collector);
     let writer = StreamingRewriter::new(Vec::new(), RewriteOptions::default());
     let writer = tracked_events
@@ -697,32 +629,13 @@ fn js_string_literal(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
-fn deserialize_frontmatter(
-    kind: FrontmatterFormat,
-    block: &str,
-) -> std::result::Result<JsonValue, String> {
-    match kind {
-        FrontmatterFormat::Yaml => serde_yaml::from_str::<JsonValue>(block)
-            .map_err(|err| format!("YAML parse error: {err}")),
-        FrontmatterFormat::Toml => {
-            let value: toml::Value =
-                toml::from_str(block).map_err(|err| format!("TOML parse error: {err}"))?;
-            serde_json::to_value(value).map_err(|err| format!("TOML conversion error: {err}"))
-        }
-    }
-}
-
 fn empty_frontmatter() -> JsonValue {
     JsonValue::Object(Default::default())
 }
 
-fn normalize_line(line: &str) -> &str {
-    line.trim_end_matches('\r')
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{empty_frontmatter, parse_frontmatter};
+    use super::{compile_document, empty_frontmatter, parse_frontmatter, InternalCompilerConfig};
     use serde_json::Value as JsonValue;
 
     #[test]
@@ -743,5 +656,33 @@ mod tests {
         let result = parse_frontmatter("# Heading".to_string()).unwrap();
         assert!(result.errors.is_empty());
         assert_eq!(result.frontmatter, empty_frontmatter());
+    }
+
+    #[test]
+    fn compile_document_emits_frontmatter_json() {
+        let config = InternalCompilerConfig::new(None);
+        let source = "---\ntitle: Test\n---\n# Hello".to_string();
+        let result =
+            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+        assert_eq!(result.frontmatter_json, "{\"title\":\"Test\"}");
+        assert!(
+            result.code.contains("export const frontmatter = {\"title\":\"Test\"};"),
+            "code: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn compile_document_handles_missing_frontmatter() {
+        let config = InternalCompilerConfig::new(None);
+        let source = "# Hello".to_string();
+        let result =
+            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+        assert_eq!(result.frontmatter_json, "{}");
+        assert!(
+            result.code.contains("export const frontmatter = {};"),
+            "code: {}",
+            result.code
+        );
     }
 }

@@ -121,7 +121,17 @@ Frontmatterを文字列化して返し、JS側で `JSON.parse()` することで
 ## 4. Frontmatter処理戦略とLayout実装
 AstroのFrontmatterは `layout` プロパティによりデフォルトエクスポートをラップする。MarkflowはRustレベルでこの挙動を再現する必要がある。
 
-### 4.1 `gray_matter` クレート統合
+### 4.1 Frontmatter Handling（最新版合意）
+- **対応形式**: YAML (`---` ブロック) のみを公式サポート。TOML/JSONは将来検討とし、現段階では未対応。
+- **抽出タイミング**: ファイル先頭のBOMと空行をスキップしたあと、最初の `---` ブロックを `extract_frontmatter_block()` が切り出す。空ブロック（`---\n---`）やFrontmatter無しの場合は空オブジェクト `{}` を返す。
+- **パース/出力**:
+  - Rust側で `serde_yaml` → `serde_json` を通して JSON オブジェクトへ変換し、`export const frontmatter = {...};` としてエスケープ済みの文字列を埋め込む。
+  - 日付などの特殊型も文字列として保持し、`new Date()` などの変換はランタイム（Astro側）の責務とする。
+- **エラー戦略**: YAML構文エラーはハードフェイル（`compile()` を `Err` で中断）。黙って `{}` にフォールバックしない。
+- **共通契約**: `.md` / `.mdx` どちらのファイルでも同じ仕様で `export const frontmatter` を生成し、`layout` プロパティはそのままfrontmatter内に残す（後段でレイアウト import を判断するため）。
+- **テストマトリクス**: 通常ケース、Frontmatter無し、空Frontmatter、引用符や改行を含む値、無効YAML、BOM/空行混在などを fixtures として用意し、N-API経由で `frontmatter_json` / `code` 双方を検証する。
+
+### 4.2 `gray_matter` クレート統合
 Rustの `gray_matter` クレートで以下を実施：
 
 1. `---` で囲まれたブロック抽出。
@@ -130,7 +140,7 @@ Rustの `gray_matter` クレートで以下を実施：
 
 日付フィールドは `new Date("...")` リテラルとしてコード生成するか、JS側で再変換する。
 
-### 4.2 Layoutプロパティ処理
+### 4.3 Layoutプロパティ処理
 Frontmatterに `layout` がある場合、Astroはデフォルトエクスポートを差し替える。Markflowはコード生成段階で以下のような出力を行う。
 
 ```javascript
@@ -149,7 +159,7 @@ export default function WrappedContent(props) {
 }
 ```
 
-### 4.3 スラッグ生成
+### 4.4 スラッグ生成
 `getHeadings` で返す `slug` はGithub Slugger互換ルールに従う。重複スラッグには `-1`, `-2` を付与するなど、ファイル単位で状態を持った生成器が必要。
 
 ## 5. Viteプラグイン実装
