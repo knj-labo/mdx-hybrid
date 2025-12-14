@@ -4,9 +4,10 @@ use std::convert::TryFrom;
 
 use html_escape::encode_text_to_string;
 use log::warn;
-use markdown::{ParseOptions, mdast, message::Message, to_mdast};
+use markdown::{MdxEsmParse, MdxSignal, ParseOptions, mdast, message::Message, to_mdast};
 
 use crate::event::{Alignment, CodeBlockKind, Event, HeadingLevel, LinkType, Tag};
+use crate::parse_config::ParseConfig;
 
 pub struct MarkdownParser {
     stack: Vec<Frame>,
@@ -14,6 +15,8 @@ pub struct MarkdownParser {
     tight_list_stack: Vec<usize>,
     source: String,
     definitions: HashMap<String, DefinitionTarget>,
+    #[allow(dead_code)]
+    config: ParseConfig,
 }
 
 struct DefinitionTarget {
@@ -23,10 +26,11 @@ struct DefinitionTarget {
 
 impl MarkdownParser {
     pub fn new(input: &str) -> Result<Self, Message> {
-        let mut options = ParseOptions::gfm();
-        options.constructs.frontmatter = true;
-        options.constructs.math_flow = true;
-        options.constructs.math_text = true;
+        Self::new_with_config(input, ParseConfig::default())
+    }
+
+    pub fn new_with_config(input: &str, config: ParseConfig) -> Result<Self, Message> {
+        let options = build_parse_options(config);
         let tree = to_mdast(input, &options)?;
 
         let mut iter = Self {
@@ -35,6 +39,7 @@ impl MarkdownParser {
             tight_list_stack: Vec::new(),
             source: input.to_owned(),
             definitions: HashMap::new(),
+            config,
         };
         iter.collect_definitions(&tree);
         iter.push_node(tree);
@@ -544,13 +549,53 @@ fn normalize_identifier(id: &str) -> String {
     id.trim().to_lowercase()
 }
 
+fn build_parse_options(config: ParseConfig) -> ParseOptions {
+    let mut options = ParseOptions::gfm();
+    options.constructs.frontmatter = true;
+    options.constructs.math_flow = true;
+    options.constructs.math_text = true;
+
+    options.constructs.mdx_esm = config.constructs.esm;
+    options.constructs.mdx_expression_flow = config.constructs.expression;
+    options.constructs.mdx_expression_text = config.constructs.expression;
+    options.constructs.mdx_jsx_flow = config.constructs.jsx;
+    options.constructs.mdx_jsx_text = config.constructs.jsx;
+
+    if config.constructs.jsx {
+        options.constructs.html_flow = false;
+        options.constructs.html_text = false;
+    } else {
+        options.constructs.html_flow = true;
+        options.constructs.html_text = true;
+    }
+
+    options.mdx_esm_parse = if config.constructs.esm {
+        Some(Box::new(parse_mdx_esm_ok) as Box<MdxEsmParse>)
+    } else {
+        None
+    };
+
+    options
+}
+
+fn parse_mdx_esm_ok(_: &str) -> MdxSignal {
+    MdxSignal::Ok
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::event::{Event as MfEvent, Tag, TagEnd};
+    use crate::parse_config::ParseConfig;
 
     fn collect_events(input: &str) -> Vec<Event<'static>> {
         MarkdownParser::new(input).unwrap().collect()
+    }
+
+    fn collect_events_with_config(input: &str, config: ParseConfig) -> Vec<Event<'static>> {
+        MarkdownParser::new_with_config(input, config)
+            .unwrap()
+            .collect()
     }
 
     #[test]
@@ -605,5 +650,60 @@ mod tests {
         }
 
         assert!(found_paragraph, "paragraph inside blockquote should remain");
+    }
+
+    #[test]
+    fn markdown_profile_treats_import_as_text() {
+        let input = "import Button from './Button.jsx'";
+        let events = collect_events_with_config(input, ParseConfig::markdown());
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, Event::Text(text) if text.contains("import Button"))),
+            "import statement should remain as text: {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, Event::Html(html) if html.contains("import Button"))),
+            "markdown mode should not emit HTML events for imports"
+        );
+    }
+
+    #[test]
+    fn mdx_profile_emits_html_for_imports() {
+        let input = "import Button from './Button.jsx'";
+        let events = collect_events_with_config(input, ParseConfig::mdx());
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, Event::Html(html) if html.contains("import Button"))),
+            "mdx mode should surface mdx ESM blocks"
+        );
+    }
+
+    #[test]
+    fn markdown_profile_keeps_inline_expression_as_text() {
+        let input = "Hello {props.name}";
+        let events = collect_events_with_config(input, ParseConfig::markdown());
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, Event::Text(text) if text.contains("{props.name}"))),
+            "expression should remain literal text in markdown mode"
+        );
+    }
+
+    #[test]
+    fn mdx_profile_emits_inline_expression_nodes() {
+        let input = "Hello {props.name}";
+        let events = collect_events_with_config(input, ParseConfig::mdx());
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                Event::InlineHtml(html) if html.contains("{props.name}")
+            )),
+            "mdx mode should emit inline HTML for expressions"
+        );
     }
 }
