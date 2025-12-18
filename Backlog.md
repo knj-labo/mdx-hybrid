@@ -10,6 +10,7 @@ Codex と一緒に仕様駆動開発を進めるためのタスク一覧。各�
 | MF-140 | Review | Core Engine Streaming Adapter | docs/specs/mf-140-core-engine.md | Kenji | 2026-01-15 | Collect perf baselines + merge PR |
 | MF-150 | Draft | Astro/MDX NAPI Integration | docs/specs/mf-150-astro-mdx-napi.md | Kenji | TBD | Socialize spec + wire roadmap tasks |
 | MF-160 | Draft | withastro/docs Starlight harness | docs/specs/mf-160-withastro-docs-harness.md | Kenji | TBD | Choose import strategy (subtree vs script) and bootstrap harness |
+| MF-170 | Draft | Markdown→JSX renderer passthrough | docs/specs/mf-170-markdown-to-jsx.md | Kenji | TBD | Outline renderer API and test matrix |
 
 ## 運用メモ
 - `Status` は `Backlog -> Ready -> In Progress -> Review -> Done` の順で遷移させ、Codex の作業終了時に `Review` へ切り替えます。

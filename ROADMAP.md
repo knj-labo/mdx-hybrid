@@ -49,8 +49,8 @@ Goal: ship Markflow as the MDX compiler for `withastro/docs` by combining the Co
     - [x] Verify coexistence with `@astrojs/starlight` auto-imported MDX integration
 - [ ] Rust Compiler Option 1
     - [x] YAML frontmatter extraction that emits `export const frontmatter`
-    - [ ] Code-fence-aware import hoisting (state machine + multi-line support)
-    - [ ] Markdown → JSX renderer with raw JSX passthrough to preserve components
+    - [x] Code-fence-aware import hoisting (state machine + multi-line support)
+    - [x] Markdown → JSX renderer with raw JSX passthrough to preserve components
     - [ ] `:::directive` → `<Aside>` transclusion plus auto-import injection
     - [ ] Heading slug generation (rehype-slug parity, including i18n) and `export const headings`
 - [ ] Hydration + Validation Strategy

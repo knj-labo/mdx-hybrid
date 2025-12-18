@@ -72,6 +72,9 @@ impl<W: Write> HtmlRenderer<W> {
                 Event::Html(html) | Event::InlineHtml(html) => {
                     self.writer.write_all(html.as_ref().as_bytes())?;
                 }
+                Event::JsxInline(snippet) | Event::JsxFlow(snippet) => {
+                    self.writer.write_all(snippet.as_ref().as_bytes())?;
+                }
                 Event::InlineMath(math) => {
                     self.writer.write_all(b"<span class=\"math-inline\">")?;
                     self.escape_html(math.as_ref())?;
@@ -349,5 +352,30 @@ impl<W: Write> HtmlRenderer<W> {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::adapter::MarkdownStream;
+    use crate::event::Event as MfEvent;
+    use std::borrow::Cow;
+
+    #[test]
+    fn renders_jsx_events_without_panicking() {
+        let mut output_buffer = Vec::new();
+        let events = vec![
+            MfEvent::JsxInline(Cow::Borrowed("<Inline />")),
+            MfEvent::JsxFlow(Cow::Borrowed("<Block>\n</Block>")),
+        ];
+
+        events
+            .into_iter()
+            .stream_to_writer(&mut output_buffer)
+            .expect("render should succeed");
+
+        let output_str = String::from_utf8(output_buffer).unwrap();
+        assert!(output_str.contains("<Inline />"));
+        assert!(output_str.contains("<Block>"));
     }
 }
