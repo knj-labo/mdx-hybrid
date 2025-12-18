@@ -3,13 +3,13 @@
 
 /// Markdown event to `io::Write` bridge utilities.
 pub mod adapter;
+/// Code fence state tracking utilities for import hoisting safeguards.
+pub mod code_fence;
 /// Core event types that decouple Markflow from pulldown-cmark specifics.
 #[allow(missing_docs)]
 pub mod event;
 /// YAML frontmatter extraction helpers.
 pub mod frontmatter;
-/// Code fence state tracking utilities for import hoisting safeguards.
-pub mod code_fence;
 pub mod streaming_rewriter;
 
 mod html_renderer;

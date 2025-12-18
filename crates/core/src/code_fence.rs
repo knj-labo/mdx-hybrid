@@ -185,7 +185,10 @@ fn ends_statement(line: &str, depth: isize, next_line: Option<&str>) -> bool {
     if trimmed.ends_with('}') || trimmed.ends_with(')') || trimmed.ends_with(']') {
         if let Some(next) = next_line {
             let nt = next.trim_start();
-            if nt.starts_with(',') || nt.starts_with('.') || nt.starts_with('{') || nt.starts_with('(')
+            if nt.starts_with(',')
+                || nt.starts_with('.')
+                || nt.starts_with('{')
+                || nt.starts_with('(')
             {
                 return false;
             }
@@ -219,11 +222,7 @@ fn detect_fence_marker(after_indent: &str) -> Option<char> {
         return None;
     }
     let run_len = 1 + chars.take_while(|c| *c == first).count();
-    if run_len >= 3 {
-        Some(first)
-    } else {
-        None
-    }
+    if run_len >= 3 { Some(first) } else { None }
 }
 
 #[cfg(test)]
@@ -255,7 +254,10 @@ mod tests {
         let not_closed = advance_fence_state("      ```", inner.next_state);
 
         assert!(not_closed.skip_imports);
-        assert!(matches!(not_closed.next_state.phase, FencePhase::InsideFence));
+        assert!(matches!(
+            not_closed.next_state.phase,
+            FencePhase::InsideFence
+        ));
     }
 
     #[test]
@@ -298,10 +300,7 @@ mod tests {
     fn collects_semicolonless_export_const() {
         let body = "export const foo = () => {\n  return 1\n}\nconsole.log(foo());";
         let (imports, rest) = collect_root_imports(body);
-        assert_eq!(
-            imports,
-            vec!["export const foo = () => {\n  return 1\n}"]
-        );
+        assert_eq!(imports, vec!["export const foo = () => {\n  return 1\n}"]);
         assert_eq!(rest, vec!["console.log(foo());"]);
     }
 
@@ -328,10 +327,7 @@ mod tests {
     fn collects_export_default_async_arrow() {
         let body = "export default async () => {\n  return 1\n}\nContent";
         let (imports, rest) = collect_root_imports(body);
-        assert_eq!(
-            imports,
-            vec!["export default async () => {\n  return 1\n}"]
-        );
+        assert_eq!(imports, vec!["export default async () => {\n  return 1\n}"]);
         assert_eq!(rest, vec!["Content"]);
     }
 

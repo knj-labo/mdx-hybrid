@@ -2,10 +2,12 @@
 //! Node.js bindings that surface Markflow's Rust implementation.
 
 use markflow_core::code_fence::collect_root_imports;
-use markflow_core::event::{Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd};
+use markflow_core::event::{
+    Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd,
+};
 use markflow_core::{
-    extract_frontmatter, MarkdownStream, MarkflowError, ParseConfig, RewriteOptions,
-    StreamingRewriter,
+    MarkdownStream, MarkflowError, ParseConfig, RewriteOptions, StreamingRewriter,
+    extract_frontmatter,
 };
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -707,9 +709,7 @@ mod tests {
             result.code
         );
         assert!(
-            !result
-                .code
-                .contains("const _html = `import X from './x';`"),
+            !result.code.contains("const _html = `import X from './x';`"),
             "import leaked into HTML template: {}",
             result.code
         );
@@ -727,9 +727,7 @@ mod tests {
             result.code
         );
         assert!(
-            result
-                .code
-                .contains("import Y from &#39;./y&#39;"),
+            result.code.contains("import Y from &#39;./y&#39;"),
             "fenced import should remain in rendered HTML: {}",
             result.code
         );
@@ -759,9 +757,7 @@ export { foo };\n\
 
         // exports should not leak into HTML template
         assert!(
-            !result
-                .code
-                .contains("const _html = `export const foo"),
+            !result.code.contains("const _html = `export const foo"),
             "exports leaked into HTML: {}",
             result.code
         );
@@ -773,9 +769,7 @@ export { foo };\n\
             result.code
         );
         assert!(
-            !result
-                .code
-                .contains("bar()\\n{\\n  return foo();\\n}\\n"),
+            !result.code.contains("bar()\\n{\\n  return foo();\\n}\\n"),
             "default export text appeared in HTML: {}",
             result.code
         );
@@ -794,7 +788,9 @@ export { foo };\n\
             result.code
         );
         assert!(
-            result.code.contains("const _html = `<pre><code>export const no = true</code></pre>"),
+            result
+                .code
+                .contains("const _html = `<pre><code>export const no = true</code></pre>"),
             "fenced export should stay in HTML: {}",
             result.code
         );
@@ -827,7 +823,9 @@ export const foo = 1 // inline\n\
             "inline comment export should be hoisted"
         );
         assert!(
-            !result.code.contains("export const foo = 1 // inline\\n# Title"),
+            !result
+                .code
+                .contains("export const foo = 1 // inline\\n# Title"),
             "export should not leak into HTML: {}",
             result.code
         );
