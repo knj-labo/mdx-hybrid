@@ -152,7 +152,14 @@ fn is_import_start(trimmed: &str) -> bool {
 }
 
 fn is_export_start(trimmed: &str) -> bool {
-    trimmed.starts_with("export ")
+    if let Some(rest) = trimmed.strip_prefix("export") {
+        match rest.chars().next() {
+            Some(' ' | '{' | '*') => true,
+            _ => false,
+        }
+    } else {
+        false
+    }
 }
 
 fn paren_delta(line: &str) -> isize {
