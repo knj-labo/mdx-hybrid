@@ -1,8 +1,7 @@
 //! Code fence detection utilities to guard import hoisting.
 
 /// Fence parsing phases tracked across lines.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FencePhase {
     /// Not currently inside a fence.
     #[default]
@@ -10,7 +9,6 @@ pub enum FencePhase {
     /// Within fence contents.
     InsideFence,
 }
-
 
 /// Current fence state (phase, marker, and indent).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,11 +172,12 @@ fn paren_delta(line: &str) -> isize {
 
         if in_block_comment {
             if ch == '*'
-                && let Some('/') = chars.peek() {
-                    // End of block comment: '*/'
-                    chars.next();
-                    in_block_comment = false;
-                }
+                && let Some('/') = chars.peek()
+            {
+                // End of block comment: '*/'
+                chars.next();
+                in_block_comment = false;
+            }
             continue;
         }
 

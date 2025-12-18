@@ -24,9 +24,10 @@ pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
             }
             Event::End(end) => {
                 if let Some(open) = stack.pop()
-                    && matches_end(&open, &end) {
-                        output.push_str(&end_tag(&end));
-                    }
+                    && matches_end(&open, &end)
+                {
+                    output.push_str(&end_tag(&end));
+                }
             }
             Event::Text(text) => {
                 output.push_str(&escape_text(text.as_ref()));
