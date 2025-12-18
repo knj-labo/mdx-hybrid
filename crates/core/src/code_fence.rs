@@ -287,18 +287,18 @@ fn ends_statement(line: &str, depth: isize, next_line: Option<&str>) -> bool {
                 return false;
             }
         }
-        return true;
+    // `ends_statement` is only used while collecting import/export statements,
+    // so we always perform a look-ahead to see if the statement continues.
+    if let Some(next) = next_line {
+        let nt = next.trim_start();
+        if nt.starts_with(',') || nt.starts_with('{') || nt.starts_with('(') {
+            return false;
+        }
     }
 
-    if trimmed.starts_with("import ") || trimmed.starts_with("export ") {
-        if let Some(next) = next_line {
-            let nt = next.trim_start();
-            if nt.starts_with(',') || nt.starts_with('{') || nt.starts_with('(') {
-                return false;
-            }
-        }
-        return true;
-    }
+    true
+}
+}
 
     next_line.is_none()
 }
