@@ -69,6 +69,12 @@ pub fn parse(input: String) -> napi::Result<String> {
     markflow_core::parse(&input).map_err(convert_error)
 }
 
+/// Renders markdown/MDX to a JSX string while preserving raw JSX nodes.
+#[napi(js_name = "renderToJsx")]
+pub fn render_to_jsx_napi(input: String) -> napi::Result<String> {
+    markflow_core::render_to_jsx(&input).map_err(convert_error)
+}
+
 /// Parses markdown string to HTML with custom rewrite options
 #[napi]
 pub fn parse_with_options(input: String, config: RewriteConfig) -> napi::Result<String> {
@@ -636,6 +642,7 @@ fn empty_frontmatter() -> JsonValue {
 #[cfg(test)]
 mod tests {
     use super::{InternalCompilerConfig, compile_document, empty_frontmatter, parse_frontmatter};
+    use crate::render_to_jsx_napi;
     use serde_json::Value as JsonValue;
 
     #[test]
@@ -656,6 +663,14 @@ mod tests {
         let result = parse_frontmatter("# Heading".to_string()).unwrap();
         assert!(result.errors.is_empty());
         assert_eq!(result.frontmatter, empty_frontmatter());
+    }
+
+    #[test]
+    fn render_to_jsx_preserves_raw_jsx() {
+        let input = "import X from './x'\n\n<MyComponent />".to_string();
+        let output = render_to_jsx_napi(input).expect("render_to_jsx succeeds");
+        assert!(output.starts_with("import X from './x'"));
+        assert!(output.contains("<MyComponent />"));
     }
 
     #[test]

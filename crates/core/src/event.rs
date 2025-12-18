@@ -16,6 +16,10 @@ pub enum Event<'a> {
     Html(Cow<'a, str>),
     /// Inline HTML snippet.
     InlineHtml(Cow<'a, str>),
+    /// Inline JSX snippet (preserved as-is).
+    JsxInline(Cow<'a, str>),
+    /// Flow JSX block (preserved as-is).
+    JsxFlow(Cow<'a, str>),
     /// Inline math.
     InlineMath(Cow<'a, str>),
     /// Display math.
