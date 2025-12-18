@@ -5,12 +5,8 @@
 pub enum FencePhase {
     /// Not currently inside a fence.
     Outside,
-    /// Opening fence delimiter line.
-    FenceOpening,
     /// Within fence contents.
     InsideFence,
-    /// Closing fence delimiter line.
-    FenceClosing,
 }
 
 impl Default for FencePhase {
