@@ -5,22 +5,22 @@
 pub mod adapter;
 /// Code fence state tracking utilities for import hoisting safeguards.
 pub mod code_fence;
-/// Minimal JSX renderer that preserves raw JSX nodes.
-pub mod jsx_renderer;
 /// Core event types that decouple Markflow from pulldown-cmark specifics.
 #[allow(missing_docs)]
 pub mod event;
 /// YAML frontmatter extraction helpers.
 pub mod frontmatter;
+/// Minimal JSX renderer that preserves raw JSX nodes.
+pub mod jsx_renderer;
 pub mod streaming_rewriter;
 
 mod html_renderer;
 
 pub use adapter::MarkdownStream;
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
+pub use jsx_renderer::render_to_jsx;
 pub use parse_config::{ParseConfig, ParseConstructs};
 pub use streaming_rewriter::{RewriteOptions, StreamingRewriter};
-pub use jsx_renderer::render_to_jsx;
 
 use thiserror::Error;
 

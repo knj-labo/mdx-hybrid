@@ -1,6 +1,6 @@
-use crate::event::{CodeBlockKind, Event, Tag, TagEnd};
 use crate::code_fence::collect_root_imports;
-use crate::{get_event_iterator, MarkflowError};
+use crate::event::{CodeBlockKind, Event, Tag, TagEnd};
+use crate::{MarkflowError, get_event_iterator};
 
 /// Render Markdown input into a raw JSX-like string, preserving JSX nodes.
 pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
@@ -74,7 +74,12 @@ pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
 fn start_tag(tag: &Tag<'_>) -> String {
     match tag {
         Tag::Paragraph => "<p>".to_string(),
-        Tag::Heading { level, id, classes, attrs } => {
+        Tag::Heading {
+            level,
+            id,
+            classes,
+            attrs,
+        } => {
             let mut s = format!("<h{}", *level as u8);
             if let Some(id) = id {
                 s.push_str(&format!(" id=\"{}\"", id));
@@ -82,7 +87,9 @@ fn start_tag(tag: &Tag<'_>) -> String {
             if !classes.is_empty() {
                 s.push_str(" class=\"");
                 for (idx, class) in classes.iter().enumerate() {
-                    if idx > 0 { s.push(' '); }
+                    if idx > 0 {
+                        s.push(' ');
+                    }
                     s.push_str(class);
                 }
                 s.push('"');
@@ -109,7 +116,9 @@ fn start_tag(tag: &Tag<'_>) -> String {
             }
         }
         Tag::Item => "<li>".to_string(),
-        Tag::FootnoteDefinition(label) => format!("<section class=\"footnote\" id=\"fn-{}\">", label),
+        Tag::FootnoteDefinition(label) => {
+            format!("<section class=\"footnote\" id=\"fn-{}\">", label)
+        }
         Tag::Table(_) => "<table>".to_string(),
         Tag::TableHead => "<thead>".to_string(),
         Tag::TableRow => "<tr>".to_string(),
@@ -117,7 +126,9 @@ fn start_tag(tag: &Tag<'_>) -> String {
         Tag::Emphasis => "<em>".to_string(),
         Tag::Strong => "<strong>".to_string(),
         Tag::Strikethrough => "<del>".to_string(),
-        Tag::Link { dest_url, title, .. } => {
+        Tag::Link {
+            dest_url, title, ..
+        } => {
             let mut s = format!("<a href=\"{}\"", dest_url);
             if !title.is_empty() {
                 s.push_str(&format!(" title=\"{}\"", title));
@@ -136,7 +147,11 @@ fn end_tag(end: &TagEnd) -> String {
         TagEnd::BlockQuote => "</blockquote>\n".to_string(),
         TagEnd::CodeBlock => "</code></pre>\n".to_string(),
         TagEnd::List(ordered) => {
-            if *ordered { "</ol>\n".to_string() } else { "</ul>\n".to_string() }
+            if *ordered {
+                "</ol>\n".to_string()
+            } else {
+                "</ul>\n".to_string()
+            }
         }
         TagEnd::Item => "</li>".to_string(),
         TagEnd::FootnoteDefinition => "</section>\n".to_string(),
