@@ -10,7 +10,17 @@ use wasm_bindgen::prelude::*;
 /// Renders markdown into an HTML `String`.
 #[wasm_bindgen(js_name = render_html)]
 pub fn render_html(input: &str) -> Result<String, JsError> {
-    markflow_core::parse(input).map_err(to_js_error)
+    let (_, body_lines) = collect_root_imports(input);
+    let body = body_lines.join("\n");
+    let events = get_event_iterator(&body).map_err(to_js_error)?;
+    let rewriter = StreamingRewriter::new(Vec::new(), RewriteOptions::default());
+    let rewriter = events
+        .stream_to_writer(rewriter)
+        .map_err(|err| JsError::new(&err.to_string()))?;
+    let output = rewriter
+        .into_inner()
+        .map_err(|err| JsError::new(&err.to_string()))?;
+    String::from_utf8(output).map_err(to_js_error)
 }
 
 /// Renders markdown/MDX to JSX while preserving raw JSX nodes.
@@ -34,7 +44,9 @@ pub fn stream_html(
         enforce_img_loading_lazy: enforce_img_loading_lazy.unwrap_or(true),
     };
 
-    let events = get_event_iterator(input).map_err(to_js_error)?;
+    let (_, body_lines) = collect_root_imports(input);
+    let body = body_lines.join("\n");
+    let events = get_event_iterator(&body).map_err(to_js_error)?;
     let writer = JsChunkWriter::new(chunk_callback.clone());
     let rewriter = StreamingRewriter::new(writer, options);
 
