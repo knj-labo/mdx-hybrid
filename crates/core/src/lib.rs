@@ -8,6 +8,8 @@ pub mod adapter;
 pub mod event;
 /// YAML frontmatter extraction helpers.
 pub mod frontmatter;
+/// Code fence state tracking utilities for import hoisting safeguards.
+pub mod code_fence;
 pub mod streaming_rewriter;
 
 mod html_renderer;
@@ -21,6 +23,8 @@ use thiserror::Error;
 
 mod markdown_adapter;
 mod parse_config;
+
+use crate::code_fence::collect_root_imports;
 
 /// Errors that can occur during Markdown processing.
 #[derive(Debug, Error)]
@@ -52,7 +56,9 @@ pub fn get_event_iterator_with_config(
 
 /// parses Markdown and rewrites the resulting HTML stream with the default rewrite options.
 pub fn parse(input: &str) -> Result<String, MarkflowError> {
-    let events = get_event_iterator(input)?;
+    let (_, body_lines) = collect_root_imports(input);
+    let body = body_lines.join("\n");
+    let events = get_event_iterator(&body)?;
     let rewriter = StreamingRewriter::new(Vec::new(), RewriteOptions::default());
 
     let rewriter = events.stream_to_writer(rewriter)?;
@@ -167,6 +173,9 @@ mod tests {
     fn test_mdx_esm_import_preserved() {
         let input = read_fixture("mdx/esm/imports.mdx");
         let output = parse(&input).unwrap();
-        assert!(output.contains("import Tabs from"));
+        assert!(
+            !output.contains("import Tabs from"),
+            "root-level imports should be hoisted away from HTML output"
+        );
     }
 }
