@@ -1,6 +1,7 @@
 #![deny(missing_docs)]
 //! Node.js bindings that surface Markflow's Rust implementation.
 
+use markflow_core::code_fence::collect_root_imports;
 use markflow_core::event::{
     Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd,
 };
@@ -288,7 +289,14 @@ fn compile_document(
     let frontmatter_extraction = extract_frontmatter(&source)
         .map_err(|err| convert_error(MarkflowError::MarkdownAdapter(err.to_string())))?;
     let frontmatter = frontmatter_extraction.value;
-    let body = source[frontmatter_extraction.body_start..].to_string();
+    let raw_body = source[frontmatter_extraction.body_start..].to_string();
+    let line_ending = if raw_body.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let (hoisted_imports, body_lines) = collect_root_imports(&raw_body);
+    let body = body_lines.join(line_ending);
     let mut heading_collector = HeadingCollector::new();
     let layout_import: Option<String> = frontmatter
         .get("layout")
@@ -305,6 +313,7 @@ fn compile_document(
     let code = generate_module_code(
         &runtime_import,
         layout_import.as_deref(),
+        &hoisted_imports,
         &html,
         &frontmatter,
         &file_tag,
@@ -508,9 +517,11 @@ fn slugify(input: &str) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_module_code(
     runtime_module: &str,
     layout_import: Option<&str>,
+    hoisted_imports: &[String],
     html: &str,
     frontmatter: &JsonValue,
     file_path: &str,
@@ -537,6 +548,10 @@ fn generate_module_code(
     if let Some(layout) = layout_import {
         writeln!(code, "import Layout from {};", js_string_literal(layout))
             .map_err(|err| Error::from_reason(err.to_string()))?;
+    }
+
+    for import in hoisted_imports {
+        writeln!(code, "{}", import).map_err(|err| Error::from_reason(err.to_string()))?;
     }
 
     writeln!(code, "const _html = `{}`;", escape_template_literal(html))
@@ -699,6 +714,140 @@ mod tests {
         assert!(
             result.code.contains("export const frontmatter = {};"),
             "code: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn compile_document_hoists_root_imports() {
+        let config = InternalCompilerConfig::new(None);
+        let source = "import X from './x';\n\n# Title".to_string();
+        let result =
+            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+        assert!(
+            result.code.contains("import X from './x';"),
+            "code missing hoisted import: {}",
+            result.code
+        );
+        assert!(
+            !result.code.contains("const _html = `import X from './x';`"),
+            "import leaked into HTML template: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn compile_document_ignores_imports_inside_fences() {
+        let config = InternalCompilerConfig::new(None);
+        let source = "```\nimport Y from './y'\n```\n\n# Title".to_string();
+        let result =
+            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+        assert!(
+            !result.code.contains("import Y from './y'"),
+            "fenced import should not hoist: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("import Y from &#39;./y&#39;"),
+            "fenced import should remain in rendered HTML: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn compile_document_hoists_exports_variants() {
+        let config = InternalCompilerConfig::new(None);
+        let source = "\
+export const foo = () => {\n  return 1\n}\n\
+export default function bar()\n{\n  return foo();\n}\n\
+export { foo };\n\
+\n# Title"
+            .to_string();
+
+        let result =
+            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+
+        // hoisted exports appear before _html declaration
+        let hoist_pos = result.code.find("export const foo").unwrap();
+        let html_pos = result.code.find("const _html = `").unwrap();
+        assert!(
+            hoist_pos < html_pos,
+            "exports should be hoisted before HTML: {}",
+            result.code
+        );
+
+        // exports should not leak into HTML template
+        assert!(
+            !result.code.contains("const _html = `export const foo"),
+            "exports leaked into HTML: {}",
+            result.code
+        );
+
+        // default export body hoisted, not in HTML
+        assert!(
+            result.code.contains("export default function bar()"),
+            "default export missing: {}",
+            result.code
+        );
+        assert!(
+            !result.code.contains("bar()\\n{\\n  return foo();\\n}\\n"),
+            "default export text appeared in HTML: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn compile_document_does_not_hoist_exports_inside_fence() {
+        let config = InternalCompilerConfig::new(None);
+        let source = "```\nexport const no = true\n```\n\nexport const yes = true;".to_string();
+        let result =
+            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+
+        assert!(
+            result.code.contains("export const yes = true;"),
+            "export outside fence should hoist: {}",
+            result.code
+        );
+        assert!(
+            result
+                .code
+                .contains("const _html = `<pre><code>export const no = true</code></pre>"),
+            "fenced export should stay in HTML: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn compile_document_hoists_export_edge_cases() {
+        let config = InternalCompilerConfig::new(None);
+        let source = "\
+export default async () => {\n  return 1\n}\n\
+export * from './mod';\n\
+export const foo = 1 // inline\n\
+\n# Title"
+            .to_string();
+
+        let result =
+            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+
+        let html_pos = result.code.find("const _html = `").unwrap();
+        assert!(
+            result.code.find("export default async () => {").unwrap() < html_pos,
+            "default async export should be hoisted"
+        );
+        assert!(
+            result.code.find("export * from './mod';").unwrap() < html_pos,
+            "export * should be hoisted"
+        );
+        assert!(
+            result.code.find("export const foo = 1 // inline").unwrap() < html_pos,
+            "inline comment export should be hoisted"
+        );
+        assert!(
+            !result
+                .code
+                .contains("export const foo = 1 // inline\\n# Title"),
+            "export should not leak into HTML: {}",
             result.code
         );
     }
