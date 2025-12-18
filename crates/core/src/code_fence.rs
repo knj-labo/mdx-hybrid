@@ -160,11 +160,102 @@ fn is_export_start(trimmed: &str) -> bool {
 }
 
 fn paren_delta(line: &str) -> isize {
-    line.chars().fold(0isize, |acc, ch| match ch {
-        '(' | '{' | '[' => acc + 1,
-        ')' | '}' | ']' => acc - 1,
-        _ => acc,
-    })
+    let mut depth: isize = 0;
+    let mut chars = line.chars().peekable();
+
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_template = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+
+    while let Some(ch) = chars.next() {
+        if in_line_comment {
+            // Everything after '//' on this line is a comment.
+            break;
+        }
+
+        if in_block_comment {
+            if ch == '*' {
+                if let Some('/') = chars.peek() {
+                    // End of block comment: '*/'
+                    chars.next();
+                    in_block_comment = false;
+                }
+            }
+            continue;
+        }
+
+        if in_single_quote {
+            if ch == '\\' {
+                // Skip escaped character inside single-quoted string.
+                chars.next();
+            } else if ch == '\'' {
+                in_single_quote = false;
+            }
+            continue;
+        }
+
+        if in_double_quote {
+            if ch == '\\' {
+                // Skip escaped character inside double-quoted string.
+                chars.next();
+            } else if ch == '"' {
+                in_double_quote = false;
+            }
+            continue;
+        }
+
+        if in_template {
+            if ch == '\\' {
+                // Skip escaped character inside template literal.
+                chars.next();
+            } else if ch == '`' {
+                in_template = false;
+            }
+            continue;
+        }
+
+        // Not currently in a string or comment: check for comment starts, strings, and brackets.
+        match ch {
+            '/' => {
+                if let Some(next) = chars.peek() {
+                    if *next == '/' {
+                        // Line comment: '//' to end of line.
+                        chars.next();
+                        in_line_comment = true;
+                        continue;
+                    } else if *next == '*' {
+                        // Block comment: '/* ... */'
+                        chars.next();
+                        in_block_comment = true;
+                        continue;
+                    }
+                }
+            }
+            '\'' => {
+                in_single_quote = true;
+                continue;
+            }
+            '"' => {
+                in_double_quote = true;
+                continue;
+            }
+            '`' => {
+                in_template = true;
+                continue;
+            }
+            '(' | '{' | '[' => {
+                depth += 1;
+            }
+            ')' | '}' | ']' => {
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+
+    depth
 }
 
 fn ends_statement(line: &str, depth: isize, next_line: Option<&str>) -> bool {
