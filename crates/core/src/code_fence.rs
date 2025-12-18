@@ -1,4 +1,4 @@
-//! Code fence detection utilities to guard import hoisting.
+//! Code fence detection utilities to guard import/export hoisting.
 
 /// Fence parsing phases tracked across lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -6,8 +6,12 @@ pub enum FencePhase {
     /// Not currently inside a fence.
     #[default]
     Outside,
+    /// Opening fence delimiter line.
+    FenceOpening,
     /// Within fence contents.
     InsideFence,
+    /// Closing fence delimiter line.
+    FenceClosing,
 }
 
 /// Current fence state (phase, marker, and indent).
@@ -48,7 +52,6 @@ pub fn advance_fence_state(line: &str, state: FenceState) -> LineParseOutcome {
     let mut next_state = state;
     let mut skip_imports = matches!(state.phase, FencePhase::InsideFence);
 
-    // Opening
     if matches!(state.phase, FencePhase::Outside)
         && let Some(marker) = detect_fence_marker(after_indent)
     {
@@ -63,7 +66,6 @@ pub fn advance_fence_state(line: &str, state: FenceState) -> LineParseOutcome {
         && let Some(marker) = detect_fence_marker(after_indent)
         && Some(marker) == state.marker
     {
-        // Closing
         next_state = FenceState {
             phase: FencePhase::Outside,
             marker: None,
@@ -84,10 +86,10 @@ pub fn collect_root_imports(body: &str) -> (Vec<String>, Vec<String>) {
     let mut hoisted = Vec::new();
     let mut body_lines = Vec::new();
     let mut buffer = String::new();
-    let mut depth = 0isize;
+    let mut depth: isize = 0;
     let mut collecting = false;
-
     let mut lines_iter = body.lines().peekable();
+
     while let Some(line) = lines_iter.next() {
         let outcome = advance_fence_state(line, fence_state);
         fence_state = outcome.next_state;
@@ -109,8 +111,8 @@ pub fn collect_root_imports(body: &str) -> (Vec<String>, Vec<String>) {
             buffer.push_str(line);
             buffer.push('\n');
             depth += paren_delta(line);
-            let next_line = lines_iter.peek().copied();
-            if ends_statement(line, depth, next_line) {
+            let next = lines_iter.peek().copied();
+            if ends_statement(line, depth, next) {
                 hoisted.push(buffer.trim_end().to_string());
                 buffer.clear();
                 collecting = false;
@@ -123,8 +125,8 @@ pub fn collect_root_imports(body: &str) -> (Vec<String>, Vec<String>) {
             buffer.push_str(line);
             buffer.push('\n');
             depth += paren_delta(line);
-            let next_line = lines_iter.peek().copied();
-            if ends_statement(line, depth, next_line) {
+            let next = lines_iter.peek().copied();
+            if ends_statement(line, depth, next) {
                 hoisted.push(buffer.trim_end().to_string());
                 buffer.clear();
                 collecting = false;
@@ -147,103 +149,38 @@ fn is_import_start(trimmed: &str) -> bool {
 }
 
 fn is_export_start(trimmed: &str) -> bool {
-    if let Some(rest) = trimmed.strip_prefix("export") {
-        matches!(rest.chars().next(), Some(' ' | '{' | '*'))
-    } else {
-        false
-    }
+    trimmed.starts_with("export ")
 }
 
 fn paren_delta(line: &str) -> isize {
     let mut depth: isize = 0;
-    let mut chars = line.chars().peekable();
-
     let mut in_single_quote = false;
     let mut in_double_quote = false;
     let mut in_template = false;
-    let mut in_line_comment = false;
-    let mut in_block_comment = false;
+    let mut escape = false;
 
-    while let Some(ch) = chars.next() {
-        if in_line_comment {
-            // Everything after '//' on this line is a comment.
-            break;
-        }
-
-        if in_block_comment {
-            if ch == '*'
-                && let Some('/') = chars.peek()
-            {
-                // End of block comment: '*/'
-                chars.next();
-                in_block_comment = false;
-            }
+    for ch in line.chars() {
+        if escape {
+            escape = false;
             continue;
         }
-
-        if in_single_quote {
-            if ch == '\\' {
-                // Skip escaped character inside single-quoted string.
-                chars.next();
-            } else if ch == '\'' {
-                in_single_quote = false;
-            }
-            continue;
-        }
-
-        if in_double_quote {
-            if ch == '\\' {
-                // Skip escaped character inside double-quoted string.
-                chars.next();
-            } else if ch == '"' {
-                in_double_quote = false;
-            }
-            continue;
-        }
-
-        if in_template {
-            if ch == '\\' {
-                // Skip escaped character inside template literal.
-                chars.next();
-            } else if ch == '`' {
-                in_template = false;
-            }
-            continue;
-        }
-
-        // Not currently in a string or comment: check for comment starts, strings, and brackets.
         match ch {
-            '/' => {
-                if let Some(next) = chars.peek() {
-                    if *next == '/' {
-                        // Line comment: '//' to end of line.
-                        chars.next();
-                        in_line_comment = true;
-                        continue;
-                    } else if *next == '*' {
-                        // Block comment: '/* ... */'
-                        chars.next();
-                        in_block_comment = true;
-                        continue;
-                    }
-                }
+            '\\' => {
+                escape = true;
             }
-            '\'' => {
-                in_single_quote = true;
-                continue;
+            '\'' if !in_double_quote && !in_template => {
+                in_single_quote = !in_single_quote;
             }
-            '"' => {
-                in_double_quote = true;
-                continue;
+            '"' if !in_single_quote && !in_template => {
+                in_double_quote = !in_double_quote;
             }
-            '`' => {
-                in_template = true;
-                continue;
+            '`' if !in_single_quote && !in_double_quote => {
+                in_template = !in_template;
             }
-            '(' | '{' | '[' => {
+            '(' | '{' | '[' if !in_single_quote && !in_double_quote && !in_template => {
                 depth += 1;
             }
-            ')' | '}' | ']' => {
+            ')' | '}' | ']' if !in_single_quote && !in_double_quote && !in_template => {
                 depth -= 1;
             }
             _ => {}
@@ -390,6 +327,22 @@ mod tests {
     }
 
     #[test]
+    fn ignores_import_inside_fence() {
+        let body = "```\nimport bad from './nope'\n```\nimport good from './ok';";
+        let (imports, rest) = collect_root_imports(body);
+        assert_eq!(imports, vec!["import good from './ok';"]);
+        assert_eq!(rest, vec!["```", "import bad from './nope'", "```"]);
+    }
+
+    #[test]
+    fn detects_after_fence_with_indent() {
+        let body = "    ```\ncode\n    ```\nexport const x = 1;";
+        let (imports, rest) = collect_root_imports(body);
+        assert_eq!(imports, vec!["export const x = 1;"]);
+        assert_eq!(rest, vec!["    ```", "code", "    ```"]);
+    }
+
+    #[test]
     fn collects_semicolonless_export_const() {
         let body = "export const foo = () => {\n  return 1\n}\nconsole.log(foo());";
         let (imports, rest) = collect_root_imports(body);
@@ -446,21 +399,5 @@ mod tests {
         let (imports, rest) = collect_root_imports(body);
         assert_eq!(imports, vec!["export const ok = false;"]);
         assert_eq!(rest, vec!["```", "export const skip = true", "```"]);
-    }
-
-    #[test]
-    fn ignores_import_inside_fence() {
-        let body = "```\nimport bad from './nope'\n```\nimport good from './ok';";
-        let (imports, rest) = collect_root_imports(body);
-        assert_eq!(imports, vec!["import good from './ok';"]);
-        assert_eq!(rest, vec!["```", "import bad from './nope'", "```"]);
-    }
-
-    #[test]
-    fn detects_after_fence_with_indent() {
-        let body = "    ```\ncode\n    ```\nexport const x = 1;";
-        let (imports, rest) = collect_root_imports(body);
-        assert_eq!(imports, vec!["export const x = 1;"]);
-        assert_eq!(rest, vec!["    ```", "code", "    ```"]);
     }
 }
