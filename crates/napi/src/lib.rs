@@ -517,6 +517,7 @@ fn slugify(input: &str) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_module_code(
     runtime_module: &str,
     layout_import: Option<&str>,
