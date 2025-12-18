@@ -265,17 +265,24 @@ fn ends_statement(line: &str, depth: isize, next_line: Option<&str>) -> bool {
     if depth != 0 {
         return false;
     }
+
     let trimmed = line.trim_end();
+
+    // explicit terminator
     if trimmed.ends_with(';') {
         return true;
     }
-    if trimmed.ends_with('\\') || trimmed.ends_with(',') {
-        return false;
-    }
-    if trimmed.ends_with('{') || trimmed.ends_with('(') {
+
+    // explicit continuations
+    if trimmed.ends_with('\\')
+        || trimmed.ends_with(',')
+        || trimmed.ends_with('{')
+        || trimmed.ends_with('(')
+    {
         return false;
     }
 
+    // closing brace/paren/bracket: peek next line for continuation
     if trimmed.ends_with('}') || trimmed.ends_with(')') || trimmed.ends_with(']') {
         if let Some(next) = next_line {
             let nt = next.trim_start();
@@ -287,20 +294,20 @@ fn ends_statement(line: &str, depth: isize, next_line: Option<&str>) -> bool {
                 return false;
             }
         }
-    // `ends_statement` is only used while collecting import/export statements,
-    // so we always perform a look-ahead to see if the statement continues.
+        return true;
+    }
+
+    // default: treat as ended unless the next line is a continuation
     if let Some(next) = next_line {
         let nt = next.trim_start();
-        if nt.starts_with(',') || nt.starts_with('{') || nt.starts_with('(') {
+        if nt.starts_with(',') || nt.starts_with('{') || nt.starts_with('(') || nt.starts_with('.')
+        {
             return false;
         }
+        return true;
     }
 
     true
-}
-}
-
-    next_line.is_none()
 }
 
 fn leading_whitespace_len(line: &str) -> usize {

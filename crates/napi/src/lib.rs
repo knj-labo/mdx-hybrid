@@ -289,7 +289,11 @@ fn compile_document(
     let frontmatter_extraction = extract_frontmatter(&source)
         .map_err(|err| convert_error(MarkflowError::MarkdownAdapter(err.to_string())))?;
     let frontmatter = frontmatter_extraction.value;
-    let line_ending = if raw_body.contains("\r\n") { "\r\n" } else { "\n" };
+    let line_ending = if raw_body.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
     let body = body_lines.join(line_ending);
     let (hoisted_imports, body_lines) = collect_root_imports(&raw_body);
     let body = body_lines.join("\n");
