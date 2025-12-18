@@ -218,10 +218,22 @@ impl MarkdownParser {
                 );
             }
             mdast::Node::MdxJsxFlowElement(element) => {
-                self.push_mdx_html(element.position.as_ref(), None, true, "mdxJsxFlowElement");
+                let raw = element
+                    .position
+                    .as_ref()
+                    .and_then(|pos| self.slice_from_position(pos))
+                    .unwrap_or_default();
+                self.pending_events
+                    .push_back(Event::JsxFlow(Cow::Owned(raw)));
             }
             mdast::Node::MdxJsxTextElement(element) => {
-                self.push_mdx_html(element.position.as_ref(), None, false, "mdxJsxTextElement");
+                let raw = element
+                    .position
+                    .as_ref()
+                    .and_then(|pos| self.slice_from_position(pos))
+                    .unwrap_or_default();
+                self.pending_events
+                    .push_back(Event::JsxInline(Cow::Owned(raw)));
             }
             mdast::Node::Definition(_) => { /* already recorded */ }
         }

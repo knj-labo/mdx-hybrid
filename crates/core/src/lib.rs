@@ -5,6 +5,8 @@
 pub mod adapter;
 /// Code fence state tracking utilities for import hoisting safeguards.
 pub mod code_fence;
+/// Minimal JSX renderer that preserves raw JSX nodes.
+pub mod jsx_renderer;
 /// Core event types that decouple Markflow from pulldown-cmark specifics.
 #[allow(missing_docs)]
 pub mod event;
@@ -18,6 +20,7 @@ pub use adapter::MarkdownStream;
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
 pub use parse_config::{ParseConfig, ParseConstructs};
 pub use streaming_rewriter::{RewriteOptions, StreamingRewriter};
+pub use jsx_renderer::render_to_jsx;
 
 use thiserror::Error;
 
@@ -77,6 +80,19 @@ pub fn parse(input: &str) -> Result<String, MarkflowError> {
 
 /// Iterator alias so callers don't need to depend on the adapter module path.
 pub type MarkdownEventStream = markdown_adapter::MarkdownParser;
+
+#[cfg(test)]
+mod jsx_tests {
+    use super::render_to_jsx;
+
+    #[test]
+    fn jsx_renderer_preserves_raw_jsx() {
+        let input = "import X from './x'\n\n<MyComponent />\n";
+        let output = render_to_jsx(input).expect("render_to_jsx succeeds");
+        assert!(output.starts_with("import X from './x'"));
+        assert!(output.contains("<MyComponent />"));
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -1,6 +1,8 @@
 use js_sys::Function;
 use markflow_core::code_fence::collect_root_imports;
-use markflow_core::{MarkdownStream, RewriteOptions, StreamingRewriter, get_event_iterator};
+use markflow_core::{
+    MarkdownStream, RewriteOptions, StreamingRewriter, get_event_iterator, render_to_jsx,
+};
 use std::io::{self, Write};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
@@ -19,6 +21,12 @@ pub fn render_html(input: &str) -> Result<String, JsError> {
         .into_inner()
         .map_err(|err| JsError::new(&err.to_string()))?;
     String::from_utf8(output).map_err(to_js_error)
+}
+
+/// Renders markdown/MDX to JSX while preserving raw JSX nodes.
+#[wasm_bindgen(js_name = render_jsx)]
+pub fn render_jsx(input: &str) -> Result<String, JsError> {
+    render_to_jsx(input).map_err(to_js_error)
 }
 
 /// Streams rendered HTML chunks into the provided JavaScript callback.
@@ -108,5 +116,13 @@ mod tests {
             "import should not appear in rendered HTML"
         );
         assert!(html.contains("<h1 id=\"hi\">Hi</h1>"));
+    }
+
+    #[test]
+    fn render_jsx_preserves_raw_jsx() {
+        let input = "import X from './x'\n\n<Component />\n";
+        let jsx = render_jsx(input).expect("render_jsx success");
+        assert!(jsx.starts_with("import X from './x'"));
+        assert!(jsx.contains("<Component />"));
     }
 }
