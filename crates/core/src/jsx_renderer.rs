@@ -23,11 +23,10 @@ pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
                 stack.push(tag);
             }
             Event::End(end) => {
-                if let Some(open) = stack.pop() {
-                    if matches_end(&open, &end) {
+                if let Some(open) = stack.pop()
+                    && matches_end(&open, &end) {
                         output.push_str(&end_tag(&end));
                     }
-                }
             }
             Event::Text(text) => {
                 output.push_str(&escape_text(text.as_ref()));
@@ -168,25 +167,25 @@ fn end_tag(end: &TagEnd) -> String {
 }
 
 fn matches_end(tag: &Tag<'_>, end: &TagEnd) -> bool {
-    match (tag, end) {
+    matches!(
+        (tag, end),
         (Tag::Paragraph, TagEnd::Paragraph)
-        | (Tag::Heading { .. }, TagEnd::Heading(_))
-        | (Tag::BlockQuote, TagEnd::BlockQuote)
-        | (Tag::CodeBlock(_), TagEnd::CodeBlock)
-        | (Tag::List(_), TagEnd::List(_))
-        | (Tag::Item, TagEnd::Item)
-        | (Tag::FootnoteDefinition(_), TagEnd::FootnoteDefinition)
-        | (Tag::Table(_), TagEnd::Table)
-        | (Tag::TableHead, TagEnd::TableHead)
-        | (Tag::TableRow, TagEnd::TableRow)
-        | (Tag::TableCell, TagEnd::TableCell)
-        | (Tag::Emphasis, TagEnd::Emphasis)
-        | (Tag::Strong, TagEnd::Strong)
-        | (Tag::Strikethrough, TagEnd::Strikethrough)
-        | (Tag::Link { .. }, TagEnd::Link)
-        | (Tag::Image { .. }, TagEnd::Image) => true,
-        _ => false,
-    }
+            | (Tag::Heading { .. }, TagEnd::Heading(_))
+            | (Tag::BlockQuote, TagEnd::BlockQuote)
+            | (Tag::CodeBlock(_), TagEnd::CodeBlock)
+            | (Tag::List(_), TagEnd::List(_))
+            | (Tag::Item, TagEnd::Item)
+            | (Tag::FootnoteDefinition(_), TagEnd::FootnoteDefinition)
+            | (Tag::Table(_), TagEnd::Table)
+            | (Tag::TableHead, TagEnd::TableHead)
+            | (Tag::TableRow, TagEnd::TableRow)
+            | (Tag::TableCell, TagEnd::TableCell)
+            | (Tag::Emphasis, TagEnd::Emphasis)
+            | (Tag::Strong, TagEnd::Strong)
+            | (Tag::Strikethrough, TagEnd::Strikethrough)
+            | (Tag::Link { .. }, TagEnd::Link)
+            | (Tag::Image { .. }, TagEnd::Image)
+    )
 }
 
 fn escape_text(text: &str) -> String {

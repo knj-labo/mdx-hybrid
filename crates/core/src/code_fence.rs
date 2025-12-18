@@ -2,18 +2,15 @@
 
 /// Fence parsing phases tracked across lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum FencePhase {
     /// Not currently inside a fence.
+    #[default]
     Outside,
     /// Within fence contents.
     InsideFence,
 }
 
-impl Default for FencePhase {
-    fn default() -> Self {
-        FencePhase::Outside
-    }
-}
 
 /// Current fence state (phase, marker, and indent).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,10 +150,7 @@ fn is_import_start(trimmed: &str) -> bool {
 
 fn is_export_start(trimmed: &str) -> bool {
     if let Some(rest) = trimmed.strip_prefix("export") {
-        match rest.chars().next() {
-            Some(' ' | '{' | '*') => true,
-            _ => false,
-        }
+        matches!(rest.chars().next(), Some(' ' | '{' | '*'))
     } else {
         false
     }
@@ -179,13 +173,12 @@ fn paren_delta(line: &str) -> isize {
         }
 
         if in_block_comment {
-            if ch == '*' {
-                if let Some('/') = chars.peek() {
+            if ch == '*'
+                && let Some('/') = chars.peek() {
                     // End of block comment: '*/'
                     chars.next();
                     in_block_comment = false;
                 }
-            }
             continue;
         }
 
