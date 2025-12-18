@@ -1,8 +1,7 @@
 //! Code fence detection utilities to guard import/export hoisting.
 
 /// Fence parsing phases tracked across lines.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FencePhase {
     /// Not currently inside a fence.
     #[default]
@@ -14,7 +13,6 @@ pub enum FencePhase {
     /// Closing fence delimiter line.
     FenceClosing,
 }
-
 
 /// Current fence state (phase, marker, and indent).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
