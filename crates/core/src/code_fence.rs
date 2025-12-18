@@ -2,8 +2,10 @@
 
 /// Fence parsing phases tracked across lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum FencePhase {
     /// Not currently inside a fence.
+    #[default]
     Outside,
     /// Opening fence delimiter line.
     FenceOpening,
@@ -13,11 +15,6 @@ pub enum FencePhase {
     FenceClosing,
 }
 
-impl Default for FencePhase {
-    fn default() -> Self {
-        FencePhase::Outside
-    }
-}
 
 /// Current fence state (phase, marker, and indent).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
