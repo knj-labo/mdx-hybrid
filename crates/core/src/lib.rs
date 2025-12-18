@@ -54,7 +54,14 @@ pub fn get_event_iterator_with_config(
         .map_err(|err| MarkflowError::MarkdownAdapter(err.to_string()))
 }
 
-/// parses Markdown and rewrites the resulting HTML stream with the default rewrite options.
+/// Parses Markdown and rewrites the resulting HTML stream with the default rewrite options.
+///
+/// This helper is intended for scenarios where root-level `import`/`export` statements
+/// should be removed. It first calls [`collect_root_imports`] to strip those statements
+/// from the input and then renders only the remaining body content to HTML. The hoisted
+/// imports are intentionally discarded and are not exposed to callers of this function.
+/// If you need access to the hoisted imports, call [`collect_root_imports`] directly and
+/// handle them alongside the rendered HTML yourself.
 pub fn parse(input: &str) -> Result<String, MarkflowError> {
     let (_, body_lines) = collect_root_imports(input);
     let body = body_lines.join("\n");
