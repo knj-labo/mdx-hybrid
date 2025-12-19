@@ -18,7 +18,7 @@ pub mod directives;
 mod html_renderer;
 
 pub use adapter::MarkdownStream;
-pub use directives::{ensure_aside_import, rewrite_directives_to_asides};
+pub use directives::ensure_aside_import;
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
 pub use jsx_renderer::render_to_jsx;
 pub use parse_config::{ParseConfig, ParseConstructs};
@@ -26,6 +26,7 @@ pub use slug::{Slugger, slugify};
 pub use streaming_rewriter::{RewriteOptions, StreamingRewriter};
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 use thiserror::Error;
 
@@ -33,6 +34,7 @@ mod markdown_adapter;
 mod parse_config;
 mod slug;
 
+use crate::directives::DirectiveOpening;
 use crate::event::{Event, Tag, TagEnd};
 
 /// Errors that can occur during Markdown processing.
@@ -86,17 +88,20 @@ pub fn parse_with_options(
     input: &str,
     options: RewriteOptions,
 ) -> Result<ParseResult, MarkflowError> {
-    let (rewritten, directive_count) = directives::rewrite_directives_to_asides(input);
-    let events = get_event_iterator(&rewritten)?;
+    let events = get_event_iterator(input)?;
     let hoisted = Rc::new(RefCell::new(Vec::new()));
+    let directive_count = Rc::new(RefCell::new(0usize));
 
-    let pipeline = HoistAdapter::new(events, Rc::clone(&hoisted));
+    let pipeline = DirectiveAdapter::new(
+        HoistAdapter::new(events, Rc::clone(&hoisted)),
+        Rc::clone(&directive_count),
+    );
 
     let rewriter = StreamingRewriter::new(Vec::new(), options);
     let rewriter = pipeline.stream_to_writer(rewriter)?;
 
     let mut imports = hoisted.borrow().clone();
-    ensure_aside_import(&mut imports, directive_count);
+    ensure_aside_import(&mut imports, *directive_count.borrow());
 
     let output = rewriter.into_inner()?;
     let html = String::from_utf8(output)?;
@@ -301,6 +306,115 @@ where
             }
 
             return Some(event);
+        }
+
+        None
+    }
+}
+
+/// Rewrites directive markers (`:::note`, etc.) into Aside HTML events while streaming.
+pub(crate) struct DirectiveAdapter<'a, I>
+where
+    I: Iterator<Item = Event<'a>>,
+{
+    inner: I,
+    pending: VecDeque<Event<'a>>,
+    stack: Vec<DirectiveOpening>,
+    directive_count: Rc<RefCell<usize>>,
+    in_code_block: usize,
+}
+
+impl<'a, I> DirectiveAdapter<'a, I>
+where
+    I: Iterator<Item = Event<'a>>,
+{
+    fn new(inner: I, directive_count: Rc<RefCell<usize>>) -> Self {
+        Self {
+            inner,
+            pending: VecDeque::new(),
+            stack: Vec::new(),
+            directive_count,
+            in_code_block: 0,
+        }
+    }
+
+    fn push_unclosed_closers(&mut self) {
+        while let Some(opened) = self.stack.pop() {
+            self.pending
+                .push_back(Event::Html(opened.to_aside_end().into()));
+        }
+    }
+
+    fn capture_paragraph(&mut self, start: Event<'a>) -> Vec<Event<'a>> {
+        let mut buf = Vec::new();
+        buf.push(start);
+
+        while let Some(ev) = self.inner.next() {
+            let is_end = matches!(ev, Event::End(TagEnd::Paragraph));
+            buf.push(ev.clone());
+            if is_end {
+                break;
+            }
+        }
+
+        buf
+    }
+}
+
+impl<'a, I> Iterator for DirectiveAdapter<'a, I>
+where
+    I: Iterator<Item = Event<'a>>,
+{
+    type Item = Event<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(ev) = self.pending.pop_front() {
+            return Some(ev);
+        }
+
+        while let Some(event) = self.inner.next() {
+            match &event {
+                Event::Start(Tag::CodeBlock(_)) => {
+                    self.in_code_block += 1;
+                    return Some(event);
+                }
+                Event::End(TagEnd::CodeBlock) => {
+                    self.in_code_block = self.in_code_block.saturating_sub(1);
+                    return Some(event);
+                }
+                Event::Start(Tag::Paragraph) if self.in_code_block == 0 => {
+                    let paragraph_events = self.capture_paragraph(event);
+                    let mut content = String::new();
+                    for ev in paragraph_events.iter() {
+                        match ev {
+                            Event::Text(t) => content.push_str(t.as_ref()),
+                            Event::SoftBreak => content.push('\n'),
+                            _ => {}
+                        }
+                    }
+
+                    let (rewritten, count) = directives::rewrite_directives_to_asides(&content);
+                    if count > 0 {
+                        *self.directive_count.borrow_mut() += count;
+                        self.pending.push_back(Event::Html(rewritten.into()));
+                    } else {
+                        // Not a directive marker; emit original paragraph.
+                        for ev in paragraph_events {
+                            self.pending.push_back(ev);
+                        }
+                    }
+                    return self.pending.pop_front();
+                }
+                _ => {
+                    return Some(event);
+                }
+            }
+        }
+
+        // No more inner events; close any unclosed directives.
+        if !self.stack.is_empty() {
+            self.push_unclosed_closers();
+            return self.pending.pop_front();
         }
 
         None
