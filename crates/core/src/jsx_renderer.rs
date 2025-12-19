@@ -1,16 +1,16 @@
-use crate::code_fence::collect_root_imports;
 use crate::event::{CodeBlockKind, Event, Tag, TagEnd};
-use crate::{MarkflowError, get_event_iterator};
+use crate::{DirectiveAdapter, MarkflowError, ParseResult, get_event_iterator, parse};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// Render Markdown input into a raw JSX-like string, preserving JSX nodes.
 pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
-    let (hoisted, body_lines) = collect_root_imports(input);
-    let body = body_lines.join("\n");
-    let (body, _) = crate::directives::rewrite_directives_to_asides(&body);
-    let events = get_event_iterator(&body)?;
+    let ParseResult { html: _, imports } = parse(input)?;
+    let events = get_event_iterator(input)?;
+    let events = DirectiveAdapter::new(events, Rc::new(RefCell::new(0)));
     let mut output = String::new();
 
-    for import in hoisted {
+    for import in imports {
         output.push_str(&import);
         output.push('\n');
     }
