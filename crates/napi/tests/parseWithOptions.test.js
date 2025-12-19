@@ -9,7 +9,7 @@ test('parseWithOptions() with lazy loading enabled', (t) => {
 });
 
 test('parseWithOptions() with lazy loading disabled', (t) => {
-  const input = '<img src="/hero.png">';
+  const input = '<img src="/hero.png" />';
   const output = parseWithOptions(input, { enforceImgLoadingLazy: false });
 
   t.false(output.includes('loading="lazy"'));

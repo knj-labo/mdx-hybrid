@@ -6,6 +6,7 @@ use crate::{MarkflowError, get_event_iterator};
 pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
     let (hoisted, body_lines) = collect_root_imports(input);
     let body = body_lines.join("\n");
+    let (body, _) = crate::directives::rewrite_directives_to_asides(&body);
     let events = get_event_iterator(&body)?;
     let mut output = String::new();
 

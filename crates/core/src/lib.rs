@@ -14,9 +14,11 @@ pub mod frontmatter;
 pub mod jsx_renderer;
 pub mod streaming_rewriter;
 
+pub mod directives;
 mod html_renderer;
 
 pub use adapter::MarkdownStream;
+pub use directives::{ensure_aside_import, rewrite_directives_to_asides};
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
 pub use jsx_renderer::render_to_jsx;
 pub use parse_config::{ParseConfig, ParseConstructs};
@@ -68,8 +70,24 @@ pub fn get_event_iterator_with_config(
 pub fn parse(input: &str) -> Result<String, MarkflowError> {
     let (_, body_lines) = collect_root_imports(input);
     let body = body_lines.join("\n");
-    let events = get_event_iterator(&body)?;
+    let (rewritten, _) = directives::rewrite_directives_to_asides(&body);
+    let events = get_event_iterator(&rewritten)?;
     let rewriter = StreamingRewriter::new(Vec::new(), RewriteOptions::default());
+
+    let rewriter = events.stream_to_writer(rewriter)?;
+
+    let output = rewriter.into_inner()?;
+    let string = String::from_utf8(output)?;
+    Ok(string)
+}
+
+/// Parses Markdown with custom rewrite options, applying directive rewriting before streaming.
+pub fn parse_with_options(input: &str, options: RewriteOptions) -> Result<String, MarkflowError> {
+    let (_, body_lines) = collect_root_imports(input);
+    let body = body_lines.join("\n");
+    let (rewritten, _) = directives::rewrite_directives_to_asides(&body);
+    let events = get_event_iterator(&rewritten)?;
+    let rewriter = StreamingRewriter::new(Vec::new(), options);
 
     let rewriter = events.stream_to_writer(rewriter)?;
 
@@ -157,6 +175,14 @@ mod tests {
         let output = parse(input).unwrap();
         assert!(output.contains("<a href=\"https://example.com\""));
         assert!(output.contains("title=\"Example Site\""));
+    }
+
+    #[test]
+    fn test_directive_rewrites_to_aside() {
+        let input = ":::note[Heads up]\ncontent\n:::";
+        let output = parse(input).unwrap();
+        assert!(output.contains("<Aside type=\"note\" title=\"Heads up\">"));
+        assert!(output.contains("</Aside>"));
     }
 
     #[test]
