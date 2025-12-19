@@ -40,10 +40,12 @@ pub fn slugify(text: &str, counts: &mut HashMap<String, usize>) -> String {
                 ch,
                 '-' | '_' | ':' | '.' | '/' | '\\' | '(' | ')' | '[' | ']' | '{' | '}' | '&'
             ))
-            && !slug.is_empty() && !last_dash {
-                slug.push('-');
-                last_dash = true;
-            }
+            && !slug.is_empty()
+            && !last_dash
+        {
+            slug.push('-');
+            last_dash = true;
+        }
     }
 
     while slug.ends_with('-') {
