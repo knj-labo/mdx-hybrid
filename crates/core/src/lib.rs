@@ -281,7 +281,7 @@ where
     type Item = Event<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(event) = self.inner.next() {
+        for event in self.inner.by_ref() {
             match &event {
                 Event::Start(Tag::CodeBlock(_)) => {
                     self.in_code_block += 1;
@@ -349,7 +349,7 @@ where
         let mut buf = Vec::new();
         buf.push(start);
 
-        while let Some(ev) = self.inner.next() {
+        for ev in self.inner.by_ref() {
             let is_end = matches!(ev, Event::End(TagEnd::Paragraph));
             buf.push(ev.clone());
             if is_end {
@@ -372,7 +372,7 @@ where
             return Some(ev);
         }
 
-        while let Some(event) = self.inner.next() {
+        if let Some(event) = self.inner.next() {
             match &event {
                 Event::Start(Tag::CodeBlock(_)) => {
                     self.in_code_block += 1;

@@ -285,7 +285,7 @@ fn compile_document(
 
     let parse_result = markflow_core::parse_with_options(&raw_body, RewriteOptions::default())
         .map_err(convert_error)?;
-    let mut hoisted_imports = parse_result.imports;
+    let hoisted_imports = parse_result.imports;
 
     let headings = collect_headings(&raw_body, file_type)?;
     let layout_import: Option<String> = frontmatter
