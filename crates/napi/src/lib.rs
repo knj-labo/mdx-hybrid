@@ -14,7 +14,6 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
 use std::fmt::Write as FmtWrite;
 use std::path::{Path, PathBuf};
 
@@ -406,7 +405,7 @@ where
 
 struct HeadingCollector {
     headings: Vec<HeadingEntry>,
-    heading_counts: HashMap<String, usize>,
+    slugger: markflow_core::Slugger,
     current_heading: Option<HeadingCapture>,
 }
 
@@ -414,30 +413,13 @@ impl HeadingCollector {
     fn new() -> Self {
         Self {
             headings: Vec::new(),
-            heading_counts: HashMap::new(),
+            slugger: markflow_core::Slugger::new(),
             current_heading: None,
         }
     }
 
-    fn record_heading(&mut self, text: &str, level: HeadingLevel) {
-        let base = slugify(text);
-        let next_count = match self.heading_counts.get_mut(&base) {
-            Some(count) => {
-                *count += 1;
-                *count
-            }
-            None => {
-                self.heading_counts.insert(base.clone(), 0);
-                0
-            }
-        };
-
-        let slug = if next_count == 0 {
-            base
-        } else {
-            format!("{}-{}", base, next_count)
-        };
-
+    fn record_heading(&mut self, text: &str, level: HeadingLevel, id: Option<String>) {
+        let slug = id.unwrap_or_else(|| self.slugger.next_slug(text));
         self.headings.push(HeadingEntry {
             depth: level as u8,
             slug,
@@ -445,10 +427,11 @@ impl HeadingCollector {
         });
     }
 
-    fn begin_heading(&mut self, level: HeadingLevel) {
+    fn begin_heading(&mut self, level: HeadingLevel, id: Option<String>) {
         self.current_heading = Some(HeadingCapture {
             level,
             buffer: String::new(),
+            id,
         });
     }
 
@@ -464,14 +447,17 @@ impl HeadingCollector {
         {
             let text = capture.buffer.trim();
             if !text.is_empty() {
-                self.record_heading(text, level);
+                self.record_heading(text, level, capture.id.clone());
             }
         }
     }
 
     fn observe<'a>(&mut self, event: &CoreEvent<'a>) {
         match event {
-            CoreEvent::Start(CoreTag::Heading { level, .. }) => self.begin_heading(*level),
+            CoreEvent::Start(CoreTag::Heading { level, id, .. }) => {
+                let slug_from_tag = id.as_ref().map(|cow| cow.to_string());
+                self.begin_heading(*level, slug_from_tag)
+            }
             CoreEvent::End(CoreTagEnd::Heading(level)) => self.end_heading(*level),
             CoreEvent::Text(text)
             | CoreEvent::Code(text)
@@ -492,34 +478,7 @@ impl HeadingCollector {
 struct HeadingCapture {
     level: HeadingLevel,
     buffer: String,
-}
-
-fn slugify(input: &str) -> String {
-    let mut slug = String::new();
-    let mut last_dash = false;
-
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            slug.push(ch.to_ascii_lowercase());
-            last_dash = false;
-        } else if (ch.is_whitespace() || matches!(ch, '-' | '_' | ':' | '.'))
-            && !last_dash
-            && !slug.is_empty()
-        {
-            slug.push('-');
-            last_dash = true;
-        }
-    }
-
-    while slug.ends_with('-') {
-        slug.pop();
-    }
-
-    if slug.is_empty() {
-        "heading".to_string()
-    } else {
-        slug
-    }
+    id: Option<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -583,6 +542,8 @@ fn generate_module_code(
         .map_err(|err| Error::from_reason(err.to_string()))?;
 
     let headings_literal = serde_json::to_string(headings).unwrap_or_else(|_| "[]".to_string());
+    writeln!(code, "export const headings = {};", headings_literal)
+        .map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(code, "export function getHeadings() {{")
         .map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(code, "  return {};", headings_literal)

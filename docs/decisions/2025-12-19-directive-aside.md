@@ -8,3 +8,4 @@
 - [x] パーサで directive を検出する場所とインターフェース（`directives.rs` で実装済み）
 - [x] JSX 生成／HTML ストリームへの反映方法（`jsx_renderer.rs` および parse 関数群で実装済み）
 - [x] NAPI/WASM への反映手順（`napi/src/lib.rs` で実装済み）
+- 2025-12-19: rehype-slug 互換のスラッグユーティリティを追加 (github-slugger 同等)。
