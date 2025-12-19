@@ -8,6 +8,7 @@ use markdown::{MdxEsmParse, MdxSignal, ParseOptions, mdast, message::Message, to
 
 use crate::event::{Alignment, CodeBlockKind, Event, HeadingLevel, LinkType, Tag};
 use crate::parse_config::ParseConfig;
+use crate::slug::Slugger;
 
 pub struct MarkdownParser {
     stack: Vec<Frame>,
@@ -17,6 +18,7 @@ pub struct MarkdownParser {
     definitions: HashMap<String, DefinitionTarget>,
     #[allow(dead_code)]
     config: ParseConfig,
+    slugger: Slugger,
 }
 
 struct DefinitionTarget {
@@ -40,6 +42,7 @@ impl MarkdownParser {
             source: input.to_owned(),
             definitions: HashMap::new(),
             config,
+            slugger: Slugger::new(),
         };
         iter.collect_definitions(&tree);
         iter.push_node(tree);
@@ -58,7 +61,7 @@ impl MarkdownParser {
                 }
             }
             mdast::Node::Heading(heading) => {
-                let heading_id = heading_slug(&heading.children);
+                let heading_id = self.heading_slug(&heading.children);
                 let tag = Tag::Heading {
                     level: HeadingLevel::try_from(heading.depth as usize)
                         .unwrap_or(HeadingLevel::H6),
@@ -364,6 +367,13 @@ impl MarkdownParser {
             .last()
             .is_some_and(|depth| *depth == self.stack.len())
     }
+
+    fn heading_slug(&mut self, children: &[mdast::Node]) -> Option<String> {
+        let mut raw = String::new();
+        collect_text(children, &mut raw);
+        let slug = self.slugger.next_slug(raw.trim());
+        if slug.is_empty() { None } else { Some(slug) }
+    }
 }
 
 impl Iterator for MarkdownParser {
@@ -482,35 +492,6 @@ impl Frame {
             tight_state: TightState::None,
         }
     }
-}
-
-fn heading_slug(children: &[mdast::Node]) -> Option<String> {
-    let mut raw = String::new();
-    collect_text(children, &mut raw);
-
-    let mut slug = String::new();
-    let mut last_dash = false;
-
-    for ch in raw.chars() {
-        if ch.is_alphanumeric() {
-            for lower in ch.to_lowercase() {
-                slug.push(lower);
-            }
-            last_dash = false;
-        } else if (ch.is_whitespace() || matches!(ch, '-' | '_' | ':' | '.'))
-            && !slug.is_empty()
-            && !last_dash
-        {
-            slug.push('-');
-            last_dash = true;
-        }
-    }
-
-    while slug.ends_with('-') {
-        slug.pop();
-    }
-
-    if slug.is_empty() { None } else { Some(slug) }
 }
 
 fn collect_text(nodes: &[mdast::Node], buf: &mut String) {

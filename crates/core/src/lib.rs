@@ -22,12 +22,14 @@ pub use directives::{ensure_aside_import, rewrite_directives_to_asides};
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
 pub use jsx_renderer::render_to_jsx;
 pub use parse_config::{ParseConfig, ParseConstructs};
+pub use slug::{Slugger, slugify};
 pub use streaming_rewriter::{RewriteOptions, StreamingRewriter};
 
 use thiserror::Error;
 
 mod markdown_adapter;
 mod parse_config;
+mod slug;
 
 use crate::code_fence::collect_root_imports;
 
