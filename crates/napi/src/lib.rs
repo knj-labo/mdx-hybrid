@@ -2,6 +2,7 @@
 //! Node.js bindings that surface Markflow's Rust implementation.
 
 use markflow_core::code_fence::collect_root_imports;
+use markflow_core::directives::rewrite_directives_to_asides;
 use markflow_core::event::{
     Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd,
 };
@@ -79,7 +80,8 @@ pub fn render_to_jsx_napi(input: String) -> napi::Result<String> {
 /// Parses markdown string to HTML with custom rewrite options
 #[napi]
 pub fn parse_with_options(input: String, config: RewriteConfig) -> napi::Result<String> {
-    let events = markflow_core::get_event_iterator(&input).map_err(convert_error)?;
+    let (rewritten, _) = markflow_core::rewrite_directives_to_asides(&input);
+    let events = markflow_core::get_event_iterator(&rewritten).map_err(convert_error)?;
     let options: RewriteOptions = config.into();
     let rewriter = StreamingRewriter::new(Vec::new(), options);
 
@@ -295,8 +297,9 @@ fn compile_document(
     } else {
         "\n"
     };
-    let (hoisted_imports, body_lines) = collect_root_imports(&raw_body);
+    let (mut hoisted_imports, body_lines) = collect_root_imports(&raw_body);
     let body = body_lines.join(line_ending);
+    let (body, directive_count) = rewrite_directives_to_asides(&body);
     let mut heading_collector = HeadingCollector::new();
     let layout_import: Option<String> = frontmatter
         .get("layout")
@@ -309,6 +312,8 @@ fn compile_document(
 
     let html = render_document_to_html(&body, &mut heading_collector, file_type)?;
     let headings = heading_collector.into_entries();
+
+    markflow_core::ensure_aside_import(&mut hoisted_imports, directive_count);
 
     let code = generate_module_code(
         &runtime_import,
