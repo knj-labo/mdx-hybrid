@@ -39,12 +39,12 @@ pub fn rewrite_directives_to_asides(input: &str) -> (String, usize) {
             continue;
         }
 
-        if is_directive_closer(line) {
-            if let Some(opened) = directive_stack.pop() {
-                let end_tag = opened.to_aside_end();
-                writeln!(output, "{}", end_tag).ok();
-                continue;
-            }
+        if is_directive_closer(line)
+            && let Some(opened) = directive_stack.pop()
+        {
+            let end_tag = opened.to_aside_end();
+            writeln!(output, "{}", end_tag).ok();
+            continue;
         }
 
         writeln!(output, "{}", line).ok();
@@ -170,9 +170,8 @@ fn normalize_attrs(attrs: &str, has_bracket_title: bool) -> String {
     }
 
     let mut cleaned = String::new();
-    let mut iter = attrs.split_whitespace();
 
-    while let Some(tok) = iter.next() {
+    for tok in attrs.split_whitespace() {
         let key = tok
             .split('=')
             .next()
