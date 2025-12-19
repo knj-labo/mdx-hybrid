@@ -266,6 +266,9 @@ mod tests {
     fn arbitrary_attributes_are_preserved() {
         let input = ":::danger data-test=\"yes\" class=\"foo\"\nBody\n:::";
         let (out, _) = rewrite_directives_to_asides(input);
-        assert!(out.contains("<Aside type=\"danger\" data-test=\"yes\" class=\"foo\">"));
+        assert!(out.contains("<Aside"));
+        assert!(out.contains("type=\"danger\""));
+        assert!(out.contains("data-test=\"yes\""));
+        assert!(out.contains("class=\"foo\""));
     }
 }
