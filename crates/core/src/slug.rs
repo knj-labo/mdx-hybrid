@@ -35,17 +35,15 @@ pub fn slugify(text: &str, counts: &mut HashMap<String, usize>) -> String {
                 slug.push(lower);
             }
             last_dash = false;
-        } else if ch.is_whitespace()
+        } else if (ch.is_whitespace()
             || matches!(
                 ch,
                 '-' | '_' | ':' | '.' | '/' | '\\' | '(' | ')' | '[' | ']' | '{' | '}' | '&'
-            )
-        {
-            if !slug.is_empty() && !last_dash {
+            ))
+            && !slug.is_empty() && !last_dash {
                 slug.push('-');
                 last_dash = true;
             }
-        }
     }
 
     while slug.ends_with('-') {
