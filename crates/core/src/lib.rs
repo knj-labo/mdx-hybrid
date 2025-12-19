@@ -25,13 +25,15 @@ pub use parse_config::{ParseConfig, ParseConstructs};
 pub use slug::{Slugger, slugify};
 pub use streaming_rewriter::{RewriteOptions, StreamingRewriter};
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use thiserror::Error;
 
 mod markdown_adapter;
 mod parse_config;
 mod slug;
 
-use crate::code_fence::collect_root_imports;
+use crate::event::{Event, Tag, TagEnd};
 
 /// Errors that can occur during Markdown processing.
 #[derive(Debug, Error)]
@@ -61,41 +63,45 @@ pub fn get_event_iterator_with_config(
         .map_err(|err| MarkflowError::MarkdownAdapter(err.to_string()))
 }
 
+/// Structured result of parsing Markdown.
+#[derive(Debug)]
+pub struct ParseResult {
+    /// Rendered HTML output.
+    pub html: String,
+    /// Hoisted top-level ESM import/export statements.
+    pub imports: Vec<String>,
+}
+
 /// Parses Markdown and rewrites the resulting HTML stream with the default rewrite options.
 ///
-/// This helper is intended for scenarios where root-level `import`/`export` statements
-/// should be removed. It first calls [`collect_root_imports`] to strip those statements
-/// from the input and then renders only the remaining body content to HTML. The hoisted
-/// imports are intentionally discarded and are not exposed to callers of this function.
-/// If you need access to the hoisted imports, call [`collect_root_imports`] directly and
-/// handle them alongside the rendered HTML yourself.
-pub fn parse(input: &str) -> Result<String, MarkflowError> {
-    let (_, body_lines) = collect_root_imports(input);
-    let body = body_lines.join("\n");
-    let (rewritten, _) = directives::rewrite_directives_to_asides(&body);
-    let events = get_event_iterator(&rewritten)?;
-    let rewriter = StreamingRewriter::new(Vec::new(), RewriteOptions::default());
-
-    let rewriter = events.stream_to_writer(rewriter)?;
-
-    let output = rewriter.into_inner()?;
-    let string = String::from_utf8(output)?;
-    Ok(string)
+/// This helper hoists top-level `import`/`export` statements from MDX ESM blocks while
+/// streaming the remaining Markdown to HTML. The returned [`ParseResult`] exposes both
+/// the rendered HTML and the hoisted imports so callers do not need to rescan the input.
+pub fn parse(input: &str) -> Result<ParseResult, MarkflowError> {
+    parse_with_options(input, RewriteOptions::default())
 }
 
 /// Parses Markdown with custom rewrite options, applying directive rewriting before streaming.
-pub fn parse_with_options(input: &str, options: RewriteOptions) -> Result<String, MarkflowError> {
-    let (_, body_lines) = collect_root_imports(input);
-    let body = body_lines.join("\n");
-    let (rewritten, _) = directives::rewrite_directives_to_asides(&body);
+pub fn parse_with_options(
+    input: &str,
+    options: RewriteOptions,
+) -> Result<ParseResult, MarkflowError> {
+    let (rewritten, directive_count) = directives::rewrite_directives_to_asides(input);
     let events = get_event_iterator(&rewritten)?;
-    let rewriter = StreamingRewriter::new(Vec::new(), options);
+    let hoisted = Rc::new(RefCell::new(Vec::new()));
 
-    let rewriter = events.stream_to_writer(rewriter)?;
+    let pipeline = HoistAdapter::new(events, Rc::clone(&hoisted));
+
+    let rewriter = StreamingRewriter::new(Vec::new(), options);
+    let rewriter = pipeline.stream_to_writer(rewriter)?;
+
+    let mut imports = hoisted.borrow().clone();
+    ensure_aside_import(&mut imports, directive_count);
 
     let output = rewriter.into_inner()?;
-    let string = String::from_utf8(output)?;
-    Ok(string)
+    let html = String::from_utf8(output)?;
+
+    Ok(ParseResult { html, imports })
 }
 
 /// Iterator alias so callers don't need to depend on the adapter module path.
@@ -108,9 +114,9 @@ mod jsx_tests {
     #[test]
     fn jsx_renderer_preserves_raw_jsx() {
         let input = "import X from './x'\n\n<MyComponent />\n";
-        let output = render_to_jsx(input).expect("render_to_jsx succeeds");
-        assert!(output.starts_with("import X from './x'"));
-        assert!(output.contains("<MyComponent />"));
+        let result = render_to_jsx(input).expect("render_to_jsx succeeds");
+        assert!(result.starts_with("import X from './x'"));
+        assert!(result.contains("<MyComponent />"));
     }
 }
 
@@ -131,14 +137,14 @@ mod tests {
     #[test]
     fn test_parse() {
         let input = "# Hello, World!";
-        let output = parse(input).unwrap();
+        let output = parse(input).unwrap().html;
         assert!(output.contains("<h1 id=\"hello-world\">Hello, World!</h1>"));
     }
 
     #[test]
     fn test_parse_list() {
         let input = "* Item 1\n* Item 2";
-        let output = parse(input).unwrap();
+        let output = parse(input).unwrap().html;
         assert!(output.contains("<ul>"));
         assert!(output.contains("<li>Item 1</li>"));
     }
@@ -146,14 +152,14 @@ mod tests {
     #[test]
     fn test_parse_applies_lazy_loading() {
         let input = "![alt](img.png)";
-        let output = parse(input).unwrap();
+        let output = parse(input).unwrap().html;
         assert!(output.contains("loading=\"lazy\""));
     }
 
     #[test]
     fn test_parse_table_alignment_and_math() {
         let input = "| A | B |\n|:-|:-:|\n| $x$ | $$y$$ |";
-        let output = parse(input).unwrap();
+        let output = parse(input).unwrap().html;
         assert!(output.contains("<table>"));
         assert!(
             output.contains(
@@ -166,7 +172,7 @@ mod tests {
     #[test]
     fn test_parse_frontmatter_passthrough() {
         let input = "---\ntitle: test\n---\n\ncontent";
-        let output = parse(input).unwrap();
+        let output = parse(input).unwrap().html;
         assert!(output.contains("frontmatter"));
         assert!(output.contains("title: test"));
     }
@@ -174,7 +180,7 @@ mod tests {
     #[test]
     fn test_reference_link_resolves_definition() {
         let input = "[Example][ref]\n\n[ref]: https://example.com \"Example Site\"";
-        let output = parse(input).unwrap();
+        let output = parse(input).unwrap().html;
         assert!(output.contains("<a href=\"https://example.com\""));
         assert!(output.contains("title=\"Example Site\""));
     }
@@ -182,7 +188,7 @@ mod tests {
     #[test]
     fn test_directive_rewrites_to_aside() {
         let input = ":::note[Heads up]\ncontent\n:::";
-        let output = parse(input).unwrap();
+        let output = parse(input).unwrap().html;
         assert!(output.contains("<Aside type=\"note\" title=\"Heads up\">"));
         assert!(output.contains("</Aside>"));
     }
@@ -190,7 +196,7 @@ mod tests {
     #[test]
     fn test_reference_image_resolves_definition() {
         let input = "![Alt][logo]\n\n[logo]: https://cdn.example.com/logo.png \"Logo\"";
-        let output = parse(input).unwrap();
+        let output = parse(input).unwrap().html;
         assert!(output.contains("<img src=\"https://cdn.example.com/logo.png\""));
         assert!(output.contains("title=\"Logo\""));
     }
@@ -198,7 +204,7 @@ mod tests {
     #[test]
     fn test_mdx_embedded_jsx_preserved() {
         let input = read_fixture("mdx/embedded-jsx/component.mdx");
-        let output = parse(&input).unwrap();
+        let output = parse(&input).unwrap().html;
         assert!(output.contains("<Aside title=\"Heads up\">"));
         assert!(output.contains("</Aside>"));
     }
@@ -206,7 +212,7 @@ mod tests {
     #[test]
     fn test_mdx_inline_expression_preserved() {
         let input = read_fixture("mdx/expressions/inline.mdx");
-        let output = parse(&input).unwrap();
+        let output = parse(&input).unwrap().html;
         assert!(
             output.contains("{props.name ?? 'friend'}"),
             "output: {output}"
@@ -216,7 +222,7 @@ mod tests {
     #[test]
     fn test_mdx_flow_expression_preserved() {
         let input = read_fixture("mdx/expressions/flow.mdx");
-        let output = parse(&input).unwrap();
+        let output = parse(&input).unwrap().html;
         assert!(output.contains("steps.join(' → ');"), "output: {output}");
     }
 
@@ -225,8 +231,78 @@ mod tests {
         let input = read_fixture("mdx/esm/imports.mdx");
         let output = parse(&input).unwrap();
         assert!(
-            !output.contains("import Tabs from"),
+            !output.html.contains("import Tabs from"),
             "root-level imports should be hoisted away from HTML output"
         );
+        assert!(
+            output
+                .imports
+                .iter()
+                .any(|line| line.contains("import Tabs from")),
+            "imports should be hoisted into the imports list"
+        );
+    }
+}
+
+/// Adapts an event stream to hoist top-level `import`/`export` statements while streaming.
+struct HoistAdapter<'a, I>
+where
+    I: Iterator<Item = Event<'a>>,
+{
+    inner: I,
+    hoisted: Rc<RefCell<Vec<String>>>,
+    in_code_block: usize,
+    depth: usize,
+}
+
+impl<'a, I> HoistAdapter<'a, I>
+where
+    I: Iterator<Item = Event<'a>>,
+{
+    fn new(inner: I, hoisted: Rc<RefCell<Vec<String>>>) -> Self {
+        Self {
+            inner,
+            hoisted,
+            in_code_block: 0,
+            depth: 0,
+        }
+    }
+}
+
+impl<'a, I> Iterator for HoistAdapter<'a, I>
+where
+    I: Iterator<Item = Event<'a>>,
+{
+    type Item = Event<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(event) = self.inner.next() {
+            match &event {
+                Event::Start(Tag::CodeBlock(_)) => {
+                    self.in_code_block += 1;
+                }
+                Event::End(TagEnd::CodeBlock) => {
+                    self.in_code_block = self.in_code_block.saturating_sub(1);
+                }
+                Event::Start(_) => {
+                    self.depth = self.depth.saturating_add(1);
+                }
+                Event::End(_) => {
+                    self.depth = self.depth.saturating_sub(1);
+                }
+                Event::Html(text) if self.depth == 0 && self.in_code_block == 0 => {
+                    let trimmed = text.trim_start();
+                    if trimmed.starts_with("import ") || trimmed.starts_with("export ") {
+                        self.hoisted.borrow_mut().push(trimmed.to_string());
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+
+            return Some(event);
+        }
+
+        None
     }
 }

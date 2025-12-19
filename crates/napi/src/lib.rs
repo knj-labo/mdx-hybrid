@@ -1,15 +1,10 @@
 #![deny(missing_docs)]
 //! Node.js bindings that surface Markflow's Rust implementation.
 
-use markflow_core::code_fence::collect_root_imports;
-use markflow_core::directives::rewrite_directives_to_asides;
 use markflow_core::event::{
     Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd,
 };
-use markflow_core::{
-    MarkdownStream, MarkflowError, ParseConfig, RewriteOptions, StreamingRewriter,
-    extract_frontmatter,
-};
+use markflow_core::{MarkflowError, ParseConfig, RewriteOptions, extract_frontmatter};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::Serialize;
@@ -67,7 +62,8 @@ pub struct FrontmatterResult {
 /// Parses markdown string to HTML with default options
 #[napi]
 pub fn parse(input: String) -> napi::Result<String> {
-    markflow_core::parse(&input).map_err(convert_error)
+    let result = markflow_core::parse(&input).map_err(convert_error)?;
+    Ok(result.html)
 }
 
 /// Renders markdown/MDX to a JSX string while preserving raw JSX nodes.
@@ -79,14 +75,9 @@ pub fn render_to_jsx_napi(input: String) -> napi::Result<String> {
 /// Parses markdown string to HTML with custom rewrite options
 #[napi]
 pub fn parse_with_options(input: String, config: RewriteConfig) -> napi::Result<String> {
-    let (rewritten, _) = markflow_core::rewrite_directives_to_asides(&input);
-    let events = markflow_core::get_event_iterator(&rewritten).map_err(convert_error)?;
     let options: RewriteOptions = config.into();
-    let rewriter = StreamingRewriter::new(Vec::new(), options);
-
-    let rewriter = events.stream_to_writer(rewriter).map_err(convert_error)?;
-    let output = rewriter.into_inner().map_err(convert_error)?;
-    String::from_utf8(output).map_err(convert_error)
+    let result = markflow_core::parse_with_options(&input, options).map_err(convert_error)?;
+    Ok(result.html)
 }
 
 /// Parses markdown and returns both HTML output and processing statistics
@@ -291,15 +282,12 @@ fn compile_document(
         .map_err(|err| convert_error(MarkflowError::MarkdownAdapter(err.to_string())))?;
     let frontmatter = frontmatter_extraction.value;
     let raw_body = source[frontmatter_extraction.body_start..].to_string();
-    let line_ending = if raw_body.contains("\r\n") {
-        "\r\n"
-    } else {
-        "\n"
-    };
-    let (mut hoisted_imports, body_lines) = collect_root_imports(&raw_body);
-    let body = body_lines.join(line_ending);
-    let (body, directive_count) = rewrite_directives_to_asides(&body);
-    let mut heading_collector = HeadingCollector::new();
+
+    let parse_result = markflow_core::parse_with_options(&raw_body, RewriteOptions::default())
+        .map_err(convert_error)?;
+    let mut hoisted_imports = parse_result.imports;
+
+    let headings = collect_headings(&raw_body, file_type)?;
     let layout_import: Option<String> = frontmatter
         .get("layout")
         .and_then(|value| value.as_str())
@@ -309,10 +297,7 @@ fn compile_document(
     let file_tag = effective_path.clone();
     let url = options.url.clone();
 
-    let html = render_document_to_html(&body, &mut heading_collector, file_type)?;
-    let headings = heading_collector.into_entries();
-
-    markflow_core::ensure_aside_import(&mut hoisted_imports, directive_count);
+    let html = parse_result.html;
 
     let code = generate_module_code(
         &runtime_import,
@@ -353,54 +338,18 @@ fn convert_error<E: Into<MarkflowError>>(err: E) -> Error {
     }
 }
 
-fn render_document_to_html(
-    body: &str,
-    heading_collector: &mut HeadingCollector,
-    file_type: FileType,
-) -> napi::Result<String> {
+fn collect_headings(body: &str, file_type: FileType) -> napi::Result<Vec<HeadingEntry>> {
     let parse_config = match file_type {
         FileType::Markdown => ParseConfig::markdown(),
         FileType::Mdx => ParseConfig::mdx(),
     };
     let events =
         markflow_core::get_event_iterator_with_config(body, parse_config).map_err(convert_error)?;
-    let tracked_events = HeadingTrackingStream::new(events, heading_collector);
-    let writer = StreamingRewriter::new(Vec::new(), RewriteOptions::default());
-    let writer = tracked_events
-        .stream_to_writer(writer)
-        .map_err(convert_error)?;
-    let buffer = writer.into_inner().map_err(convert_error)?;
-    String::from_utf8(buffer).map_err(convert_error)
-}
-
-struct HeadingTrackingStream<'collector, 'event, I>
-where
-    I: Iterator<Item = CoreEvent<'event>>,
-{
-    inner: I,
-    collector: &'collector mut HeadingCollector,
-}
-
-impl<'collector, 'event, I> HeadingTrackingStream<'collector, 'event, I>
-where
-    I: Iterator<Item = CoreEvent<'event>>,
-{
-    fn new(inner: I, collector: &'collector mut HeadingCollector) -> Self {
-        Self { inner, collector }
+    let mut collector = HeadingCollector::new();
+    for event in events {
+        collector.observe(&event);
     }
-}
-
-impl<'collector, 'event, I> Iterator for HeadingTrackingStream<'collector, 'event, I>
-where
-    I: Iterator<Item = CoreEvent<'event>>,
-{
-    type Item = CoreEvent<'event>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let event = self.inner.next()?;
-        self.collector.observe(&event);
-        Some(event)
-    }
+    Ok(collector.into_entries())
 }
 
 struct HeadingCollector {

@@ -13,6 +13,8 @@ use crate::code_fence::{FenceState, advance_fence_state};
 /// 1. `:::name[Title]` の角括弧タイトル
 /// 2. 属性 `title="..."`
 /// 3. なし（title 属性を付与しない）
+/// Legacy string-based directive rewrite. Kept for compatibility with downstream crates until
+/// they migrate to the streaming adapter. Avoid new uses; prefer `DirectiveAdapter`.
 pub fn rewrite_directives_to_asides(input: &str) -> (String, usize) {
     let mut fence_state = FenceState::default();
     let mut output = String::new();
@@ -79,14 +81,14 @@ pub fn ensure_aside_import(hoisted: &mut Vec<String>, directive_count: usize) {
 }
 
 #[derive(Clone, Debug)]
-struct DirectiveOpening {
+pub(crate) struct DirectiveOpening {
     name: String,
     bracket_title: Option<String>,
     raw_attrs: String,
 }
 
 impl DirectiveOpening {
-    fn to_aside_start(&self) -> String {
+    pub(crate) fn to_aside_start(&self) -> String {
         let mut tag = String::from("<Aside");
 
         // type attribute is always injected/overwritten.
@@ -107,12 +109,12 @@ impl DirectiveOpening {
         tag
     }
 
-    fn to_aside_end(&self) -> String {
+    pub(crate) fn to_aside_end(&self) -> String {
         "</Aside>".to_string()
     }
 }
 
-fn parse_opening_directive(line: &str) -> Option<DirectiveOpening> {
+pub(crate) fn parse_opening_directive(line: &str) -> Option<DirectiveOpening> {
     let trimmed = line.trim();
     if !trimmed.starts_with(":::") {
         return None;
@@ -197,7 +199,7 @@ fn normalize_attrs(attrs: &str, has_bracket_title: bool) -> String {
     cleaned
 }
 
-fn is_directive_closer(line: &str) -> bool {
+pub(crate) fn is_directive_closer(line: &str) -> bool {
     line.trim() == ":::"
 }
 
