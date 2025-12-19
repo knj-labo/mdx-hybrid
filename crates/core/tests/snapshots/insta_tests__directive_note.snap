@@ -1,0 +1,7 @@
+---
+source: directive_note
+expression: result
+---
+<Aside type="note">
+Body
+</Aside>

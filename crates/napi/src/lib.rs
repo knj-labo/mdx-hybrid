@@ -66,6 +66,50 @@ pub fn parse(input: String) -> napi::Result<String> {
     Ok(result.html)
 }
 
+/// Compiles Markdown/MDX and returns a neutral IR; JS adapters produce final framework code.
+#[napi(js_name = "compileIr")]
+pub fn compile_ir(
+    source: String,
+    filepath: String,
+    options: Option<FileOptions>,
+    config: Option<CompilerConfig>,
+) -> napi::Result<CompileIrResult> {
+    let internal = InternalCompilerConfig::new(config);
+    let options = options.unwrap_or_default();
+    let effective_path = options.file.clone().unwrap_or_else(|| filepath.clone());
+    let file_type = options
+        .file_type
+        .map(FileType::from)
+        .unwrap_or_else(|| FileType::from_path(Path::new(&effective_path)));
+
+    let frontmatter_extraction = extract_frontmatter(&source)
+        .map_err(|err| convert_error(MarkflowError::MarkdownAdapter(err.to_string())))?;
+    let frontmatter = frontmatter_extraction.value;
+    let raw_body = source[frontmatter_extraction.body_start..].to_string();
+
+    let parse_result = markflow_core::parse_with_options(&raw_body, RewriteOptions::default())
+        .map_err(convert_error)?;
+
+    let headings = collect_headings(&raw_body, file_type)?;
+    let layout_import: Option<String> = frontmatter
+        .get("layout")
+        .and_then(|value| value.as_str())
+        .map(|s| s.to_string());
+
+    let frontmatter_json = serde_json::to_string(&frontmatter).unwrap_or_else(|_| "{}".to_string());
+
+    Ok(CompileIrResult {
+        html: parse_result.html,
+        hoisted_imports: parse_result.imports,
+        frontmatter_json,
+        headings,
+        file_path: effective_path,
+        url: options.url.clone(),
+        layout_import,
+        runtime_import: internal.jsx_import_source,
+    })
+}
+
 /// Renders markdown/MDX to a JSX string while preserving raw JSX nodes.
 #[napi(js_name = "renderToJsx")]
 pub fn render_to_jsx_napi(input: String) -> napi::Result<String> {
@@ -120,7 +164,7 @@ pub struct CompilerConfig {
     pub smartypants: Option<bool>,
     /// Enables syntax highlighting (placeholder flag).
     pub syntax_highlighting: Option<bool>,
-    /// Overrides the module used for Astro runtime helpers.
+    /// Overrides the module used for JSX runtime helpers.
     pub jsx_import_source: Option<String>,
 }
 
@@ -215,6 +259,28 @@ pub struct CompileResult {
     pub imports: Vec<ImportedModule>,
 }
 
+/// Neutral IR returned when Astro-compat codegen is disabled.
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct CompileIrResult {
+    /// Rendered HTML output.
+    pub html: String,
+    /// Hoisted top-level imports/exports captured during parsing.
+    pub hoisted_imports: Vec<String>,
+    /// Serialized frontmatter JSON string.
+    pub frontmatter_json: String,
+    /// Heading metadata collected during parsing.
+    pub headings: Vec<HeadingEntry>,
+    /// Absolute or workspace-relative file path of the source.
+    pub file_path: String,
+    /// Route URL (if provided) associated with the file.
+    pub url: Option<String>,
+    /// Layout import path extracted from frontmatter (if any).
+    pub layout_import: Option<String>,
+    /// JSX runtime import source to be used by JS adapters.
+    pub runtime_import: String,
+}
+
 #[derive(Debug, Clone)]
 struct InternalCompilerConfig {
     jsx_import_source: String,
@@ -222,8 +288,9 @@ struct InternalCompilerConfig {
 
 impl InternalCompilerConfig {
     fn new(config: Option<CompilerConfig>) -> Self {
-        let jsx_import_source = config
-            .and_then(|cfg| cfg.jsx_import_source)
+        let cfg = config.unwrap_or_default();
+        let jsx_import_source = cfg
+            .jsx_import_source
             .unwrap_or_else(|| ASTRO_DEFAULT_RUNTIME.to_string());
 
         Self { jsx_import_source }
@@ -293,24 +360,18 @@ fn compile_document(
         .and_then(|value| value.as_str())
         .map(|s| s.to_string());
 
-    let runtime_import = config.jsx_import_source.clone();
-    let file_tag = effective_path.clone();
-    let url = options.url.clone();
-
-    let html = parse_result.html;
-
     let code = generate_module_code(
-        &runtime_import,
+        &config.jsx_import_source,
         layout_import.as_deref(),
         &hoisted_imports,
-        &html,
+        &parse_result.html,
         &frontmatter,
-        &file_tag,
-        url.as_deref(),
+        &effective_path,
+        options.url.as_deref(),
         &headings,
     )?;
 
-    let imports = build_import_list(layout_import.as_deref(), Path::new(&file_tag));
+    let imports = build_import_list(layout_import.as_deref(), Path::new(&effective_path));
     let frontmatter_json = serde_json::to_string(&frontmatter).unwrap_or_else(|_| "{}".to_string());
 
     Ok(CompileResult {
