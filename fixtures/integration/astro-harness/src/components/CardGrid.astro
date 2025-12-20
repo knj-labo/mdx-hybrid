@@ -1,0 +1,23 @@
+---
+const { stagger = false } = Astro.props
+---
+<div class:list={{ 'card-grid': true, 'card-grid--stagger': stagger }}>
+  <slot />
+</div>
+
+<style>
+  .card-grid {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    align-items: stretch;
+  }
+
+  .card-grid--stagger > :nth-child(odd) {
+    transform: translateY(8px);
+  }
+
+  .card-grid--stagger > :nth-child(even) {
+    transform: translateY(-8px);
+  }
+</style>

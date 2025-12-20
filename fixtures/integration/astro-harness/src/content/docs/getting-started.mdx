@@ -28,3 +28,22 @@ import Doc from './docs/getting-started.mdx'
 ---
 <Doc />
 ```
+
+## Component Smoke: CardGrid
+
+```astro
+---
+import CardGrid from '../../components/CardGrid.astro'
+---
+<CardGrid stagger>
+  <div class="card">First card</div>
+  <div class="card">Second card</div>
+  <div class="card">Third card</div>
+</CardGrid>
+```
+
+<CardGrid stagger>
+  <div class="card">Runtime card A</div>
+  <div class="card">Runtime card B</div>
+  <div class="card">Runtime card C</div>
+</CardGrid>
