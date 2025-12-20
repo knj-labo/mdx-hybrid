@@ -6,18 +6,27 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::io::{self, Write};
 use std::rc::Rc;
+use std::sync::Arc;
+
+use crate::transform::directives::{AsideDirectiveMapper, DirectiveMapper};
 
 /// Configuration flags that control how the streaming rewriter manipulates HTML.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct RewriteOptions {
     /// When enabled, missing `loading` attributes on `<img>` tags are defaulted to `lazy`.
     pub enforce_img_loading_lazy: bool,
+    /// Mapper used to rewrite directives; boxed to allow dynamic dispatch.
+    pub directive_mapper: Arc<dyn DirectiveMapper + Send + Sync>,
+    /// Collected imports required by the mapper (populated during streaming).
+    pub required_imports: Rc<RefCell<Vec<String>>>,
 }
 
 impl Default for RewriteOptions {
     fn default() -> Self {
         RewriteOptions {
             enforce_img_loading_lazy: true,
+            directive_mapper: Arc::new(AsideDirectiveMapper::new()),
+            required_imports: Rc::new(RefCell::new(Vec::new())),
         }
     }
 }

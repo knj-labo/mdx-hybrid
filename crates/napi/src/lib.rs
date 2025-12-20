@@ -35,6 +35,7 @@ impl From<RewriteConfig> for RewriteOptions {
     fn from(config: RewriteConfig) -> Self {
         RewriteOptions {
             enforce_img_loading_lazy: config.enforce_img_loading_lazy,
+            ..RewriteOptions::default()
         }
     }
 }
@@ -100,7 +101,17 @@ pub fn compile_ir(
 
     Ok(CompileIrResult {
         html: parse_result.html,
-        hoisted_imports: parse_result.imports,
+        hoisted_imports: parse_result
+            .imports
+            .into_iter()
+            .map(|spec| ImportSpec {
+                source: spec.source,
+                kind: match spec.kind {
+                    markflow_core::ImportKind::Hoisted => ImportKind::Hoisted,
+                    markflow_core::ImportKind::Transform => ImportKind::Transform,
+                },
+            })
+            .collect(),
         frontmatter_json,
         headings,
         file_path: effective_path,
@@ -265,8 +276,8 @@ pub struct CompileResult {
 pub struct CompileIrResult {
     /// Rendered HTML output.
     pub html: String,
-    /// Hoisted top-level imports/exports captured during parsing.
-    pub hoisted_imports: Vec<String>,
+    /// Hoisted imports/exports captured during parsing (structured).
+    pub hoisted_imports: Vec<ImportSpec>,
     /// Serialized frontmatter JSON string.
     pub frontmatter_json: String,
     /// Heading metadata collected during parsing.
@@ -279,6 +290,26 @@ pub struct CompileIrResult {
     pub layout_import: Option<String>,
     /// JSX runtime import source to be used by JS adapters.
     pub runtime_import: String,
+}
+
+/// Structured import returned by the compiler IR.
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct ImportSpec {
+    /// Raw import/export statement text.
+    pub source: String,
+    /// Logical kind (hoisted or transform-required).
+    pub kind: ImportKind,
+}
+
+/// Import category surfaced to JS callers.
+#[napi(string_enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportKind {
+    /// Import/export lifted from document root.
+    Hoisted,
+    /// Import required by transforms (e.g., directive mapper).
+    Transform,
 }
 
 #[derive(Debug, Clone)]
@@ -314,6 +345,10 @@ impl MarkflowCompiler {
     }
 
     /// Compiles Markdown/MDX into an Astro-compatible module string.
+    ///
+    /// Internally this delegates to `compile_ir` for parsing/rewriting, then
+    /// formats the legacy Astro module code. A future adapter hook can replace
+    /// the codegen step without changing the JS-facing signature.
     #[napi(js_name = "compile")]
     pub fn compile_mdx(
         &self,
@@ -321,7 +356,28 @@ impl MarkflowCompiler {
         filepath: String,
         options: Option<FileOptions>,
     ) -> napi::Result<CompileResult> {
-        compile_document(&self.config, source, filepath, options)
+        // Parse to IR first (framework-agnostic data).
+        let ir = compile_ir(
+            source.clone(),
+            filepath.clone(),
+            options.clone(),
+            Some(CompilerConfig {
+                jsx_import_source: Some(self.config.jsx_import_source.clone()),
+                ..CompilerConfig::default()
+            }),
+        )?;
+
+        // TODO: swap this block with a JS adapter call (Astro) once available.
+        compile_document(
+            &self.config,
+            source,
+            filepath,
+            options,
+            ir.hoisted_imports
+                .iter()
+                .map(|spec| spec.source.clone())
+                .collect(),
+        )
     }
 }
 
@@ -337,6 +393,7 @@ fn compile_document(
     source: String,
     filepath: String,
     options: Option<FileOptions>,
+    hoisted_imports: Vec<String>,
 ) -> napi::Result<CompileResult> {
     let options = options.unwrap_or_default();
     let effective_path = options.file.clone().unwrap_or_else(|| filepath.clone());
@@ -352,7 +409,20 @@ fn compile_document(
 
     let parse_result = markflow_core::parse_with_options(&raw_body, RewriteOptions::default())
         .map_err(convert_error)?;
-    let hoisted_imports = parse_result.imports;
+    let hoisted_imports = hoisted_imports
+        .into_iter()
+        .map(|src| ImportSpec {
+            source: src,
+            kind: ImportKind::Hoisted,
+        })
+        .chain(parse_result.imports.into_iter().map(|spec| ImportSpec {
+            source: spec.source,
+            kind: match spec.kind {
+                markflow_core::ImportKind::Hoisted => ImportKind::Hoisted,
+                markflow_core::ImportKind::Transform => ImportKind::Transform,
+            },
+        }))
+        .collect::<Vec<_>>();
 
     let headings = collect_headings(&raw_body, file_type)?;
     let layout_import: Option<String> = frontmatter
@@ -363,7 +433,10 @@ fn compile_document(
     let code = generate_module_code(
         &config.jsx_import_source,
         layout_import.as_deref(),
-        &hoisted_imports,
+        &hoisted_imports
+            .iter()
+            .map(|spec| spec.source.as_str())
+            .collect::<Vec<_>>(),
         &parse_result.html,
         &frontmatter,
         &effective_path,
@@ -495,7 +568,7 @@ struct HeadingCapture {
 fn generate_module_code(
     runtime_module: &str,
     layout_import: Option<&str>,
-    hoisted_imports: &[String],
+    hoisted_imports: &[&str],
     html: &str,
     frontmatter: &JsonValue,
     file_path: &str,
@@ -669,7 +742,8 @@ mod tests {
         let config = InternalCompilerConfig::new(None);
         let source = "---\ntitle: Test\n---\n# Hello".to_string();
         let result =
-            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
         assert_eq!(result.frontmatter_json, "{\"title\":\"Test\"}");
         assert!(
             result
@@ -685,7 +759,8 @@ mod tests {
         let config = InternalCompilerConfig::new(None);
         let source = "# Hello".to_string();
         let result =
-            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
         assert_eq!(result.frontmatter_json, "{}");
         assert!(
             result.code.contains("export const frontmatter = {};"),
@@ -699,7 +774,8 @@ mod tests {
         let config = InternalCompilerConfig::new(None);
         let source = "import X from './x';\n\n# Title".to_string();
         let result =
-            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
         assert!(
             result.code.contains("import X from './x';"),
             "code missing hoisted import: {}",
@@ -717,7 +793,8 @@ mod tests {
         let config = InternalCompilerConfig::new(None);
         let source = "```\nimport Y from './y'\n```\n\n# Title".to_string();
         let result =
-            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
         assert!(
             !result.code.contains("import Y from './y'"),
             "fenced import should not hoist: {}",
@@ -741,7 +818,8 @@ export { foo };\n\
             .to_string();
 
         let result =
-            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
 
         // hoisted exports appear before _html declaration
         let hoist_pos = result.code.find("export const foo").unwrap();
@@ -777,7 +855,8 @@ export { foo };\n\
         let config = InternalCompilerConfig::new(None);
         let source = "```\nexport const no = true\n```\n\nexport const yes = true;".to_string();
         let result =
-            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
 
         assert!(
             result.code.contains("export const yes = true;"),
@@ -804,7 +883,8 @@ export const foo = 1 // inline\n\
             .to_string();
 
         let result =
-            compile_document(&config, source, "test.mdx".into(), None).expect("compile success");
+            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
 
         let html_pos = result.code.find("const _html = `").unwrap();
         assert!(

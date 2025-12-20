@@ -1,9 +1,11 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
+use std::sync::Arc;
 
-use crate::directives::{DirectiveOpening, rewrite_directives_to_asides};
 use crate::event::{Event, Tag, TagEnd};
+use crate::transform::directives::rewrite_with_mapper;
+use crate::transform::directives::{DirectiveMapper, DirectiveOpening};
 
 /// Rewrites directive markers (`:::note`, etc.) into Aside HTML events while streaming.
 pub struct DirectiveAdapter<'a, I>
@@ -15,26 +17,39 @@ where
     stack: Vec<DirectiveOpening>,
     directive_count: Rc<RefCell<usize>>,
     in_code_block: usize,
+    mapper: Arc<dyn DirectiveMapper + Send + Sync>,
+    required_imports: Rc<RefCell<Vec<String>>>,
 }
 
 impl<'a, I> DirectiveAdapter<'a, I>
 where
     I: Iterator<Item = Event<'a>>,
 {
-    pub(crate) fn new(inner: I, directive_count: Rc<RefCell<usize>>) -> Self {
+    pub(crate) fn new(
+        inner: I,
+        directive_count: Rc<RefCell<usize>>,
+        mapper: Arc<dyn DirectiveMapper + Send + Sync>,
+        required_imports: Rc<RefCell<Vec<String>>>,
+    ) -> Self {
         Self {
             inner,
             pending: VecDeque::new(),
             stack: Vec::new(),
             directive_count,
             in_code_block: 0,
+            mapper,
+            required_imports,
         }
     }
 
     fn push_unclosed_closers(&mut self) {
         while let Some(opened) = self.stack.pop() {
-            self.pending
-                .push_back(Event::Html(opened.to_aside_end().into()));
+            if let Some(transform) = self.mapper.map_opening(&opened) {
+                self.pending
+                    .push_back(Event::Html(transform.end_tag.into()));
+            } else {
+                self.pending.push_back(Event::Html("</div>".into()));
+            }
         }
     }
 
@@ -86,15 +101,16 @@ where
                         }
                     }
 
-                    let (rewritten, count) = rewrite_directives_to_asides(&content);
+                    let (rewritten, count, imports) = rewrite_with_mapper(&content, &*self.mapper);
                     if count > 0 {
                         *self.directive_count.borrow_mut() += count;
+                        self.required_imports.borrow_mut().extend(imports);
                         self.pending.push_back(Event::Html(rewritten.into()));
-                    } else {
-                        // Not a directive marker; emit original paragraph.
-                        for ev in paragraph_events {
-                            self.pending.push_back(ev);
-                        }
+                        return self.pending.pop_front();
+                    }
+                    // Not a directive marker; emit original paragraph.
+                    for ev in paragraph_events {
+                        self.pending.push_back(ev);
                     }
                     return self.pending.pop_front();
                 }
