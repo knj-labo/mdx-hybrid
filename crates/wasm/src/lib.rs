@@ -42,6 +42,7 @@ pub fn stream_html(
 ) -> Result<(), JsError> {
     let options = RewriteOptions {
         enforce_img_loading_lazy: enforce_img_loading_lazy.unwrap_or(true),
+        ..RewriteOptions::default()
     };
 
     let (_, body_lines) = collect_root_imports(input);

@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
@@ -7,7 +8,7 @@ use log::warn;
 use markdown::{MdxEsmParse, MdxSignal, ParseOptions, mdast, message::Message, to_mdast};
 
 use crate::event::{Alignment, CodeBlockKind, Event, HeadingLevel, LinkType, Tag};
-use crate::parse_config::ParseConfig;
+use crate::parser::parse_config::ParseConfig;
 use crate::slug::Slugger;
 
 pub struct MarkdownParser {
@@ -579,7 +580,7 @@ fn parse_mdx_esm_ok(_: &str) -> MdxSignal {
 mod tests {
     use super::*;
     use crate::event::{Event as MfEvent, Tag, TagEnd};
-    use crate::parse_config::ParseConfig;
+    use crate::parser::parse_config::ParseConfig;
 
     fn collect_events(input: &str) -> Vec<Event<'static>> {
         MarkdownParser::new(input).unwrap().collect()

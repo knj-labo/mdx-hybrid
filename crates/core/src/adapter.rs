@@ -1,5 +1,5 @@
 use crate::event::Event;
-use crate::html_renderer::HtmlRenderer;
+use crate::renderer::html_renderer::HtmlRenderer;
 use std::io::{self, Write};
 
 /// Extension trait to pipe Markdown events directly to a Writer.

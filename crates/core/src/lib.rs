@@ -3,38 +3,36 @@
 
 /// Markdown event to `io::Write` bridge utilities.
 pub mod adapter;
-/// Code fence state tracking utilities for import hoisting safeguards.
-pub mod code_fence;
 /// Core event types that decouple Markflow from pulldown-cmark specifics.
 #[allow(missing_docs)]
 pub mod event;
 /// YAML frontmatter extraction helpers.
 pub mod frontmatter;
-/// Minimal JSX renderer that preserves raw JSX nodes.
-pub mod jsx_renderer;
-pub mod streaming_rewriter;
-
-pub mod directives;
-mod html_renderer;
+/// Parsing layer (markdown-rs adapter + config).
+pub mod parser;
+/// Rendering layer (HTML/JSX writers + streaming rewriter).
+pub mod renderer;
+/// Streaming transformers (hoist, directives, code fences, etc.).
+pub mod transform;
 
 pub use adapter::MarkdownStream;
-pub use directives::ensure_aside_import;
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
-pub use jsx_renderer::render_to_jsx;
-pub use parse_config::{ParseConfig, ParseConstructs};
+pub use parser::{ParseConfig, ParseConstructs};
+pub use renderer::{RewriteOptions, StreamingRewriter, render_to_jsx};
 pub use slug::{Slugger, slugify};
-pub use streaming_rewriter::{RewriteOptions, StreamingRewriter};
-pub use transform::{DirectiveAdapter, HoistAdapter};
+pub use transform::{
+    code_fence,
+    directive_adapter::DirectiveAdapter,
+    directives::{AsideDirectiveMapper, DirectiveMapper, DirectiveTransform},
+    hoist_adapter::HoistAdapter,
+};
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use thiserror::Error;
 
-mod markdown_adapter;
-mod parse_config;
 mod slug;
-/// Streaming transformers (hoist, directives, etc.).
-pub mod transform;
+use crate::parser::markdown_adapter;
 
 /// Errors that can occur during Markdown processing.
 #[derive(Debug, Error)]
@@ -70,7 +68,25 @@ pub struct ParseResult {
     /// Rendered HTML output.
     pub html: String,
     /// Hoisted top-level ESM import/export statements.
-    pub imports: Vec<String>,
+    pub imports: Vec<ImportSpec>,
+}
+
+/// Structured import captured during parsing/rewriting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportSpec {
+    /// Raw import statement text.
+    pub source: String,
+    /// Logical kind (hoisted import/export, mapper-required, etc.).
+    pub kind: ImportKind,
+}
+
+/// Category of import for downstream adapters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportKind {
+    /// Imported or exported from the document root.
+    Hoisted,
+    /// Required by directive mapper or other transforms.
+    Transform,
 }
 
 /// Parses Markdown and rewrites the resulting HTML stream with the default rewrite options.
@@ -90,17 +106,40 @@ pub fn parse_with_options(
     let events = get_event_iterator(input)?;
     let hoisted = Rc::new(RefCell::new(Vec::new()));
     let directive_count = Rc::new(RefCell::new(0usize));
+    let required_imports = options.required_imports.clone();
+    let mapper = options.directive_mapper.clone();
+    let rewrite_options = options.clone();
 
     let pipeline = DirectiveAdapter::new(
         HoistAdapter::new(events, Rc::clone(&hoisted)),
         Rc::clone(&directive_count),
+        mapper,
+        Rc::clone(&required_imports),
     );
 
-    let rewriter = StreamingRewriter::new(Vec::new(), options);
+    let rewriter = StreamingRewriter::new(Vec::new(), rewrite_options);
     let rewriter = pipeline.stream_to_writer(rewriter)?;
 
-    let mut imports = hoisted.borrow().clone();
-    ensure_aside_import(&mut imports, *directive_count.borrow());
+    let mut imports: Vec<ImportSpec> = hoisted
+        .borrow()
+        .iter()
+        .cloned()
+        .map(|source| ImportSpec {
+            source,
+            kind: ImportKind::Hoisted,
+        })
+        .collect();
+
+    imports.extend(
+        required_imports
+            .borrow()
+            .iter()
+            .cloned()
+            .map(|source| ImportSpec {
+                source,
+                kind: ImportKind::Transform,
+            }),
+    );
 
     let output = rewriter.into_inner()?;
     let html = String::from_utf8(output)?;
@@ -242,7 +281,7 @@ mod tests {
             output
                 .imports
                 .iter()
-                .any(|line| line.contains("import Tabs from")),
+                .any(|spec| spec.source.contains("import Tabs from")),
             "imports should be hoisted into the imports list"
         );
     }

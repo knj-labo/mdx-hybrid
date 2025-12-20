@@ -2,7 +2,56 @@
 
 use std::fmt::Write as _;
 
-use crate::code_fence::{FenceState, advance_fence_state};
+use crate::transform::code_fence::{FenceState, advance_fence_state};
+
+/// Declarative description of how a parsed directive should be rendered.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DirectiveTransform {
+    /// Opening tag (already assembled, e.g. `<Aside type="note">`).
+    pub start_tag: String,
+    /// Closing tag (e.g. `</Aside>`).
+    pub end_tag: String,
+    /// Import statements the mapper requires for this directive instance.
+    pub required_imports: Vec<String>,
+}
+
+/// Trait for mapping parsed directive openings into concrete HTML/JSX tags plus imports.
+pub trait DirectiveMapper {
+    /// Maps a directive opening to a rendering transform. Returning `None` leaves the directive untouched.
+    fn map_opening(&self, opening: &DirectiveOpening) -> Option<DirectiveTransform>;
+}
+
+/// Default mapper that preserves current Aside-based behavior for Starlight/Astro.
+#[derive(Clone, Debug, Default)]
+pub struct AsideDirectiveMapper {
+    import_stmt: String,
+}
+
+impl AsideDirectiveMapper {
+    /// Creates a mapper that emits `<Aside>` tags and requests the Starlight Aside import.
+    pub fn new() -> Self {
+        Self {
+            import_stmt: "import { Aside } from '@astrojs/starlight/components';".to_string(),
+        }
+    }
+}
+
+impl DirectiveMapper for AsideDirectiveMapper {
+    fn map_opening(&self, opening: &DirectiveOpening) -> Option<DirectiveTransform> {
+        if !is_supported_name(&opening.name) {
+            return None;
+        }
+
+        let start_tag = opening.to_aside_start();
+        let end_tag = opening.to_aside_end();
+
+        Some(DirectiveTransform {
+            start_tag,
+            end_tag,
+            required_imports: vec![self.import_stmt.clone()],
+        })
+    }
+}
 
 /// Ensures Aside import is present when directives were rewritten.
 /// If `count > 0` and no existing import from `@astrojs/starlight/components` is present,
@@ -24,11 +73,15 @@ pub fn ensure_aside_import(hoisted: &mut Vec<String>, directive_count: usize) {
     }
 }
 
+/// Parsed representation of a directive opening line (e.g. `:::note[Title] foo="bar"`).
 #[derive(Clone, Debug)]
-pub(crate) struct DirectiveOpening {
-    name: String,
-    bracket_title: Option<String>,
-    raw_attrs: String,
+pub struct DirectiveOpening {
+    /// Lowercased directive name (note/tip/info/...).
+    pub name: String,
+    /// Optional title captured from bracket syntax `[...]`.
+    pub bracket_title: Option<String>,
+    /// Raw attribute string after normalization (type/title stripped when overridden).
+    pub raw_attrs: String,
 }
 
 impl DirectiveOpening {
@@ -155,6 +208,7 @@ fn is_supported_name(name: &str) -> bool {
 }
 
 /// Legacy string-based directive rewrite used internally by the streaming adapter for block-local transforms.
+#[allow(dead_code)]
 pub(crate) fn rewrite_directives_to_asides(input: &str) -> (String, usize) {
     let mut fence_state = FenceState::default();
     let mut output = String::new();
@@ -198,6 +252,56 @@ pub(crate) fn rewrite_directives_to_asides(input: &str) -> (String, usize) {
     }
 
     (output, count)
+}
+
+/// Mapper-powered rewrite that returns transformed HTML, count, and required imports.
+pub(crate) fn rewrite_with_mapper(
+    input: &str,
+    mapper: &dyn DirectiveMapper,
+) -> (String, usize, Vec<String>) {
+    let mut fence_state = FenceState::default();
+    let mut output = String::new();
+    let mut count = 0usize;
+    let mut required_imports = Vec::new();
+
+    // Stack of active directive transforms (paired with openings for fallback closing).
+    let mut directive_stack: Vec<(DirectiveOpening, DirectiveTransform)> = Vec::new();
+
+    for line in input.lines() {
+        let fence_outcome = advance_fence_state(line, fence_state);
+        fence_state = fence_outcome.next_state;
+
+        if fence_outcome.skip_imports {
+            writeln!(output, "{}", line).ok();
+            continue;
+        }
+
+        if let Some(opening) = parse_opening_directive(line)
+            && let Some(transform) = mapper.map_opening(&opening)
+        {
+            count += 1;
+            required_imports.extend(transform.required_imports.clone());
+            directive_stack.push((opening.clone(), transform.clone()));
+            writeln!(output, "{}", transform.start_tag).ok();
+            continue;
+        }
+
+        if is_directive_closer(line)
+            && let Some((_, transform)) = directive_stack.pop()
+        {
+            let end_tag = transform.end_tag;
+            writeln!(output, "{}", end_tag).ok();
+            continue;
+        }
+
+        writeln!(output, "{}", line).ok();
+    }
+
+    while let Some((_, transform)) = directive_stack.pop() {
+        writeln!(output, "{}", transform.end_tag).ok();
+    }
+
+    (output, count, required_imports)
 }
 
 #[cfg(test)]
@@ -286,8 +390,14 @@ mod tests {
     fn render_with_adapter(input: &str) -> (String, usize) {
         let events = get_event_iterator(input).expect("parser");
         let directive_count = Rc::new(RefCell::new(0usize));
-        let pipeline = DirectiveAdapter::new(events, Rc::clone(&directive_count));
-        let writer = StreamingRewriter::new(Vec::new(), RewriteOptions::default());
+        let opts = RewriteOptions::default();
+        let pipeline = DirectiveAdapter::new(
+            events,
+            Rc::clone(&directive_count),
+            opts.directive_mapper.clone(),
+            opts.required_imports.clone(),
+        );
+        let writer = StreamingRewriter::new(Vec::new(), opts);
         let writer = pipeline.stream_to_writer(writer).expect("render stream");
         let html = String::from_utf8(writer.into_inner().expect("flush")).expect("utf8");
         (html, *directive_count.borrow())
