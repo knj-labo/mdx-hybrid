@@ -276,14 +276,14 @@ pub(crate) fn rewrite_with_mapper(
             continue;
         }
 
-        if let Some(opening) = parse_opening_directive(line) {
-            if let Some(transform) = mapper.map_opening(&opening) {
-                count += 1;
-                required_imports.extend(transform.required_imports.clone());
-                directive_stack.push((opening.clone(), transform.clone()));
-                writeln!(output, "{}", transform.start_tag).ok();
-                continue;
-            }
+        if let Some(opening) = parse_opening_directive(line)
+            && let Some(transform) = mapper.map_opening(&opening)
+        {
+            count += 1;
+            required_imports.extend(transform.required_imports.clone());
+            directive_stack.push((opening.clone(), transform.clone()));
+            writeln!(output, "{}", transform.start_tag).ok();
+            continue;
         }
 
         if is_directive_closer(line)
