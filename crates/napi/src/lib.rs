@@ -741,9 +741,8 @@ mod tests {
     fn compile_document_emits_frontmatter_json() {
         let config = InternalCompilerConfig::new(None);
         let source = "---\ntitle: Test\n---\n# Hello".to_string();
-        let result =
-            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-                .expect("compile success");
+        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+            .expect("compile success");
         assert_eq!(result.frontmatter_json, "{\"title\":\"Test\"}");
         assert!(
             result
@@ -758,9 +757,8 @@ mod tests {
     fn compile_document_handles_missing_frontmatter() {
         let config = InternalCompilerConfig::new(None);
         let source = "# Hello".to_string();
-        let result =
-            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-                .expect("compile success");
+        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+            .expect("compile success");
         assert_eq!(result.frontmatter_json, "{}");
         assert!(
             result.code.contains("export const frontmatter = {};"),
@@ -773,9 +771,8 @@ mod tests {
     fn compile_document_hoists_root_imports() {
         let config = InternalCompilerConfig::new(None);
         let source = "import X from './x';\n\n# Title".to_string();
-        let result =
-            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-                .expect("compile success");
+        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+            .expect("compile success");
         assert!(
             result.code.contains("import X from './x';"),
             "code missing hoisted import: {}",
@@ -792,9 +789,8 @@ mod tests {
     fn compile_document_ignores_imports_inside_fences() {
         let config = InternalCompilerConfig::new(None);
         let source = "```\nimport Y from './y'\n```\n\n# Title".to_string();
-        let result =
-            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-                .expect("compile success");
+        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+            .expect("compile success");
         assert!(
             !result.code.contains("import Y from './y'"),
             "fenced import should not hoist: {}",
@@ -817,9 +813,8 @@ export { foo };\n\
 \n# Title"
             .to_string();
 
-        let result =
-            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-                .expect("compile success");
+        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+            .expect("compile success");
 
         // hoisted exports appear before _html declaration
         let hoist_pos = result.code.find("export const foo").unwrap();
@@ -854,9 +849,8 @@ export { foo };\n\
     fn compile_document_does_not_hoist_exports_inside_fence() {
         let config = InternalCompilerConfig::new(None);
         let source = "```\nexport const no = true\n```\n\nexport const yes = true;".to_string();
-        let result =
-            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-                .expect("compile success");
+        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+            .expect("compile success");
 
         assert!(
             result.code.contains("export const yes = true;"),
@@ -882,9 +876,8 @@ export const foo = 1 // inline\n\
 \n# Title"
             .to_string();
 
-        let result =
-            compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-                .expect("compile success");
+        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+            .expect("compile success");
 
         let html_pos = result.code.find("const _html = `").unwrap();
         assert!(
