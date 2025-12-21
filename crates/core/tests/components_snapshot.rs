@@ -73,3 +73,39 @@ fn filetree_snapshot_disabled() {
         false,
     );
 }
+
+#[test]
+fn aside_directive_snapshot_enabled() {
+    snapshot(
+        "aside_directive_enabled",
+        include_str!("../../../fixtures/core/components/aside_directive.md"),
+        true,
+    );
+}
+
+#[test]
+fn aside_directive_snapshot_disabled() {
+    snapshot(
+        "aside_directive_disabled",
+        include_str!("../../../fixtures/core/components/aside_directive.md"),
+        false,
+    );
+}
+
+#[test]
+fn aside_mdx_snapshot_enabled() {
+    snapshot(
+        "aside_mdx_enabled",
+        include_str!("../../../fixtures/core/components/aside_mdx.md"),
+        true,
+    );
+}
+
+#[test]
+fn aside_mdx_snapshot_disabled() {
+    snapshot(
+        "aside_mdx_disabled",
+        include_str!("../../../fixtures/core/components/aside_mdx.md"),
+        false,
+    );
+}

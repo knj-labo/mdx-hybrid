@@ -1,12 +1,13 @@
-//! Rewrites Astro docs components (Aside, Steps, Tabs, FileTree) into plain HTML structures.
+//! Rewrites Astro docs components (Aside, Steps, Tabs, FileTree, Aside) into plain HTML structures.
 
 use lol_html::Selector;
-use lol_html::{ElementContentHandlers, element};
+use lol_html::{element, ElementContentHandlers};
 use std::borrow::Cow;
 
 /// Returns lol_html handlers for rewriting Astro docs components into plain HTML.
 pub fn component_handlers() -> Vec<(Cow<'static, Selector>, ElementContentHandlers<'static>)> {
     vec![
+        aside_handler(),
         steps_handler(),
         step_handler(),
         tabs_handler(),
@@ -22,7 +23,6 @@ fn steps_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) 
         el.set_attribute("class", "steps")?;
         Ok(())
     })
-    .into()
 }
 
 fn step_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
@@ -31,7 +31,6 @@ fn step_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
         el.set_attribute("class", "steps__item")?;
         Ok(())
     })
-    .into()
 }
 
 fn tabs_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
@@ -41,7 +40,6 @@ fn tabs_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
         el.set_attribute("role", "tablist")?;
         Ok(())
     })
-    .into()
 }
 
 fn tab_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
@@ -52,12 +50,11 @@ fn tab_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
         el.set_attribute("role", "tabpanel")?;
         if !title.is_empty() {
             let heading = format!("<div class=\"tab__title\">{}</div>", title);
-            let _ = el.prepend(&heading, lol_html::html_content::ContentType::Html);
-            let _ = el.remove_attribute("title");
+            el.prepend(&heading, lol_html::html_content::ContentType::Html);
+            el.remove_attribute("title");
         }
         Ok(())
     })
-    .into()
 }
 
 fn filetree_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
@@ -66,7 +63,6 @@ fn filetree_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static
         el.set_attribute("class", "filetree")?;
         Ok(())
     })
-    .into()
 }
 
 fn file_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
@@ -75,5 +71,36 @@ fn file_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
         el.set_attribute("class", "filetree__item")?;
         Ok(())
     })
-    .into()
+}
+
+fn aside_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
+    element!("Aside", |el| {
+        let aside_type = el.get_attribute("type").unwrap_or_default();
+        let title = el.get_attribute("title").unwrap_or_default();
+
+        el.set_tag_name("aside")?;
+
+        let mut classes = Vec::new();
+        classes.push("aside".to_string());
+        if !aside_type.is_empty() {
+            classes.push(format!("aside--{}", aside_type));
+        }
+        if let Some(existing) = el.get_attribute("class")
+            && !existing.trim().is_empty()
+        {
+            classes.push(existing.trim().to_string());
+        }
+        el.set_attribute("class", &classes.join(" "))?;
+
+        if !title.is_empty() {
+            let heading = format!("<div class=\"aside__title\">{}</div>", title);
+            el.prepend(&heading, lol_html::html_content::ContentType::Html);
+        }
+
+        el.remove_attribute("type");
+        el.remove_attribute("title");
+        el.remove_attribute("data-mf-source");
+
+        Ok(())
+    })
 }

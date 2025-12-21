@@ -3,7 +3,7 @@
 /// Apply smartypants-style replacements to plain text HTML, skipping code/pre/script/style blocks
 /// and MDX/JS expressions enclosed in `{...}`.
 pub fn apply_smartypants(input: &str) -> String {
-    if !input.contains(&['"', '\'', '-']) && !input.contains("...") {
+    if !input.contains(['"', '\'', '-']) && !input.contains("...") {
         return input.to_string();
     }
 
@@ -28,7 +28,7 @@ pub fn apply_smartypants(input: &str) -> String {
         // Handle tags wholesale to manage code/pre/script/style skipping.
         if c == '<' {
             let mut tag = String::from("<");
-            while let Some(n) = chars.next() {
+            for n in chars.by_ref() {
                 tag.push(n);
                 if n == '>' {
                     break;

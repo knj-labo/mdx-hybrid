@@ -290,8 +290,9 @@ mod tests {
     fn test_directive_rewrites_to_aside() {
         let input = ":::note[Heads up]\ncontent\n:::";
         let output = parse(input).unwrap().html;
-        assert!(output.contains("<Aside type=\"note\" title=\"Heads up\">"));
-        assert!(output.contains("</Aside>"));
+        assert!(output.contains("<aside class=\"aside aside--note\">"));
+        assert!(output.contains("Heads up"));
+        assert!(output.contains("</aside>"));
     }
 
     #[test]
@@ -306,8 +307,9 @@ mod tests {
     fn test_mdx_embedded_jsx_preserved() {
         let input = read_fixture("mdx/embedded-jsx/component.mdx");
         let output = parse(&input).unwrap().html;
-        assert!(output.contains("<Aside title=\"Heads up\">"));
-        assert!(output.contains("</Aside>"));
+        assert!(output.contains("<aside class=\"aside\">"));
+        assert!(output.contains("Heads up"));
+        assert!(output.contains("</aside>"));
     }
 
     #[test]
