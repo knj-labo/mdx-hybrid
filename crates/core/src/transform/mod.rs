@@ -6,12 +6,16 @@
 
 /// Code fence state tracking utilities.
 pub mod code_fence;
+/// Astro docs component rewrite helpers.
+pub mod components;
 /// Directive-to-Aside (or custom) rewriting adapter.
 pub mod directive_adapter;
 /// Directive mapping traits and default implementations.
 pub mod directives;
 /// ESM import/export hoisting adapter.
 pub mod hoist_adapter;
+/// Smart punctuation transformations (quotes, dashes, ellipsis).
+pub mod smartypants;
 
 pub use directive_adapter::DirectiveAdapter;
 pub use hoist_adapter::HoistAdapter;

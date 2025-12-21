@@ -34,6 +34,7 @@ use thiserror::Error;
 
 mod slug;
 use crate::parser::markdown_adapter;
+use crate::transform::smartypants::apply_smartypants;
 
 /// Errors that can occur during Markdown processing.
 #[derive(Debug, Error)]
@@ -153,7 +154,11 @@ pub fn parse_with_options(
     );
 
     let output = rewriter.into_inner()?;
-    let html = String::from_utf8(output)?;
+    let mut html = String::from_utf8(output)?;
+
+    if options.enable_smartypants {
+        html = apply_smartypants(&html);
+    }
 
     Ok(ParseResult { html, imports })
 }
@@ -177,6 +182,7 @@ mod jsx_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transform::smartypants::apply_smartypants;
     use std::fs;
     use std::path::PathBuf;
 
@@ -215,6 +221,7 @@ mod tests {
         let input = "import X from './x'\n\n# Title";
         let opts = RewriteOptions {
             enable_hoist: false,
+            enable_smartypants: false,
             ..RewriteOptions::default()
         };
         let result = parse_with_options(input, opts).expect("parse succeeds");
@@ -259,11 +266,33 @@ mod tests {
     }
 
     #[test]
+    fn test_smartypants_enabled() {
+        let input = "Hello -- \"world\" ...";
+        let out = apply_smartypants(input);
+        assert_eq!(out, "Hello – “world” …");
+    }
+
+    #[test]
+    fn test_smartypants_disabled() {
+        let input = "Hello -- \"world\" ...";
+        let opts = RewriteOptions {
+            enable_smartypants: false,
+            ..RewriteOptions::default()
+        };
+        let output = parse_with_options(input, opts).unwrap().html;
+        assert!(
+            output.contains("Hello -- &quot;world&quot; ...")
+                || output.contains("Hello -- \"world\" ...")
+        );
+    }
+
+    #[test]
     fn test_directive_rewrites_to_aside() {
         let input = ":::note[Heads up]\ncontent\n:::";
         let output = parse(input).unwrap().html;
-        assert!(output.contains("<Aside type=\"note\" title=\"Heads up\">"));
-        assert!(output.contains("</Aside>"));
+        assert!(output.contains("<aside class=\"aside aside--note\">"));
+        assert!(output.contains("Heads up"));
+        assert!(output.contains("</aside>"));
     }
 
     #[test]
@@ -278,8 +307,9 @@ mod tests {
     fn test_mdx_embedded_jsx_preserved() {
         let input = read_fixture("mdx/embedded-jsx/component.mdx");
         let output = parse(&input).unwrap().html;
-        assert!(output.contains("<Aside title=\"Heads up\">"));
-        assert!(output.contains("</Aside>"));
+        assert!(output.contains("<aside class=\"aside\">"));
+        assert!(output.contains("Heads up"));
+        assert!(output.contains("</aside>"));
     }
 
     #[test]

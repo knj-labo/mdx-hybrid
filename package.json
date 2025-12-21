@@ -1,0 +1,10 @@
+{
+  "name": "markflow-root",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {},
+  "dependencies": {
+    "parse5": "^7.1.2"
+  }
+}

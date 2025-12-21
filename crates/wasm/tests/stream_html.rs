@@ -11,6 +11,8 @@ fn collect_stream(
     enforce_lazy: Option<bool>,
     enable_directives: Option<bool>,
     enable_hoist: Option<bool>,
+    enable_smartypants: Option<bool>,
+    enable_components: Option<bool>,
 ) -> Vec<String> {
     let chunks = Rc::new(RefCell::new(Vec::<String>::new()));
     let target = chunks.clone();
@@ -26,6 +28,8 @@ fn collect_stream(
         enforce_lazy,
         enable_directives,
         enable_hoist,
+        enable_smartypants,
+        enable_components,
     )
     .expect("stream html");
     drop(callback);
@@ -36,9 +40,9 @@ fn collect_stream(
 #[wasm_bindgen_test]
 fn stream_matches_render_html() {
     let input = "# Hello\\n\\n**bold** _italic_";
-    let expected = render_html(input, None, None, None).expect("render html");
+    let expected = render_html(input, None, None, None, None, None).expect("render html");
 
-    let chunks = collect_stream(input, None, None, None);
+    let chunks = collect_stream(input, None, None, None, None, None);
 
     assert!(!chunks.is_empty(), "stream should emit at least one chunk");
     assert_eq!(chunks.join(""), expected);
@@ -47,9 +51,9 @@ fn stream_matches_render_html() {
 #[wasm_bindgen_test]
 fn stream_respects_lazy_option() {
     let input = "<img src=\"/hero.png\">";
-    let default_output = collect_stream(input, None, None, None).join("");
+    let default_output = collect_stream(input, None, None, None, None, None).join("");
     assert!(default_output.contains("loading=\"lazy\""));
 
-    let disabled_output = collect_stream(input, Some(false), None, None).join("");
+    let disabled_output = collect_stream(input, Some(false), None, None, None, None).join("");
     assert!(!disabled_output.contains("loading=\"lazy\""));
 }

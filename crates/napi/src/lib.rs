@@ -25,6 +25,10 @@ pub struct RewriteConfig {
     pub enable_directives: Option<bool>,
     /// Enable hoisting of root-level import/export statements. Defaults to true.
     pub enable_hoist: Option<bool>,
+    /// Enable smart punctuation (quotes, dashes, ellipsis). Defaults to true.
+    pub enable_smartypants: Option<bool>,
+    /// Enable Astro docs component rewrites (Aside/Steps/Tabs/FileTree). Defaults to true.
+    pub enable_components: Option<bool>,
 }
 
 impl Default for RewriteConfig {
@@ -33,6 +37,8 @@ impl Default for RewriteConfig {
             enforce_img_loading_lazy: true,
             enable_directives: None,
             enable_hoist: None,
+            enable_smartypants: None,
+            enable_components: None,
         }
     }
 }
@@ -43,6 +49,8 @@ impl From<RewriteConfig> for RewriteOptions {
             enforce_img_loading_lazy: config.enforce_img_loading_lazy,
             enable_directives: config.enable_directives.unwrap_or(true),
             enable_hoist: config.enable_hoist.unwrap_or(true),
+            enable_smartypants: config.enable_smartypants.unwrap_or(true),
+            enable_components: config.enable_components.unwrap_or(true),
             ..RewriteOptions::default()
         }
     }

@@ -86,7 +86,7 @@ pub struct DirectiveOpening {
 
 impl DirectiveOpening {
     pub(crate) fn to_aside_start(&self) -> String {
-        let mut tag = String::from("<Aside");
+        let mut tag = String::from("<Aside data-mf-source=\"directive\"");
 
         // type attribute is always injected/overwritten.
         write!(tag, " type=\"{}\"", self.name).ok();
@@ -317,7 +317,7 @@ mod tests {
         let input = ":::note\nhello\n:::";
         let (out, count) = render_with_adapter(input);
         assert_eq!(count, 1);
-        assert!(out.contains("<Aside type=\"note\">"));
+        assert!(out.contains("<aside class=\"aside aside--note\">"));
         assert!(out.contains("hello"));
     }
 
@@ -333,7 +333,9 @@ mod tests {
     fn bracket_title_overrides_attr() {
         let input = ":::note[Hi] title=\"Ignore\"\nBody\n:::";
         let (out, _) = render_with_adapter(input);
-        assert!(out.contains("<Aside type=\"note\" title=\"Hi\">"));
+        assert!(
+            out.contains("<aside class=\"aside aside--note\"><div class=\"aside__title\">Hi</div>")
+        );
         assert!(!out.contains("Ignore"));
     }
 
@@ -341,7 +343,7 @@ mod tests {
     fn type_attr_is_overwritten() {
         let input = ":::warning type=\"old\"\nBody\n:::";
         let (out, _) = render_with_adapter(input);
-        assert!(out.contains("<Aside type=\"warning\">"));
+        assert!(out.contains("<aside class=\"aside aside--warning\">"));
         assert!(!out.contains("type=\"old\""));
     }
 
@@ -350,25 +352,26 @@ mod tests {
         let input = ":::note\nOuter\n:::tip\nInner\n:::\n:::";
         let (out, count) = render_with_adapter(input);
         assert_eq!(count, 2);
-        assert!(out.contains("<Aside type=\"note\">"));
-        assert!(out.contains("<Aside type=\"tip\">"));
-        assert!(out.contains("</Aside>"));
+        assert!(out.contains("<aside class=\"aside aside--note\">"));
+        assert!(out.contains("<aside class=\"aside aside--tip\">"));
+        assert!(out.contains("</aside>"));
     }
 
     #[test]
     fn attribute_title_retained_when_no_bracket() {
         let input = ":::info title=\"Keep me\"\nBody\n:::";
         let (out, _) = render_with_adapter(input);
-        assert!(out.contains("<Aside type=\"info\" title=\"Keep me\">"));
+        assert!(out.contains(
+            "<aside class=\"aside aside--info\"><div class=\"aside__title\">Keep me</div>"
+        ));
     }
 
     #[test]
     fn arbitrary_attributes_are_preserved() {
         let input = ":::danger data-test=\"yes\" class=\"foo\"\nBody\n:::";
         let (out, _) = render_with_adapter(input);
-        assert!(out.contains("<Aside type=\"danger\""));
         assert!(out.contains("data-test=\"yes\""));
-        assert!(out.contains("class=\"foo\""));
+        assert!(out.contains("class=\"aside aside--danger foo\""));
     }
 
     #[test]

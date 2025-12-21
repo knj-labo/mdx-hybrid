@@ -6,6 +6,12 @@ settings:
 
 importers:
 
+  .:
+    dependencies:
+      parse5:
+        specifier: ^7.1.2
+        version: 7.3.0
+
   crates/napi:
     devDependencies:
       '@napi-rs/cli':
