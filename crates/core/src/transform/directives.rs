@@ -333,7 +333,9 @@ mod tests {
     fn bracket_title_overrides_attr() {
         let input = ":::note[Hi] title=\"Ignore\"\nBody\n:::";
         let (out, _) = render_with_adapter(input);
-        assert!(out.contains("<aside class=\"aside aside--note\"><div class=\"aside__title\">Hi</div>"));
+        assert!(
+            out.contains("<aside class=\"aside aside--note\"><div class=\"aside__title\">Hi</div>")
+        );
         assert!(!out.contains("Ignore"));
     }
 
@@ -359,7 +361,9 @@ mod tests {
     fn attribute_title_retained_when_no_bracket() {
         let input = ":::info title=\"Keep me\"\nBody\n:::";
         let (out, _) = render_with_adapter(input);
-        assert!(out.contains("<aside class=\"aside aside--info\"><div class=\"aside__title\">Keep me</div>"));
+        assert!(out.contains(
+            "<aside class=\"aside aside--info\"><div class=\"aside__title\">Keep me</div>"
+        ));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Rewrites Astro docs components (Aside, Steps, Tabs, FileTree, Aside) into plain HTML structures.
 
 use lol_html::Selector;
-use lol_html::{element, ElementContentHandlers};
+use lol_html::{ElementContentHandlers, element};
 use std::borrow::Cow;
 
 /// Returns lol_html handlers for rewriting Astro docs components into plain HTML.
