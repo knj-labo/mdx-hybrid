@@ -83,4 +83,5 @@
 | 2025-12-21 00:41 | #101 | fixtures の削除/維持判断フローを README に明文化（3ステップ: 使用確認→提案→決定ログ反映）。 | 今後のフィクスチャ整理を円滑化 | fixtures/README.md |
 | 2025-12-21 00:46 | #102 | CI ステップの棚卸しを `docs/ci/ci-steps.md` に追加し、docs/README の索引に CI 行を追加。 | CI 保守ポイントの可視化とノーノイズ化の継続 | docs/ci/ci-steps.md, docs/README.md |
 | 2025-12-21 00:52 | #103 | CI の Astro harness 比較ステップを main/develop 直push または PR ラベル `perf` のときだけ実行する条件に変更。 | CI 時間短縮と必要時のみ perf 計測 | .github/workflows/ci.yml |
+| 2025-12-21 00:56 | #104 | web/README.md を追加し、Web (Astro) 層のセットアップ/開発/ビルド手順と Content Collections の位置を明記。 | Web 層オンボーディングの簡素化 | web/README.md |
 | 2025-12-20 00:00 | #90 | `docs` 配下をインベントリ: architecture/, decisions/, README.md, specs/ | ドキュメント整理の現状把握のため | 情報取得のみ |
