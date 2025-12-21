@@ -2,7 +2,7 @@
 import { runHarnessBuild } from './run-astro-harness.mjs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { parse } from 'parse5'
 
 const args = process.argv.slice(2)
@@ -20,6 +20,24 @@ const outputPath = outputArg ? outputArg.split('=')[1] : null
 if (!Number.isInteger(runs) || runs < 1) {
   console.error(
     'Usage: node scripts/compare-astro-harness.mjs [--runs=N] [--summary=path] [--target=name] [--mode=string|semantic] [--output=path]',
+  )
+  process.exit(1)
+}
+
+// Ensure NAPI binary exists before running harness to avoid cryptic failures.
+const napiBinGlob = [
+  'crates/napi/markflow.darwin-arm64.node',
+  'crates/napi/markflow.darwin-x64.node',
+  'crates/napi/markflow.darwin-universal.node',
+  'crates/napi/markflow.linux-x64-gnu.node',
+  'crates/napi/markflow.linux-x64-musl.node',
+  'crates/napi/markflow.win32-x64-msvc.node',
+  'crates/napi/markflow.win32-ia32-msvc.node',
+]
+const hasNapiBinary = napiBinGlob.some((p) => existsSync(resolve(p)))
+if (!hasNapiBinary) {
+  console.error(
+    '❌ NAPI native binary not found. Build it first: `cd crates/napi && pnpm install && pnpm run build:napi`',
   )
   process.exit(1)
 }
