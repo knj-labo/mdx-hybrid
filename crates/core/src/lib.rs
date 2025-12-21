@@ -213,8 +213,10 @@ mod tests {
     #[test]
     fn test_parse_without_hoist_keeps_imports_in_html() {
         let input = "import X from './x'\n\n# Title";
-        let mut opts = RewriteOptions::default();
-        opts.enable_hoist = false;
+        let opts = RewriteOptions {
+            enable_hoist: false,
+            ..RewriteOptions::default()
+        };
         let result = parse_with_options(input, opts).expect("parse succeeds");
 
         assert!(

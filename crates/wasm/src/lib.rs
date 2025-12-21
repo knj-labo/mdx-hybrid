@@ -57,9 +57,11 @@ pub fn render_jsx(
         return render_to_jsx(input).map_err(to_js_error);
     }
 
-    let mut options = RewriteOptions::default();
-    options.enable_directives = enable_directives;
-    options.enable_hoist = enable_hoist;
+    let options = RewriteOptions {
+        enable_directives,
+        enable_hoist,
+        ..RewriteOptions::default()
+    };
 
     let parse_result = markflow_core::parse_with_options(input, options).map_err(to_js_error)?;
     Ok(parse_result.html)
