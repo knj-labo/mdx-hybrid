@@ -10,10 +10,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 markflow-core = { path = "../core" }
-napi = { version = "3", default-features = false, features = ["napi4", "serde-json"] }
-napi-derive = "3"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+napi = { workspace = true }
+napi-derive = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [build-dependencies]
-napi-build = "2"
+napi-build = { workspace = true }
