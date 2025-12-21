@@ -278,11 +278,5 @@ AstroへのMarkflow統合は、Astroが期待するモジュールインター�
 - URL推定: `src/pages` 以下のファイルを `/${relative}` 形式に正規化し、`index.mdx` は `/` または親ディレクトリのルートへマップする。
 - 公開APIは `markflowPlugin({ compiler, include })` としてエクスポートされ、Astro以外のVite環境からも再利用可能。
 
-## 10. Astroハーネス統合
-`fixtures/integration/astro-harness` では新しい配線を使ってE2Eを確認できる。
-
-- `astro.config.mjs` の `vite.plugins` に `markflowPlugin()` を先頭で差し込み、既存の `virtual:markflow-docs` ハーネスはそのまま並列で動かす。
-- `src/layouts/DocsLayout.astro` と `src/content/docs/getting-started.mdx` を追加し、Frontmatter経由で layout を指定。Viteプラグインが `.mdx` をハイジャックして layout import を解決しつつ `getHeadings()` / `frontmatter` をエクスポートする。
-- `src/pages/index.astro` に MDX プレビューセクションを追加し、ビルド済みHTMLを `<GettingStartedContent />` として描画することでパイプラインの結果を直接確認できる。
-
-この構成により、「RustでFrontmatter抽出→HTML生成→Astro互換モジュール出力→Viteプラグイン→Astro harness表示」という一連の流れがローカルで再現できる。
+## 10. Astroハーネス
+`fixtures/integration/astro-harness` を用いた最小ハーネスを運用再開。`scripts/run-astro-harness.mjs` で `markflow` / `baseline` ビルドを切り替え、`compare-astro-harness.mjs` でビルド時間を記録する（HTML diff は未実装）。CI ではオプトインジョブ（perf ラベルまたは workflow_dispatch）でのみ実行する。
