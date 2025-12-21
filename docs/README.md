@@ -9,6 +9,7 @@ Welcome to the Markflow documentation. This file is the single entry point to ev
 | Architecture | `docs/architecture/` | System and runtime design notes; how components fit together. |
 | Decisions | `docs/decisions/` | Chronological decision log (唯一の真実). 新規の方針・例外は必ずここに記録。 |
 | Specs | `docs/specs/` | ユースケースや機能仕様の詳細。実装前の参照元。 |
+| CI | `docs/ci/ci-steps.md` | CI workflow stepsと保守方針のインベントリ。 |
 | Repo Overview | `README.md` | What Markflow is and how to build/test at a glance. |
 | Contributor Quickstart | `AGENTS.md` | コマンド・コーディング規約のクイックリファレンス。 |
 

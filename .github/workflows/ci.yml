@@ -30,8 +30,6 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: crates/napi/pnpm-lock.yaml
 
-      - name: Validate backlog specs
-        run: node scripts/check-backlog.mjs
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -60,16 +58,18 @@ jobs:
 
       - name: Smoke test NAPI binding
         working-directory: crates/napi
-        run: pnpm run smoke:napi -- samples/large.md
+        run: pnpm run smoke:napi -- ../../fixtures/core/markdown/hello.md
 
       - name: Install Astro harness dependencies
         working-directory: fixtures/integration/astro-harness
         run: pnpm install --frozen-lockfile
 
-      - name: Compare Astro harness (markflow vs baseline)
+      - name: Compare Astro harness (perf-only)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || contains(github.event.pull_request.labels.*.name, 'perf')
         run: node scripts/compare-astro-harness.mjs --runs=2 --summary harness-summary.json
 
       - name: Publish Astro harness summary
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || contains(github.event.pull_request.labels.*.name, 'perf')
         run: |
           node <<'NODE'
           const fs = require('fs')

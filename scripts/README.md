@@ -5,5 +5,12 @@
 - `run-astro-harness.mjs` — run the integration harness (`markflow|baseline`) for sanity/perf checks.
 - `smoke-napi.mjs` — smoke-test N-API build against a fixture markdown (e.g., `fixtures/core/markdown/hello.md`).
 
-現状の状態:
-- 全スクリプトは残存。未使用/廃止予定は未マーク。今後不要と判断したらここに「deprecated」などを追記の上で削除を検討。 
+## Usage ledger (mark when last run)
+
+| Script | Purpose | Last run | Notes |
+| --- | --- | --- | --- |
+| compare-astro-harness.mjs | Astro harness: markflow vs baseline comparison | (pending) | 主要ベンチ。残す前提。 |
+| run-astro-harness.mjs | Astro harness runner | (pending) | 主要ベンチ。残す前提。 |
+| smoke-napi.mjs | N-API smoke test against fixture | (pending) | 開発時の最小確認に使用。 |
+
+Legend: ★ = 用途不明/重複のため後続ステップで存続判断する候補。

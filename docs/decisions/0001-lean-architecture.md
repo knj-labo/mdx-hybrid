@@ -72,4 +72,15 @@
 | 2025-12-20 00:00 | #89 | Backlog.md と ROADMAP.md を廃止し、意思決定は `docs/decisions/0001-lean-architecture.md` に一本化する方針を確定。該当ファイルを削除。 | 進行・決定の単一ソース化のため | ファイル削除 + 方針決定 |
 | 2025-12-21 00:00 | #91 | docs/README.md を索引化し、docs/architecture・docs/decisions・docs/specs の役割を明記。ROADMAP/Backlog 廃止と decision log 集約を再周知。関連箇所の ROADMAP 参照を decision log へ差し替え。 | ドキュメント入口の明確化と情報探索性向上 | docs/README.md, docs/architecture/overview.md, docs/specs/mf-140-core-engine.md |
 | 2025-12-21 00:00 | #92 | docs/specs/README.md を新設し、全スペックを一覧化。decision log を唯一の最新参照先と明記。 | 仕様探索の起点を一本化するため | docs/specs/README.md |
+| 2025-12-21 00:05 | #93 | scripts/README.md に使用状況の索引テーブルを追加し、Backlog 廃止後の `check-backlog.mjs` を★暫定マーク。 | 余剰スクリプト洗い出しの準備 | scripts/README.md |
+| 2025-12-21 00:07 | #94 | `scripts/check-backlog.mjs` を Backlog 不在時は警告の上で exit 0 する互換モードに変更。CI 落ちを防止。 | Backlog/ROADMAP 廃止後の互換維持 | scripts/check-backlog.mjs |
+| 2025-12-21 00:12 | #95 | `pnpm install --filter @markflow/web` で web 依存を導入し、`pnpm --filter @markflow/web run build` が成功することを確認。 | Astro 層のセットアップとビルド健全性確認 | lockfile (pnpm), web/dist (build artifact) |
+| 2025-12-21 00:18 | #96 | fixtures/README.md に現行フィクスチャの棚卸し表を追加。未使用候補の★欄を用意。 | 重複/用途不明フィクスチャ整理の準備 | fixtures/README.md |
+| 2025-12-21 00:23 | #97 | web/src/content/docs/hello-world.md を追加し、Astro content collection WARN を解消。`pnpm --filter @markflow/web run build` 再実行で成功（vite internal unused import WARN のみ）。 | Web 層のノイズ除去と build 健全性維持 | web/src/content/docs/hello-world.md, web/dist |
+| 2025-12-21 00:30 | #98 | Backlog 廃止に伴い `scripts/check-backlog.mjs` を削除し、CI (`.github/workflows/ci.yml`) からの呼び出しを除去。scripts/README.md から該当行を削除。 | 不要スクリプトとCIノイズの排除 | scripts/check-backlog.mjs, .github/workflows/ci.yml, scripts/README.md |
+| 2025-12-21 00:33 | #99 | CI の NAPI スモークテスト入力を削除済み `samples/large.md` から `fixtures/core/markdown/hello.md` に差し替え。 | CI 安定化（存在するフィクスチャへの切替） | .github/workflows/ci.yml |
+| 2025-12-21 00:37 | #100 | Astro build のノイズを除去するため、`web/astro.config.mjs` に Vite onwarn フィルタと `logLevel: 'error'` を設定。ビルド警告ゼロを確認。 | CI/ビルド出力のノーノイズ化 | web/astro.config.mjs |
+| 2025-12-21 00:41 | #101 | fixtures の削除/維持判断フローを README に明文化（3ステップ: 使用確認→提案→決定ログ反映）。 | 今後のフィクスチャ整理を円滑化 | fixtures/README.md |
+| 2025-12-21 00:46 | #102 | CI ステップの棚卸しを `docs/ci/ci-steps.md` に追加し、docs/README の索引に CI 行を追加。 | CI 保守ポイントの可視化とノーノイズ化の継続 | docs/ci/ci-steps.md, docs/README.md |
+| 2025-12-21 00:52 | #103 | CI の Astro harness 比較ステップを main/develop 直push または PR ラベル `perf` のときだけ実行する条件に変更。 | CI 時間短縮と必要時のみ perf 計測 | .github/workflows/ci.yml |
 | 2025-12-20 00:00 | #90 | `docs` 配下をインベントリ: architecture/, decisions/, README.md, specs/ | ドキュメント整理の現状把握のため | 情報取得のみ |
