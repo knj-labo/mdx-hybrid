@@ -58,7 +58,7 @@ jobs:
 
       - name: Smoke test NAPI binding
         working-directory: crates/napi
-        run: pnpm run smoke:napi -- ../../fixtures/core/markdown/hello.md
+        run: pnpm run smoke:napi -- fixtures/core/markdown/hello.md
 
       - name: Install Astro harness dependencies
         working-directory: fixtures/integration/astro-harness
