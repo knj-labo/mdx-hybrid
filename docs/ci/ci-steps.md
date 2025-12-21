@@ -24,3 +24,4 @@ Removed (decision #98): `Validate backlog specs` (Backlog.md廃止に伴い削�
 Follow-ups to consider:
 - pnpm v10 upgrade once lockfile compatibility is validated.
 - Optional gating/parallelization for harness comparison if CI time needs reduction.
+- NAPI build requires prior `pnpm install` in `crates/napi`; missing node_modules leads to `napi: not found`.
