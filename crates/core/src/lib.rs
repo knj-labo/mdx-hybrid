@@ -27,10 +27,10 @@ pub use transform::{
     hoist_adapter::HoistAdapter,
 };
 
+use crate::event::Event;
 use std::cell::RefCell;
 use std::rc::Rc;
 use thiserror::Error;
-use crate::event::Event;
 
 mod slug;
 use crate::parser::markdown_adapter;
