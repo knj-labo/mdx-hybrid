@@ -88,3 +88,4 @@
 | 2025-12-21 01:10 | #106 | NAPI ビルド手順を `crates/napi/README.md` に明記し、CI ドキュメントに「先に pnpm install 必須、未実行だと napi: not found」と追記。 | NAPI ビルド失敗（node_modules 不在）防止の周知 | crates/napi/README.md, docs/ci/ci-steps.md |
 | 2025-12-21 01:16 | #107 | pnpm-workspace に `crates/napi` を追加し、node_modules を生成。ローカルで `pnpm run build:napi` を試行したが、DNS 制限で crates.io に到達できず失敗（CI ではネット許可前提）。 | NAPI ビルド安定化（ワークスペース登録）と現状のネット制約共有 | pnpm-workspace.yaml, crates/napi/node_modules (generated) |
 | 2025-12-20 00:00 | #90 | `docs` 配下をインベントリ: architecture/, decisions/, README.md, specs/ | ドキュメント整理の現状把握のため | 情報取得のみ |
+| 2025-12-21 01:25 | #108 | CI の NAPI smoke 引数を `fixtures/core/markdown/hello.md` に修正（working-directory crates/napi で `../../` がルートを飛び越えていた問題を解消）。 | CI smoke パス解決修正 | .github/workflows/ci.yml |
