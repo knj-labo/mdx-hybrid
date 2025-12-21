@@ -62,3 +62,14 @@
 | 2025-12-20 00:00 | #79 | `cargo test --workspace --lib` 実行、全テスト成功（core/napi/wasm） | 変更後のリグレッション確認のため | 実行のみ |
 | 2025-12-20 00:00 | #80 | N-API に enable_directives/enable_hoist を配管（RewriteConfig に Option<bool> 追加、RewriteOptions へ unwrap_or(true) で反映、index.d.ts に型追加）し、`cargo test --workspace --lib` 再度成功 | 上位バインディングでのトグル利用を可能にするため | コード変更 + 型更新 |
 | 2025-12-20 00:00 | #81 | WASM に enable_directives/enable_hoist を配管（render_html/render_jsx/stream_html にオプション追加、hoist無効時は collect_root_imports をスキップ、render_jsx は両方ONなら従来render_to_jsxを維持）し、テスト追加と `cargo test --workspace --lib` 成功 | ブラウザ/WASM からのトグル利用を可能にするため | コード変更 + テスト更新 |
+| 2025-12-20 00:00 | #82 | `ls -a web` 実行で `No such file or directory` を確認。Astroフロントが未配置であることを把握 | フロントエンド再構築の前提確認のため | 情報取得のみ |
+| 2025-12-20 00:00 | #83 | フロント方針合意: 新規 Astro v5 プロジェクトを `web/` にスキャフォールド。`packages/astro-loader` はローカルnpmパッケージとして `web/` から利用。`fixtures/integration/astro-harness` は回帰/ベンチ用途で維持し、破壊的変更なし。 | フロント再構築と既存資産の役割分担を明確化するため | 方針決定のみ |
+| 2025-12-20 00:00 | #84 | `web/` を新規スキャフォールド計画に沿って作成（Astro v5 skeleton: package.json/tsconfig/astro.config/content config/index.astro、pnpm-workspace.yaml を新設し web を追加、.gitignore に web/{node_modules,dist,.astro} を追記） | フロントエンド開発基盤を用意するため | 新規追加・設定 |
+| 2025-12-20 00:00 | #85 | scripts/・fixtures/・samples/ のトップレベルを列挙（scripts: check-backlog.mjs, compare-astro-harness.mjs, run-astro-harness.mjs, smoke-napi.mjs; fixtures: core, integration, README.md; samples: large.md） | 重複/不要物洗い出し準備のため | 情報取得のみ |
+| 2025-12-20 00:00 | #86 | `samples/large.md` を不要と判断し削除 | サンプルをスリム化するため | ファイル削除 |
+| 2025-12-20 00:00 | #87 | `scripts/README.md` を追加し各スクリプトの用途を簡潔に記載（check-backlog/compare-astro-harness/run-astro-harness/smoke-napi） | スクリプト利用状況の可視化と整理準備のため | ドキュメント追加 |
+| 2025-12-20 00:00 | #88 | `fixtures/core` を調査：markdown 配下に hello.md, table.md。mdx 配下に embedded-jsx/component.mdx, esm/imports.mdx, expressions/flow.mdx, expressions/inline.mdx が存在 | フィクスチャ重複・不足の把握のため | 情報取得のみ |
+| 2025-12-20 00:00 | #89 | Backlog.md と ROADMAP.md を廃止し、意思決定は `docs/decisions/0001-lean-architecture.md` に一本化する方針を確定。該当ファイルを削除。 | 進行・決定の単一ソース化のため | ファイル削除 + 方針決定 |
+| 2025-12-21 00:00 | #91 | docs/README.md を索引化し、docs/architecture・docs/decisions・docs/specs の役割を明記。ROADMAP/Backlog 廃止と decision log 集約を再周知。関連箇所の ROADMAP 参照を decision log へ差し替え。 | ドキュメント入口の明確化と情報探索性向上 | docs/README.md, docs/architecture/overview.md, docs/specs/mf-140-core-engine.md |
+| 2025-12-21 00:00 | #92 | docs/specs/README.md を新設し、全スペックを一覧化。decision log を唯一の最新参照先と明記。 | 仕様探索の起点を一本化するため | docs/specs/README.md |
+| 2025-12-20 00:00 | #90 | `docs` 配下をインベントリ: architecture/, decisions/, README.md, specs/ | ドキュメント整理の現状把握のため | 情報取得のみ |

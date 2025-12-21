@@ -1,0 +1,11 @@
+{
+  "extends": "./node_modules/astro/tsconfigs/strict",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["astro/client"],
+    "baseUrl": "."
+  },
+  "include": ["src/**/*", "env.d.ts"],
+  "exclude": ["dist"]
+}

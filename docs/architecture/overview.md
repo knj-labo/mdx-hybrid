@@ -51,5 +51,5 @@ Markdown Input
 
 ## References
 
-- Full implementation roadmap: [ROADMAP.md](../../ROADMAP.md)
+- Implementation roadmap was consolidated into the decision log; see `docs/decisions/0001-lean-architecture.md` for current status and history.
 - Development guidelines: [guidelines.md](../development/guidelines.md)

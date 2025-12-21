@@ -1,7 +1,7 @@
 # MF-140 Core Engine Streaming Adapter
 
 ## Background
-Phase 1 (Core Engine Refactoring) in [ROADMAP.md](../../ROADMAP.md) requires replacing the prototype parser with a streaming, markdown-rs-backed pipeline. The old adapter materialized every Markdown event into a `Vec<Event>` before rendering, which blocked lol_html from streaming, increased memory usage on large files, and made tight-list handling diverge from GFM. This spec documents the finished streaming iterator so WASM/N-API bindings inherit the same zero-copy behavior.
+Phase 1 (Core Engine Refactoring) was originally tracked in ROADMAP.md (now deprecated). Its authoritative record now lives in `docs/decisions/0001-lean-architecture.md`. The goal: replace the prototype parser with a streaming, markdown-rs-backed pipeline. The old adapter materialized every Markdown event into a `Vec<Event>` before rendering, which blocked lol_html from streaming, increased memory usage on large files, and made tight-list handling diverge from GFM. This spec documents the finished streaming iterator so WASM/N-API bindings inherit the same zero-copy behavior.
 
 ## Owner & Timeline
 - Owner: Kenji (Core)
@@ -28,6 +28,6 @@ Phase 1 (Core Engine Refactoring) in [ROADMAP.md](../../ROADMAP.md) requires rep
 4. `node scripts/check-backlog.mjs`
 
 ## References
-- ROADMAP Phase 1 notes (`ROADMAP.md`)
+- Historical context: ROADMAP Phase 1 notes (retired). See `docs/decisions/0001-lean-architecture.md` for the maintained log.
 - Architecture overview (`docs/architecture/overview.md`)
 - Spec-driven workflow guide (`docs/development/spec-driven-codex.md`)

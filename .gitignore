@@ -170,3 +170,6 @@ crates/napi/markflow.*.node
 
 # workspace dependencies
 packages/*/node_modules/
+web/node_modules/
+web/dist/
+web/.astro/
