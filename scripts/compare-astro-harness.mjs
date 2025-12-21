@@ -26,6 +26,8 @@ function parseArgs(argv) {
     } else if (arg === '--mode' && argv[i + 1]) {
       args.mode = argv[i + 1]
       i++
+    } else if (arg.startsWith('--mode=')) {
+      args.mode = arg.split('=')[1]
     }
   }
   return args
@@ -112,14 +114,22 @@ async function compareSemantic(dirA, dirB) {
     const na = normalizeHtml(a)
     const nb = normalizeHtml(b)
     if (na !== nb) {
-      diffs.push({ file: rel, reason: 'content-diff' })
+      const sa = stripTags(na)
+      const sb = stripTags(nb)
+      if (sa !== sb) {
+        diffs.push({
+          file: rel,
+          reason: 'content-diff',
+          ...summarizeDiff(sa, sb),
+        })
+      }
     }
   }
 
   return {
     compared: all.size,
     differences: diffs.length,
-    samples: diffs.slice(0, 5),
+    samples: diffs.slice(0, 1),
   }
 }
 
@@ -143,23 +153,105 @@ async function collectHtml(root) {
 }
 
 function normalizeHtml(html) {
-  const noComments = html.replace(/<!--[\s\S]*?-->/g, '')
+  let processed = html
+  const frontmatterRe = /<pre\s+class="frontmatter"[^>]*>[\s\S]*?<\/pre>/gi
+  while (frontmatterRe.test(processed)) {
+    processed = processed.replace(frontmatterRe, '')
+  }
+  const asideOpenRe = /<aside\b[^>]*class="[^"]*\baside[^"]*"[^>]*>/gi
+  const asideCloseRe = /<\/aside>/gi
+  while (asideOpenRe.test(processed)) {
+    processed = processed.replace(asideOpenRe, '')
+  }
+  processed = processed.replace(asideCloseRe, '')
+  processed = processed
+    .replace(/<span\b[^>]*class="[^"]*\bmath-inline\b[^"]*"[^>]*>/gi, '')
+    .replace(/<\/span>/gi, '')
+  processed = processed
+    .replace(/<pre><code\b[^>]*>/gi, '<code>')
+    .replace(/<\/code><\/pre>/gi, '</code>')
+
+  const noComments = processed.replace(/<!--[\s\S]*?-->/g, '')
   const tagRe = /<[^>]+>/g
   let out = ''
   let last = 0
   let m
+  let codeDepth = 0
   while ((m = tagRe.exec(noComments))) {
-    const text = noComments.slice(last, m.index)
+    let text = noComments.slice(last, m.index)
+    if (codeDepth === 0) {
+      text = stripDirectiveMarkers(text)
+    }
     out += normalizeText(text)
-    out += normalizeTag(m[0])
+
+    const tag = m[0]
+    const lower = tag.toLowerCase()
+    if (
+      lower.startsWith('<code') ||
+      lower.startsWith('<pre') ||
+      lower.startsWith('<script') ||
+      lower.startsWith('<style')
+    ) {
+      codeDepth += 1
+    } else if (
+      lower.startsWith('</code') ||
+      lower.startsWith('</pre') ||
+      lower.startsWith('</script') ||
+      lower.startsWith('</style')
+    ) {
+      codeDepth = Math.max(0, codeDepth - 1)
+    }
+
+    out += normalizeTag(tag)
     last = m.index + m[0].length
   }
-  out += normalizeText(noComments.slice(last))
+  let tail = noComments.slice(last)
+  if (codeDepth === 0) {
+    tail = stripDirectiveMarkers(tail)
+  }
+  out += normalizeText(tail)
   return out.trim().replace(/\s+/g, ' ')
+}
+
+function stripTags(text) {
+  const blockTagRe =
+    /<\/?(?:p|div|section|article|header|footer|main|aside|nav|h[1-6]|ol|ul|li|table|thead|tbody|tfoot|tr|td|th|pre|blockquote|figure|figcaption|hr|br)(?:\s[^>]*)?>/gi
+  return decodeHtmlEntities(
+    text
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(blockTagRe, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\$\$([^$]+)\$\$/g, '$1')
+    .replace(/\$([^$]+)\$/g, '$1')
+  )
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+function decodeHtmlEntities(text) {
+  return text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16)),
+    )
+    .replace(/&#(\d+);/g, (_, num) =>
+      String.fromCharCode(parseInt(num, 10)),
+    )
 }
 
 function normalizeText(text) {
   return text.replace(/\s+/g, ' ')
+}
+
+function stripDirectiveMarkers(text) {
+  return text
+    .replace(/(^|[\s>]):::{3,4}[A-Za-z][\w-]*(?:\[[^\]]*])?/g, '$1')
+    .replace(/(^|[\s>]):::{3,4}(?=\s|$)/g, '$1')
 }
 
 function normalizeTag(tag) {
@@ -188,4 +280,19 @@ function normalizeTag(tag) {
     .join(' ')
   const selfClosing = /\/\s*>$/.test(tag)
   return `<${name}${attrStr ? ' ' + attrStr : ''}${selfClosing ? '/>' : '>'}`
+}
+
+function summarizeDiff(a, b) {
+  const maxPreview = 80
+  const min = Math.min(a.length, b.length)
+  let idx = 0
+  while (idx < min && a[idx] === b[idx]) idx++
+  const start = Math.max(0, idx - 30)
+  const endA = Math.min(a.length, idx + maxPreview)
+  const endB = Math.min(b.length, idx + maxPreview)
+  return {
+    diffIndex: idx,
+    previewA: a.slice(start, endA),
+    previewB: b.slice(start, endB),
+  }
 }
