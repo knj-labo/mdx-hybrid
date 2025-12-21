@@ -35,3 +35,27 @@ fn mdx_import_hoist_snapshot() {
     let input = "import X from './x'\n\n# Title";
     snapshot_from("mdx_import_hoist", input);
 }
+
+#[test]
+fn mdx_struct_simple_snapshot() {
+    let input = include_str!("../../../fixtures/core/mdx/mdx_struct_simple.mdx");
+    snapshot_from("mdx_struct_simple", input);
+}
+
+#[test]
+fn mdx_struct_nested_snapshot() {
+    let input = include_str!("../../../fixtures/core/mdx/mdx_struct_nested.mdx");
+    snapshot_from("mdx_struct_nested", input);
+}
+
+#[test]
+fn mdx_struct_expr_snapshot() {
+    let input = include_str!("../../../fixtures/core/mdx/mdx_struct_expr.mdx");
+    snapshot_from("mdx_struct_expr", input);
+}
+
+#[test]
+fn slug_duplicates_snapshot() {
+    let input = include_str!("../../../fixtures/core/markdown/slug_duplicates.md");
+    snapshot_from("slug_duplicates", input);
+}
