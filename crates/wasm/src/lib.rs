@@ -197,7 +197,8 @@ mod tests {
     #[test]
     fn render_html_without_hoist_keeps_imports() {
         let input = "import X from './x';\n\n# Hi";
-        let html = render_html(input, None, None, Some(false), None, None).expect("render_html success");
+        let html =
+            render_html(input, None, None, Some(false), None, None).expect("render_html success");
         assert!(
             html.contains("import X"),
             "import should remain when hoist is disabled"

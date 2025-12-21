@@ -8,8 +8,8 @@ use std::io::{self, Write};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::transform::directives::{AsideDirectiveMapper, DirectiveMapper};
 use crate::transform::components::component_handlers;
+use crate::transform::directives::{AsideDirectiveMapper, DirectiveMapper};
 
 /// Configuration flags that control how the streaming rewriter manipulates HTML.
 #[derive(Clone)]

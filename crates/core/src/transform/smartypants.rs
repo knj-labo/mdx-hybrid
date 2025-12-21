@@ -14,9 +14,8 @@ pub fn apply_smartypants(input: &str) -> String {
     let mut brace_depth = 0usize;
     let mut in_tick = false;
 
-    let is_opening = |s: &str| {
-        s.is_empty() || s.ends_with(|c: char| c.is_whitespace() || "([{\"'".contains(c))
-    };
+    let is_opening =
+        |s: &str| s.is_empty() || s.ends_with(|c: char| c.is_whitespace() || "([{\"'".contains(c));
 
     while let Some(c) = chars.next() {
         // Inline code with backticks
@@ -36,9 +35,17 @@ pub fn apply_smartypants(input: &str) -> String {
                 }
             }
             let lower = tag.to_ascii_lowercase();
-            if lower.starts_with("<code") || lower.starts_with("<pre") || lower.starts_with("<script") || lower.starts_with("<style") {
+            if lower.starts_with("<code")
+                || lower.starts_with("<pre")
+                || lower.starts_with("<script")
+                || lower.starts_with("<style")
+            {
                 code_depth += 1;
-            } else if lower.starts_with("</code") || lower.starts_with("</pre") || lower.starts_with("</script") || lower.starts_with("</style") {
+            } else if lower.starts_with("</code")
+                || lower.starts_with("</pre")
+                || lower.starts_with("</script")
+                || lower.starts_with("</style")
+            {
                 code_depth = code_depth.saturating_sub(1);
             }
             out.push_str(&tag);

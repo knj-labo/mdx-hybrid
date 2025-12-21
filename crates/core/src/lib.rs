@@ -182,9 +182,9 @@ mod jsx_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transform::smartypants::apply_smartypants;
     use std::fs;
     use std::path::PathBuf;
-    use crate::transform::smartypants::apply_smartypants;
 
     fn fixtures_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/core")
@@ -280,7 +280,10 @@ mod tests {
             ..RewriteOptions::default()
         };
         let output = parse_with_options(input, opts).unwrap().html;
-        assert!(output.contains("Hello -- &quot;world&quot; ...") || output.contains("Hello -- \"world\" ..."));
+        assert!(
+            output.contains("Hello -- &quot;world&quot; ...")
+                || output.contains("Hello -- \"world\" ...")
+        );
     }
 
     #[test]

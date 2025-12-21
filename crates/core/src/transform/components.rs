@@ -1,12 +1,11 @@
 //! Rewrites Astro docs components (Aside, Steps, Tabs, FileTree) into plain HTML structures.
 
-use lol_html::{element, ElementContentHandlers};
-use std::borrow::Cow;
 use lol_html::Selector;
+use lol_html::{ElementContentHandlers, element};
+use std::borrow::Cow;
 
 /// Returns lol_html handlers for rewriting Astro docs components into plain HTML.
-pub fn component_handlers(
-) -> Vec<(Cow<'static, Selector>, ElementContentHandlers<'static>)> {
+pub fn component_handlers() -> Vec<(Cow<'static, Selector>, ElementContentHandlers<'static>)> {
     vec![
         steps_handler(),
         step_handler(),
@@ -22,7 +21,8 @@ fn steps_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) 
         el.set_tag_name("ol")?;
         el.set_attribute("class", "steps")?;
         Ok(())
-    }).into()
+    })
+    .into()
 }
 
 fn step_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
@@ -30,7 +30,8 @@ fn step_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
         el.set_tag_name("li")?;
         el.set_attribute("class", "steps__item")?;
         Ok(())
-    }).into()
+    })
+    .into()
 }
 
 fn tabs_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
@@ -39,7 +40,8 @@ fn tabs_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
         el.set_attribute("class", "tabs")?;
         el.set_attribute("role", "tablist")?;
         Ok(())
-    }).into()
+    })
+    .into()
 }
 
 fn tab_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
@@ -54,7 +56,8 @@ fn tab_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
             let _ = el.remove_attribute("title");
         }
         Ok(())
-    }).into()
+    })
+    .into()
 }
 
 fn filetree_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
@@ -62,7 +65,8 @@ fn filetree_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static
         el.set_tag_name("ul")?;
         el.set_attribute("class", "filetree")?;
         Ok(())
-    }).into()
+    })
+    .into()
 }
 
 fn file_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
@@ -70,5 +74,6 @@ fn file_handler() -> (Cow<'static, Selector>, ElementContentHandlers<'static>) {
         el.set_tag_name("li")?;
         el.set_attribute("class", "filetree__item")?;
         Ok(())
-    }).into()
+    })
+    .into()
 }
