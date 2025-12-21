@@ -2,6 +2,6 @@
 source: directive_note
 expression: result
 ---
-<Aside type="note">
+<aside class="aside aside--note">
 Body
-</Aside>
+</aside>
