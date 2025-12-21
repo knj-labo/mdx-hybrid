@@ -162,3 +162,14 @@ fixtures/integration/astro-harness/src/env.d.ts
 crates/napi/index.js
 crates/napi/index.d.ts
 crates/napi/*.node
+crates/napi/*.dll
+crates/napi/*.so
+crates/napi/*.dylib
+crates/napi/index.*.node
+crates/napi/markflow.*.node
+
+# workspace dependencies
+packages/*/node_modules/
+web/node_modules/
+web/dist/
+web/.astro/

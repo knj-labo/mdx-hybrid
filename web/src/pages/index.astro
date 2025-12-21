@@ -1,0 +1,22 @@
+---
+import { collections } from '../content/config'
+const intro = `Markflow Web Sandbox`;
+---
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{intro}</title>
+  </head>
+  <body>
+    <main style="font-family: system-ui; max-width: 720px; margin: 3rem auto; line-height: 1.6;">
+      <h1>{intro}</h1>
+      <p>Astro v5 skeleton for Markflow. Content Collections are enabled at <code>src/content/</code>.</p>
+      <p>Use <code>pnpm dev</code> in <code>web/</code> to start the preview.</p>
+      <section>
+        <h2>Collections</h2>
+        <p>Registered collections: {Object.keys(collections).join(', ')}</p>
+      </section>
+    </main>
+  </body>
+</html>

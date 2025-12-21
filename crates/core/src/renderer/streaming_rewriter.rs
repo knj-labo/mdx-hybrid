@@ -15,6 +15,10 @@ use crate::transform::directives::{AsideDirectiveMapper, DirectiveMapper};
 pub struct RewriteOptions {
     /// When enabled, missing `loading` attributes on `<img>` tags are defaulted to `lazy`.
     pub enforce_img_loading_lazy: bool,
+    /// Whether directive rewriting (:::note etc.) is applied.
+    pub enable_directives: bool,
+    /// Whether ESM import/export hoisting is applied.
+    pub enable_hoist: bool,
     /// Mapper used to rewrite directives; boxed to allow dynamic dispatch.
     pub directive_mapper: Arc<dyn DirectiveMapper + Send + Sync>,
     /// Collected imports required by the mapper (populated during streaming).
@@ -25,6 +29,8 @@ impl Default for RewriteOptions {
     fn default() -> Self {
         RewriteOptions {
             enforce_img_loading_lazy: true,
+            enable_directives: true,
+            enable_hoist: true,
             directive_mapper: Arc::new(AsideDirectiveMapper::new()),
             required_imports: Rc::new(RefCell::new(Vec::new())),
         }

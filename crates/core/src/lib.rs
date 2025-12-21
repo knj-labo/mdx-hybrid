@@ -27,6 +27,7 @@ pub use transform::{
     hoist_adapter::HoistAdapter,
 };
 
+use crate::event::Event;
 use std::cell::RefCell;
 use std::rc::Rc;
 use thiserror::Error;
@@ -110,15 +111,25 @@ pub fn parse_with_options(
     let mapper = options.directive_mapper.clone();
     let rewrite_options = options.clone();
 
-    let pipeline = DirectiveAdapter::new(
-        HoistAdapter::new(events, Rc::clone(&hoisted)),
-        Rc::clone(&directive_count),
-        mapper,
-        Rc::clone(&required_imports),
-    );
+    // Compose adapters conditionally based on options using a boxed iterator
+    // to keep type uniform across branches.
+    let mut events: Box<dyn Iterator<Item = Event<'static>>> = Box::new(events);
+
+    if options.enable_hoist {
+        events = Box::new(HoistAdapter::new(events, Rc::clone(&hoisted)));
+    }
+
+    if options.enable_directives {
+        events = Box::new(DirectiveAdapter::new(
+            events,
+            Rc::clone(&directive_count),
+            mapper,
+            Rc::clone(&required_imports),
+        ));
+    }
 
     let rewriter = StreamingRewriter::new(Vec::new(), rewrite_options);
-    let rewriter = pipeline.stream_to_writer(rewriter)?;
+    let rewriter = events.stream_to_writer(rewriter)?;
 
     let mut imports: Vec<ImportSpec> = hoisted
         .borrow()
@@ -197,6 +208,25 @@ mod tests {
         let input = "![alt](img.png)";
         let output = parse(input).unwrap().html;
         assert!(output.contains("loading=\"lazy\""));
+    }
+
+    #[test]
+    fn test_parse_without_hoist_keeps_imports_in_html() {
+        let input = "import X from './x'\n\n# Title";
+        let opts = RewriteOptions {
+            enable_hoist: false,
+            ..RewriteOptions::default()
+        };
+        let result = parse_with_options(input, opts).expect("parse succeeds");
+
+        assert!(
+            result.html.contains("import X from './x'"),
+            "import should remain in HTML when hoist is disabled"
+        );
+        assert!(
+            result.imports.is_empty(),
+            "hoisted import list should be empty when hoist is disabled"
+        );
     }
 
     #[test]
