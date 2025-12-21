@@ -40,18 +40,14 @@
   - Skips code blocks/inline code and raw HTML tags.
 - Expose as optional flag in N-API/WASM (`enableSmartypants?: boolean`, default true).
 
-## Component rewrite plan (Step #114 draft)
-- Target components (initial set):
+## Component rewrite (implemented)
+- Target components (current set):
+  - `Aside`: normalized to `<aside class="aside aside--{type}">…</aside>`; when `title` exists, prepend `<div class="aside__title">{title}</div>`; remove `type/title/data-mf-source`, merge existing `class` into the class list. DirectiveAdapter emits `data-mf-source="directive"` for provenance before this pass.
   - `Steps`: `<Steps><Step>…</Step></Steps>` → `<ol class="steps"><li class="steps__item">…</li>…</ol>`.
-  - `Tabs`: `<Tabs><Tab title="...">…</Tab>…</Tabs>` → `div.tablist` + `button[role=tab]` + `div[role=tabpanel]` (static indexing).
+  - `Tabs`: `<Tabs><Tab title="...">…</Tab>…</Tabs>` → `<div class="tabs" role="tablist"><div class="tab" role="tabpanel">…</div>…</div>` with inline title heading.
   - `FileTree`: `<FileTree><File>…</File></FileTree>` → `<ul class="filetree"><li class="filetree__item">…</li>…</ul>`.
 - Passthrough/skip rules:
-  - Child content is preserved; unknown props kept (initially as-is; later may map to `data-*`).
-  - Existing HTML/MDX structure is not altered beyond wrapper/attrs above.
-- Option flag: `enable_components` (RewriteOptions default true) surfaced in N-API/WASM.
-- Tests: snapshot fixtures in core + minimal N-API/WASM cases for each component type.
-
-## Component rewrite implementation plan (Step #115)
-- Core: add `transform/components.rs` implementing rewrites for Steps/Tabs/FileTree using lol-html pass after directive/hoist; gate by `enable_components`. (Aside rewrite is deferred to avoid DirectiveAdapter clash.)
-- Options: add `enable_components: bool` (default true) to RewriteOptions; expose `enableComponents?: boolean` in N-API/WASM (unwrap_or(true)).
-- Tests: 4 core snapshot cases + 1 on/off case each for N-API/WASM to confirm passthrough when disabled.
+  - Child content is preserved; unknown props stay (Aside drops type/title/data-mf-source after consuming; others keep unknown attrs).
+  - Existing HTML/MDX structure is untouched aside from wrapper/attrs above.
+- Option flag: `enable_components` (RewriteOptions default true) surfaced in N-API/WASM; when false, all component rewrites are skipped.
+- Tests: core snapshot fixtures for Tabs/Steps/FileTree/Aside with enable_components on/off; insta directive snapshot updated to normalized Aside output.

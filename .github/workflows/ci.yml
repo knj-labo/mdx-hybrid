@@ -64,6 +64,10 @@ jobs:
         working-directory: fixtures/integration/astro-harness
         run: pnpm install --frozen-lockfile
 
+      - name: Build NAPI for harness (requires network)
+        working-directory: crates/napi
+        run: pnpm run build:napi
+
       - name: Compare Astro harness (perf-only)
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || contains(github.event.pull_request.labels.*.name, 'perf')
         run: node scripts/compare-astro-harness.mjs --runs=2 --summary harness-summary.json
