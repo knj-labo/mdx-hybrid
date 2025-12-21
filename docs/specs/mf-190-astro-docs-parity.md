@@ -1,23 +1,25 @@
 # MF-190: Astro Docs Parity (Rust Renderer)
 
+> Note: Harness scripts (`scripts/run-astro-harness.mjs`, `scripts/compare-astro-harness.mjs`) have been removed from the repo. This spec is retained for historical context; run any benchmarks with ad-hoc tooling if needed.
+
 ## Goal & Scope
 - Reproduce Astro official docs output (core pages) with the Rust-based renderer (crates/core + N-API/WASM) within ~2.5–4 weeks.
 - Target: Markdown/MDX fidelity (structure, semantics, classes/attrs), performance uplift vs JS toolchain, and CI-based regression detection.
 
 ## Phases (high-level)
 1) **Prep (0.5–1d)**: Align harness with Astro docs env; ensure fixtures/integration/astro-harness builds with current deps; enumerate Astro docs MDX features (imports/JSX, custom components, frontmatter, smartypants).
-2) **Diff & Harness (1–2d)**: Extend `scripts/compare-astro-harness.mjs` to produce semantic HTML diffs (normalized attrs/whitespace) for baseline (JS pipeline) vs markflow. Optional: visual check via Playwright.
+2) **Diff & Harness (1–2d)**: (deprecated) Previously used `scripts/compare-astro-harness.mjs` for semantic HTML diffs; script removed—use custom tooling if parity checks are required.
 3) **Impl Sprints (~3w)**:
    - Week 1: CommonMark+GFM parity; slug/heading IDs; table-driven tests.
    - Week 2: MDX/JSX + custom components (<Aside>, <Tabs>, etc.); N-API/WASM surface parity; decide N-API primary for perf, WASM as portability option.
    - Week 3: Performance + streaming rewrite (lol-html) for component remapping; run harness comparisons (≥3 runs) aiming 5–10× JS speedup.
-4) **Final QA (2–3d)**: cargo test --workspace, pnpm test (napi/wasm), `node scripts/run-astro-harness.mjs markflow`, CI wiring for automatic diff on PRs.
+4) **Final QA (2–3d)**: cargo test --workspace, pnpm test (napi/wasm); harness automation removed—run manual checks as needed.
 
 ## Requirements & Inputs
 - Core: markdown-rs + GFM; MDX handling (mdxjs-rs/SWC), frontmatter; slug generation matching rehype-slug/github-slugger.
 - Content features to match: Aside/FileTree/Steps/Tabs, smartypants-equivalent, autolinks, tables, task lists, raw JSX preservation.
 - Fixtures: `fixtures/integration/astro-harness` as baseline playground; reuse `fixtures/core/markdown/*`, `fixtures/core/mdx/*`.
-- Scripts: `scripts/compare-astro-harness.mjs` (perf/diff), `scripts/run-astro-harness.mjs` (integration).
+- Scripts: (removed) former harness scripts; bring-your-own if benchmarking is needed.
 
 ## CI / Regression Strategy
 - Keep harness compare step gated to main/develop or PR label `perf` (decision #103).
