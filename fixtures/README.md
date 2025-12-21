@@ -20,7 +20,7 @@ Use `fixtures/core/*` for unit/regression suites (Rust, AVA, wasm-bindgen). Larg
 | fixtures/core/mdx/* | MDX fixtures (embedded JSX, imports, expressions) | used (core/wasm) |
 | fixtures/integration/astro-harness/ | Astro harness project | used (scripts/run-astro-harness.mjs) |
 | fixtures/integration/withastro-docs/.gitignore | Keeps harness output clean | used |
-| fixtures/integration/withastro-docs/harness-summary.json | Baseline metrics for docs harness | used (compare-astro-harness) |
+| fixtures/integration/withastro-docs/harness-summary.json | Baseline metrics for docs harness | deprecated (compare-astro-harness removed) |
 | fixtures/integration/withastro-docs/README.md | Harness usage notes | used |
 | fixtures/README.md | This file | n/a |
 | ★ (none current) | 未使用候補が見つかればここに追記 | pending |

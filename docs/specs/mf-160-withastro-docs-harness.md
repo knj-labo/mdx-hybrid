@@ -1,5 +1,7 @@
 # MF-160: withastro/docs Starlight ハーネス統合仕様
 
+> Note: Harness helper scripts (`run-astro-harness.mjs`, `compare-astro-harness.mjs`) have been removed from the repo. This spec is retained for historical context; run manual checks with ad-hoc scripts if必要.
+
 ## 1. 目的
 Starlight ベースの公式ドキュメント（`withastro/docs`）を Markflow のエンドツーエンド検証対象として取り込み、Starlight 固有の MDX フロー（auto-import される layout、Content Collections、`entry.render()`）と `vite-plugin-markflow` の挙動が衝突しないことを示す。これにより Phase 2 の「Vite Plugin Interception」タスクを Starlight でも完了扱いできるようにする。
 
@@ -7,14 +9,14 @@ Starlight ベースの公式ドキュメント（`withastro/docs`）を Markflow
 - `fixtures/integration/withastro-docs/` 配下に `withastro/docs` を再現するハーネス（git subtree もしくは shallow clone 用スクリプトと README を含む）。
 - `astro.config.mjs` に `vite-plugin-markflow` を `enforce: 'pre'` で追加したパッチ。
 - Starlight の `starlight.config.mjs` / `src/content/config.ts` と整合する MDX レイアウト検証用ドキュメント（例: `src/content/docs/markflow-integration.mdx`）。
-- `scripts/run-astro-harness.mjs` 互換の実行手順、ならびに `scripts/compare-astro-harness.mjs --runs=2 --summary fixtures/integration/withastro-docs/harness-summary.json` の成果ファイル。
+- (deprecated) かつての `run-astro-harness.mjs` / `compare-astro-harness.mjs` に相当する手順は削除済み。必要なら自前スクリプトで代替すること。
 
 ## 3. 要件
 ### 3.1 機能要件
 1. `withastro/docs` 上で `.md`/`.mdx` のビルドが Markflow プラグイン経由で成功すること。
 2. Starlight が提供する `frontmatter.layout` / `entry.render()` / `headings` 参照が壊れないこと。
 3. `pnpm dev` と `pnpm build` が Starlight テンプレートで通ること。
-4. 速度比較を `baseline`（標準 `@astrojs/mdx`）と `markflow` の 2 モードで最低 2 回ずつ実行し、`harness-summary.json` を生成すること。
+4. 速度比較については自前スクリプトで実施すること（旧 compare-astro-harness は廃止）。
 
 ### 3.2 非機能要件
 - ハーネス用 `node_modules` / `.astro` / `.vercel` 等の重い成果物は `.gitignore` 済み。

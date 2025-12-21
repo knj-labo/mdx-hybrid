@@ -12,4 +12,4 @@
 2. Install deps: `pnpm --dir fixtures/integration/withastro-docs/repo install`
 3. Markflow build: `node scripts/run-astro-harness.mjs withastro-docs markflow`
 4. Baseline build: `node scripts/run-astro-harness.mjs withastro-docs baseline`
-5. Compare runs + persist metrics: `node scripts/compare-astro-harness.mjs --target=withastro-docs --runs=2 --summary=fixtures/integration/withastro-docs/harness-summary.json`
+5. (Optional, local only) Build NAPI and run harness manually if you need perf numbers; CI no longer runs `compare-astro-harness`.

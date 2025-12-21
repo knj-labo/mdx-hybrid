@@ -15,14 +15,11 @@ Workflow: `.github/workflows/ci.yml`
 | Install dependencies (crates/napi) | `pnpm install --frozen-lockfile` | keep | lockfile at crates/napi/pnpm-lock.yaml |
 | Build NAPI binding | `pnpm run build:napi` | keep |  |
 | Smoke test NAPI binding | `pnpm run smoke:napi -- ../../fixtures/core/markdown/hello.md` | keep | input swapped from removed samples/large.md |
-| Install Astro harness deps | `pnpm install --frozen-lockfile` in fixtures/integration/astro-harness | keep |  |
-| Compare Astro harness | `node scripts/compare-astro-harness.mjs --runs=2 --summary harness-summary.json` | keep (perf) | could be gated if CI time becomes an issue |
-| Publish Astro harness summary | Append metrics to GH Step Summary | keep | step already skips when summary file missing |
+| Install Astro harness deps | `pnpm install --frozen-lockfile` in fixtures/integration/astro-harness | keep (for local perf runs) | harness comparison is disabled in CI |
 
 Removed (decision #98): `Validate backlog specs` (Backlog.md廃止に伴い削除)
 
 Follow-ups to consider:
 - pnpm v10 upgrade once lockfile compatibility is validated.
-- Optional gating/parallelization for harness comparison if CI time needs reduction.
+- Harness comparison scripts removed from CI; run locally only when native NAPI binding is available.
 - NAPI build requires prior `pnpm install` in `crates/napi`; missing node_modules leads to `napi: not found`.
-- Semantic diff mode (parse5) added to `scripts/compare-astro-harness.mjs`; use `--mode=semantic` and optionally `--output` for JSON report.

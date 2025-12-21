@@ -9,9 +9,6 @@ cd fixtures/integration/astro-harness
 pnpm install            # first time only
 pnpm run build          # Markflow-enabled build
 pnpm run build:baseline # toggles MARKFLOW_HARNESS_BASELINE=1
-# run from repo root when comparing
-node scripts/compare-astro-harness.mjs --runs=5
-
 # optional E2E smoke (directive → Aside + auto-import)
 MARKFLOW_HARNESS_E2E=1 node tests/directives.aside.test.mjs
 ```

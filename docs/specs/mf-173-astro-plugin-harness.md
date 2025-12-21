@@ -1,5 +1,7 @@
 # MF-173: Astro plugin integration & harness rollout
 
+> Note: The legacy harness scripts (`run-astro-harness.mjs`, `compare-astro-harness.mjs`) have been removed. This spec keeps the rollout ideas; implement ad-hoc harness steps if/when needed.
+
 Status: Draft
 
 ## Goal
