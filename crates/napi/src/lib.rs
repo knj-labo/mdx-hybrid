@@ -21,12 +21,18 @@ const ASTRO_RENDER_HELPERS: &str = "astro/runtime/server/render/index.js";
 pub struct RewriteConfig {
     /// Enable lazy loading for images (default: true)
     pub enforce_img_loading_lazy: bool,
+    /// Enable directive rewriting (:::note, etc.). Defaults to true.
+    pub enable_directives: Option<bool>,
+    /// Enable hoisting of root-level import/export statements. Defaults to true.
+    pub enable_hoist: Option<bool>,
 }
 
 impl Default for RewriteConfig {
     fn default() -> Self {
         Self {
             enforce_img_loading_lazy: true,
+            enable_directives: None,
+            enable_hoist: None,
         }
     }
 }
@@ -35,6 +41,8 @@ impl From<RewriteConfig> for RewriteOptions {
     fn from(config: RewriteConfig) -> Self {
         RewriteOptions {
             enforce_img_loading_lazy: config.enforce_img_loading_lazy,
+            enable_directives: config.enable_directives.unwrap_or(true),
+            enable_hoist: config.enable_hoist.unwrap_or(true),
             ..RewriteOptions::default()
         }
     }

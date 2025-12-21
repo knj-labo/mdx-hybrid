@@ -9,11 +9,30 @@ use wasm_bindgen::prelude::*;
 
 /// Renders markdown into an HTML `String`.
 #[wasm_bindgen(js_name = render_html)]
-pub fn render_html(input: &str) -> Result<String, JsError> {
-    let (_, body_lines) = collect_root_imports(input);
-    let body = body_lines.join("\n");
+pub fn render_html(
+    input: &str,
+    enforce_img_loading_lazy: Option<bool>,
+    enable_directives: Option<bool>,
+    enable_hoist: Option<bool>,
+) -> Result<String, JsError> {
+    let enable_directives = enable_directives.unwrap_or(true);
+    let enable_hoist = enable_hoist.unwrap_or(true);
+
+    let body = if enable_hoist {
+        let (_, body_lines) = collect_root_imports(input);
+        body_lines.join("\n")
+    } else {
+        input.to_string()
+    };
+
     let events = get_event_iterator(&body).map_err(to_js_error)?;
-    let rewriter = StreamingRewriter::new(Vec::new(), RewriteOptions::default());
+    let options = RewriteOptions {
+        enforce_img_loading_lazy: enforce_img_loading_lazy.unwrap_or(true),
+        enable_directives,
+        enable_hoist,
+        ..RewriteOptions::default()
+    };
+    let rewriter = StreamingRewriter::new(Vec::new(), options);
     let rewriter = events
         .stream_to_writer(rewriter)
         .map_err(|err| JsError::new(&err.to_string()))?;
@@ -25,8 +44,25 @@ pub fn render_html(input: &str) -> Result<String, JsError> {
 
 /// Renders markdown/MDX to JSX while preserving raw JSX nodes.
 #[wasm_bindgen(js_name = render_jsx)]
-pub fn render_jsx(input: &str) -> Result<String, JsError> {
-    render_to_jsx(input).map_err(to_js_error)
+pub fn render_jsx(
+    input: &str,
+    enable_directives: Option<bool>,
+    enable_hoist: Option<bool>,
+) -> Result<String, JsError> {
+    let enable_directives = enable_directives.unwrap_or(true);
+    let enable_hoist = enable_hoist.unwrap_or(true);
+
+    if enable_directives && enable_hoist {
+        // Preserve original behavior (imports + JSX preserved).
+        return render_to_jsx(input).map_err(to_js_error);
+    }
+
+    let mut options = RewriteOptions::default();
+    options.enable_directives = enable_directives;
+    options.enable_hoist = enable_hoist;
+
+    let parse_result = markflow_core::parse_with_options(input, options).map_err(to_js_error)?;
+    Ok(parse_result.html)
 }
 
 /// Streams rendered HTML chunks into the provided JavaScript callback.
@@ -39,14 +75,25 @@ pub fn stream_html(
     input: &str,
     chunk_callback: &Function,
     enforce_img_loading_lazy: Option<bool>,
+    enable_directives: Option<bool>,
+    enable_hoist: Option<bool>,
 ) -> Result<(), JsError> {
+    let enable_directives = enable_directives.unwrap_or(true);
+    let enable_hoist = enable_hoist.unwrap_or(true);
+
     let options = RewriteOptions {
         enforce_img_loading_lazy: enforce_img_loading_lazy.unwrap_or(true),
+        enable_directives,
+        enable_hoist,
         ..RewriteOptions::default()
     };
 
-    let (_, body_lines) = collect_root_imports(input);
-    let body = body_lines.join("\n");
+    let body = if enable_hoist {
+        let (_, body_lines) = collect_root_imports(input);
+        body_lines.join("\n")
+    } else {
+        input.to_string()
+    };
     let events = get_event_iterator(&body).map_err(to_js_error)?;
     let writer = JsChunkWriter::new(chunk_callback.clone());
     let rewriter = StreamingRewriter::new(writer, options);
@@ -111,7 +158,7 @@ mod tests {
     #[test]
     fn render_html_hoists_imports() {
         let input = "import X from './x';\n\n# Hi";
-        let html = render_html(input).expect("render_html success");
+        let html = render_html(input, None, None, None).expect("render_html success");
         assert!(
             !html.contains("import X"),
             "import should not appear in rendered HTML"
@@ -122,8 +169,18 @@ mod tests {
     #[test]
     fn render_jsx_preserves_raw_jsx() {
         let input = "import X from './x'\n\n<Component />\n";
-        let jsx = render_jsx(input).expect("render_jsx success");
+        let jsx = render_jsx(input, None, None).expect("render_jsx success");
         assert!(jsx.starts_with("import X from './x'"));
         assert!(jsx.contains("<Component />"));
+    }
+
+    #[test]
+    fn render_html_without_hoist_keeps_imports() {
+        let input = "import X from './x';\n\n# Hi";
+        let html = render_html(input, None, None, Some(false)).expect("render_html success");
+        assert!(
+            html.contains("import X"),
+            "import should remain when hoist is disabled"
+        );
     }
 }
