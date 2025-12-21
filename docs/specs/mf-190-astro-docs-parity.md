@@ -1,35 +1,35 @@
 # MF-190: Astro Docs Parity (Rust Renderer)
 
-> Note: Harness scripts (`scripts/run-astro-harness.mjs`, `scripts/compare-astro-harness.mjs`) have been removed from the repo. This spec is retained for historical context; run any benchmarks with ad-hoc tooling if needed.
+> Note: Harness scripts (`scripts/run-astro-harness.mjs`, `scripts/compare-astro-harness.mjs`) are back in a minimal form (build + time only, no HTML diff). CI では perf ラベルか workflow_dispatch で opt-in 実行。
 
 ## Goal & Scope
 - Reproduce Astro official docs output (core pages) with the Rust-based renderer (crates/core + N-API/WASM) within ~2.5–4 weeks.
 - Target: Markdown/MDX fidelity (structure, semantics, classes/attrs), performance uplift vs JS toolchain, and CI-based regression detection.
 
 ## Phases (high-level)
-1) **Prep (0.5–1d)**: Align harness with Astro docs env; ensure fixtures/integration/astro-harness builds with current deps; enumerate Astro docs MDX features (imports/JSX, custom components, frontmatter, smartypants).
-2) **Diff & Harness (1–2d)**: (deprecated) Previously used `scripts/compare-astro-harness.mjs` for semantic HTML diffs; script removed—use custom tooling if parity checks are required.
+1) **Prep (0.5–1d)**: fixtures/integration/astro-harness を使用し、依存を合わせる。公式ハーネス比較は opt-in 運用。
+2) **Diff & Harness (1–2d)**: 現行 compare スクリプトはビルド時間のみ記録。セマンティック diff が必要な場合はカスタムツールを追加する。
 3) **Impl Sprints (~3w)**:
    - Week 1: CommonMark+GFM parity; slug/heading IDs; table-driven tests.
    - Week 2: MDX/JSX + custom components (<Aside>, <Tabs>, etc.); N-API/WASM surface parity; decide N-API primary for perf, WASM as portability option.
    - Week 3: Performance + streaming rewrite (lol-html) for component remapping; run harness comparisons (≥3 runs) aiming 5–10× JS speedup.
-4) **Final QA (2–3d)**: cargo test --workspace, pnpm test (napi/wasm); harness automation removed—run manual checks as needed.
+4) **Final QA (2–3d)**: cargo test --workspace, pnpm test (napi/wasm); harness自動化は撤去済みのため、必要に応じて手動チェック。
 
 ## Requirements & Inputs
 - Core: markdown-rs + GFM; MDX handling (mdxjs-rs/SWC), frontmatter; slug generation matching rehype-slug/github-slugger.
 - Content features to match: Aside/FileTree/Steps/Tabs, smartypants-equivalent, autolinks, tables, task lists, raw JSX preservation.
-- Fixtures: `fixtures/integration/astro-harness` as baseline playground; reuse `fixtures/core/markdown/*`, `fixtures/core/mdx/*`.
-- Scripts: (removed) former harness scripts; bring-your-own if benchmarking is needed.
+- Fixtures: `fixtures/integration/astro-harness` はプレイグラウンド。`fixtures/core/markdown/*`, `fixtures/core/mdx/*` を再利用。
+- Scripts: compare/run スクリプトは build 時間のみ対応。ベンチや構造 diff が必要なら拡張する。
 
 ## CI / Regression Strategy
-- Keep harness compare step gated to main/develop or PR label `perf` (decision #103).
-- Add semantic diff output; fail on structural mismatches; optional visual snapshots.
+- ハーネス比較は opt-in（perf ラベルの PR または workflow_dispatch 入力 `harness=true`）。常時は走らない。
+- セマンティック diff が必要なら compare スクリプトへ拡張し、構造差分のみで落とす方針にする。
 - N-API build requires `pnpm install` in crates/napi; smoke uses `fixtures/core/markdown/hello.md` (decision #108).
 
-## Planned semantic diff (Step #110 spec)
+## Planned semantic diff (not yet re-implemented)
 - Normalization: DOM-parse both outputs; sort attributes; collapse whitespace in text nodes; drop comments.
 - Diffing: traverse synchronized trees; report tag/name, attribute-set, or text mismatches; emit JSON report (empty = pass).
-- CLI: add `--mode=semantic` (default keeps string diff) and `--output=<file>` to save the report; baseline/markflow generation stays unchanged.
+- 現行 compare スクリプトはビルド時間のみ。セマンティック diff を再導入する場合はここを実装ガイドとする。
 
 ## Open Decisions / Risks
 - Smartypants equivalent in Rust pipeline (own pass vs port of remark-smartypants).
