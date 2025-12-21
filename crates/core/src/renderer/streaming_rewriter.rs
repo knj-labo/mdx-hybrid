@@ -9,6 +9,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::transform::directives::{AsideDirectiveMapper, DirectiveMapper};
+use crate::transform::components::component_handlers;
 
 /// Configuration flags that control how the streaming rewriter manipulates HTML.
 #[derive(Clone)]
@@ -19,6 +20,10 @@ pub struct RewriteOptions {
     pub enable_directives: bool,
     /// Whether ESM import/export hoisting is applied.
     pub enable_hoist: bool,
+    /// Whether to apply smart punctuation transformations.
+    pub enable_smartypants: bool,
+    /// Whether to rewrite Astro docs components (Aside, Steps, Tabs, FileTree).
+    pub enable_components: bool,
     /// Mapper used to rewrite directives; boxed to allow dynamic dispatch.
     pub directive_mapper: Arc<dyn DirectiveMapper + Send + Sync>,
     /// Collected imports required by the mapper (populated during streaming).
@@ -31,6 +36,8 @@ impl Default for RewriteOptions {
             enforce_img_loading_lazy: true,
             enable_directives: true,
             enable_hoist: true,
+            enable_smartypants: true,
+            enable_components: true,
             directive_mapper: Arc::new(AsideDirectiveMapper::new()),
             required_imports: Rc::new(RefCell::new(Vec::new())),
         }
@@ -117,6 +124,10 @@ impl RewriteOptions {
 
         if self.enforce_img_loading_lazy {
             handlers.push(lazy_img_handler());
+        }
+
+        if self.enable_components {
+            handlers.extend(component_handlers());
         }
 
         settings.element_content_handlers = handlers;

@@ -25,3 +25,4 @@ Follow-ups to consider:
 - pnpm v10 upgrade once lockfile compatibility is validated.
 - Optional gating/parallelization for harness comparison if CI time needs reduction.
 - NAPI build requires prior `pnpm install` in `crates/napi`; missing node_modules leads to `napi: not found`.
+- Semantic diff mode (parse5) added to `scripts/compare-astro-harness.mjs`; use `--mode=semantic` and optionally `--output` for JSON report.

@@ -14,9 +14,13 @@ pub fn render_html(
     enforce_img_loading_lazy: Option<bool>,
     enable_directives: Option<bool>,
     enable_hoist: Option<bool>,
+    enable_smartypants: Option<bool>,
+    enable_components: Option<bool>,
 ) -> Result<String, JsError> {
     let enable_directives = enable_directives.unwrap_or(true);
     let enable_hoist = enable_hoist.unwrap_or(true);
+    let enable_smartypants = enable_smartypants.unwrap_or(true);
+    let enable_components = enable_components.unwrap_or(true);
 
     let body = if enable_hoist {
         let (_, body_lines) = collect_root_imports(input);
@@ -30,6 +34,8 @@ pub fn render_html(
         enforce_img_loading_lazy: enforce_img_loading_lazy.unwrap_or(true),
         enable_directives,
         enable_hoist,
+        enable_smartypants,
+        enable_components,
         ..RewriteOptions::default()
     };
     let rewriter = StreamingRewriter::new(Vec::new(), options);
@@ -48,9 +54,13 @@ pub fn render_jsx(
     input: &str,
     enable_directives: Option<bool>,
     enable_hoist: Option<bool>,
+    enable_smartypants: Option<bool>,
+    enable_components: Option<bool>,
 ) -> Result<String, JsError> {
     let enable_directives = enable_directives.unwrap_or(true);
     let enable_hoist = enable_hoist.unwrap_or(true);
+    let enable_smartypants = enable_smartypants.unwrap_or(true);
+    let enable_components = enable_components.unwrap_or(true);
 
     if enable_directives && enable_hoist {
         // Preserve original behavior (imports + JSX preserved).
@@ -60,6 +70,8 @@ pub fn render_jsx(
     let options = RewriteOptions {
         enable_directives,
         enable_hoist,
+        enable_smartypants,
+        enable_components,
         ..RewriteOptions::default()
     };
 
@@ -79,14 +91,20 @@ pub fn stream_html(
     enforce_img_loading_lazy: Option<bool>,
     enable_directives: Option<bool>,
     enable_hoist: Option<bool>,
+    enable_smartypants: Option<bool>,
+    enable_components: Option<bool>,
 ) -> Result<(), JsError> {
     let enable_directives = enable_directives.unwrap_or(true);
     let enable_hoist = enable_hoist.unwrap_or(true);
+    let enable_smartypants = enable_smartypants.unwrap_or(true);
+    let enable_components = enable_components.unwrap_or(true);
 
     let options = RewriteOptions {
         enforce_img_loading_lazy: enforce_img_loading_lazy.unwrap_or(true),
         enable_directives,
         enable_hoist,
+        enable_smartypants,
+        enable_components,
         ..RewriteOptions::default()
     };
 
@@ -160,7 +178,7 @@ mod tests {
     #[test]
     fn render_html_hoists_imports() {
         let input = "import X from './x';\n\n# Hi";
-        let html = render_html(input, None, None, None).expect("render_html success");
+        let html = render_html(input, None, None, None, None, None).expect("render_html success");
         assert!(
             !html.contains("import X"),
             "import should not appear in rendered HTML"
@@ -171,7 +189,7 @@ mod tests {
     #[test]
     fn render_jsx_preserves_raw_jsx() {
         let input = "import X from './x'\n\n<Component />\n";
-        let jsx = render_jsx(input, None, None).expect("render_jsx success");
+        let jsx = render_jsx(input, None, None, None, None).expect("render_jsx success");
         assert!(jsx.starts_with("import X from './x'"));
         assert!(jsx.contains("<Component />"));
     }
@@ -179,7 +197,7 @@ mod tests {
     #[test]
     fn render_html_without_hoist_keeps_imports() {
         let input = "import X from './x';\n\n# Hi";
-        let html = render_html(input, None, None, Some(false)).expect("render_html success");
+        let html = render_html(input, None, None, Some(false), None, None).expect("render_html success");
         assert!(
             html.contains("import X"),
             "import should remain when hoist is disabled"

@@ -34,6 +34,7 @@ use thiserror::Error;
 
 mod slug;
 use crate::parser::markdown_adapter;
+use crate::transform::smartypants::apply_smartypants;
 
 /// Errors that can occur during Markdown processing.
 #[derive(Debug, Error)]
@@ -153,7 +154,11 @@ pub fn parse_with_options(
     );
 
     let output = rewriter.into_inner()?;
-    let html = String::from_utf8(output)?;
+    let mut html = String::from_utf8(output)?;
+
+    if options.enable_smartypants {
+        html = apply_smartypants(&html);
+    }
 
     Ok(ParseResult { html, imports })
 }
@@ -179,6 +184,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
+    use crate::transform::smartypants::apply_smartypants;
 
     fn fixtures_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/core")
@@ -215,6 +221,7 @@ mod tests {
         let input = "import X from './x'\n\n# Title";
         let opts = RewriteOptions {
             enable_hoist: false,
+            enable_smartypants: false,
             ..RewriteOptions::default()
         };
         let result = parse_with_options(input, opts).expect("parse succeeds");
@@ -256,6 +263,24 @@ mod tests {
         let output = parse(input).unwrap().html;
         assert!(output.contains("<a href=\"https://example.com\""));
         assert!(output.contains("title=\"Example Site\""));
+    }
+
+    #[test]
+    fn test_smartypants_enabled() {
+        let input = "Hello -- \"world\" ...";
+        let out = apply_smartypants(input);
+        assert_eq!(out, "Hello – “world” …");
+    }
+
+    #[test]
+    fn test_smartypants_disabled() {
+        let input = "Hello -- \"world\" ...";
+        let opts = RewriteOptions {
+            enable_smartypants: false,
+            ..RewriteOptions::default()
+        };
+        let output = parse_with_options(input, opts).unwrap().html;
+        assert!(output.contains("Hello -- &quot;world&quot; ...") || output.contains("Hello -- \"world\" ..."));
     }
 
     #[test]
