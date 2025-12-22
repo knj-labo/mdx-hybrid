@@ -35,7 +35,7 @@
 | 属性/クラス | Astro固有classの再現 | ⚠️ | 上記4要素以外のclass互換性未網羅 |
 | Raw JSX保持 | JSX/HTMLの透過 | ✅ | 不変パスで保持 |
 | 構造差分検証 | HTMLセマンティックdiff | ⚠️ | compareスクリプトに簡易正規化diffを追加（属性ソート/空白圧縮）。複雑ケースは未検証 |
-| パフォーマンス計測 | build時間記録 | ✅ | compare-astro-harness.mjs が baseline/markflow を計測 |
+| パフォーマンス計測 | build時間記録 | ✅ | compare-astro-harness.mjs が baseline/markflow を計測（CI は `--mode=time` 固定。semantic diff はローカル手動のみ） |
 
 ### Astro固有クラス互換性チェックリスト
 

@@ -30,7 +30,8 @@ export default function markflowContentPlugin() {
         const { content, data } = matter(raw)
         let html
         if (useBaseline && compiler) {
-          const processed = await compiler.process(content)
+          const baselineSource = preprocessBaseline(content)
+          const processed = await compiler.process(baselineSource)
           html = String(processed)
         } else {
           html = markflowParse(raw)
@@ -72,17 +73,86 @@ async function createBaselineCompiler() {
   const { unified } = await import('unified')
   const { default: remarkParse } = await import('remark-parse')
   const { default: remarkGfm } = await import('remark-gfm')
+  const { default: remarkSmartypants } = await import('remark-smartypants')
   const { default: remarkRehype } = await import('remark-rehype')
+  const { default: rehypeSlug } = await import('rehype-slug')
   const { default: rehypeStringify } = await import('rehype-stringify')
 
   return unified()
     .use(remarkParse)
     .use(remarkGfm)
+    .use(remarkSmartypants, { dashes: false })
     .use(remarkRehype)
+    .use(rehypeSlug)
     .use(rehypeStringify)
 }
 
 function deriveTitle(markdown) {
   const match = markdown.match(/^#\s+(.+)$/m)
   return match ? match[1].trim() : 'Untitled'
+}
+
+function preprocessBaseline(markdown) {
+  const lines = markdown.split(/\r?\n/)
+  const out = []
+  let fence = null
+  let skipEsm = false
+
+  for (const line of lines) {
+    const fenceMatch = line.match(/^\s*(?:>\s*)?(```|~~~)/)
+    if (fenceMatch) {
+      const marker = fenceMatch[1]
+      fence = fence === marker ? null : fence ?? marker
+      out.push(line)
+      continue
+    }
+
+    if (fence) {
+      out.push(line)
+      continue
+    }
+
+    if (skipEsm) {
+      if (line.includes(';')) {
+        skipEsm = false
+      }
+      continue
+    }
+
+    if (isMdxEsmLine(line)) {
+      if (!line.trim().endsWith(';')) {
+        skipEsm = true
+      }
+      continue
+    }
+
+    const openMatch = line.match(
+      /^(\s*(?:>\s*)*)(:{3,4})([A-Za-z][\w-]*)(?:\s*\[([^\]]+)\])?/,
+    )
+    if (openMatch) {
+      const prefix = openMatch[1] ?? ''
+      const rawTitle = openMatch[4]?.trim()
+      if (rawTitle) {
+        out.push(`${prefix}${rawTitle}`)
+      }
+      continue
+    }
+
+    const closeMatch = line.match(/^(\s*(?:>\s*)*)(:{3,4})\s*$/)
+    if (closeMatch) {
+      continue
+    }
+
+    out.push(line)
+  }
+
+  return out.join('\n')
+}
+
+function isMdxEsmLine(line) {
+  const trimmed = line.trim()
+  if (!/^(import|export)\s/.test(trimmed)) return false
+  if (trimmed.startsWith('export {') || trimmed.startsWith('export *')) return true
+  if (trimmed.startsWith('import') && /\sfrom\s/.test(trimmed)) return true
+  return trimmed.startsWith('export') && /\sfrom\s/.test(trimmed)
 }

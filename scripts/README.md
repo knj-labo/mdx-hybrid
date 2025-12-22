@@ -8,7 +8,7 @@
 
 | Script | Purpose | Last run | Notes |
 | --- | --- | --- | --- |
-| compare-astro-harness.mjs | Astro harness: build baseline & markflow, record times | (pending) | CI は opt-in（perf ラベル or workflow_dispatch）。 |
+| compare-astro-harness.mjs | Astro harness: build baseline & markflow, record times | (pending) | CI は opt-in（perf ラベル or workflow_dispatch）。CI 実行は `--mode=time` 固定。semantic diff はローカル専用。 |
 | run-astro-harness.mjs | Astro harness runner | (pending) | `mode` 引数: `markflow`/`baseline` |
 | smoke-napi.mjs | N-API smoke test against fixture | (pending) | 開発時の最小確認に使用。 |
 

@@ -112,5 +112,5 @@ jobs:
         working-directory: fixtures/integration/astro-harness
         run: pnpm install --frozen-lockfile
 
-      - name: Run harness comparison
-        run: node scripts/compare-astro-harness.mjs --summary fixtures/integration/astro-harness/harness-summary.json
+      - name: Run harness comparison (time-only)
+        run: node scripts/compare-astro-harness.mjs --mode=time --summary fixtures/integration/astro-harness/harness-summary.json

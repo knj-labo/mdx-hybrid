@@ -173,3 +173,6 @@ packages/*/node_modules/
 web/node_modules/
 web/dist/
 web/.astro/
+fixtures/integration/astro-harness/dist*/
+fixtures/integration/astro-harness/harness-summary.json
+harness-summary.json

@@ -10,11 +10,13 @@
     "build:baseline": "MARKFLOW_HARNESS_BASELINE=1 astro build"
   },
   "dependencies": {
-    "astro": "4.15.2",
+    "astro": "6.0.0-alpha.4",
     "gray-matter": "4.0.3",
+    "rehype-slug": "6.0.0",
     "rehype-stringify": "10.0.1",
     "remark-gfm": "4.0.0",
     "remark-parse": "11.0.0",
+    "remark-smartypants": "3.0.2",
     "remark-rehype": "11.1.0",
     "unified": "11.0.5"
   }
