@@ -37,6 +37,15 @@
 | 構造差分検証 | HTMLセマンティックdiff | ⚠️ | compareスクリプトに簡易正規化diffを追加（属性ソート/空白圧縮）。複雑ケースは未検証 |
 | パフォーマンス計測 | build時間記録 | ✅ | compare-astro-harness.mjs が baseline/markflow を計測（CI は `--mode=time` 固定。semantic diff はローカル手動のみ） |
 
+## AST比較 (MVP)
+
+HTML の semantic diff がノイズになる場合は、ASTベースのMVP比較を使用する。
+
+- single file: `node scripts/ast-compare/compare.mjs --file fixtures/integration/astro-harness/content/docs/components.mdx`
+- directory: `node scripts/ast-compare/run.mjs --dir fixtures/integration/astro-harness/content/docs`
+
+MVP は block 単位（heading/paragraph/list_item/code/blockquote/mdx）の比較のみ。JSX/MDX は `mdx` ブロックとして 1 行化して比較する。
+
 ### Astro固有クラス互換性チェックリスト
 
 | 要素/コンポーネント | 期待クラス例 (Astro/Starlight) | 現状対応 | 優先度 |

@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {},
   "dependencies": {
-    "parse5": "^7.1.2"
+    "parse5": "^7.1.2",
+    "remark-gfm": "^4.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-mdx": "^3.0.0",
+    "unified": "^11.0.4"
   }
 }
