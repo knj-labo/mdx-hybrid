@@ -9,6 +9,8 @@
 | Script | Purpose | Last run | Notes |
 | --- | --- | --- | --- |
 | compare-astro-harness.mjs | Astro harness: build baseline & markflow, record times | (pending) | CI は opt-in（perf ラベル or workflow_dispatch）。CI 実行は `--mode=time` 固定。semantic diff はローカル専用。 |
+| ast-compare/compare.mjs | AST compare (single file) via unified vs Markflow | (new) | `node scripts/ast-compare/compare.mjs --file fixtures/integration/astro-harness/content/docs/components.mdx` |
+| ast-compare/run.mjs | AST compare runner (directory) | (new) | `node scripts/ast-compare/run.mjs --dir fixtures/integration/astro-harness/content/docs` |
 | run-astro-harness.mjs | Astro harness runner | (pending) | `mode` 引数: `markflow`/`baseline` |
 | smoke-napi.mjs | N-API smoke test against fixture | (pending) | 開発時の最小確認に使用。 |
 
