@@ -9,6 +9,7 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
 use std::path::{Path, PathBuf};
 
@@ -383,17 +384,7 @@ impl MarkflowCompiler {
             }),
         )?;
 
-        // TODO: swap this block with a JS adapter call (Astro) once available.
-        compile_document(
-            &self.config,
-            source,
-            filepath,
-            options,
-            ir.hoisted_imports
-                .iter()
-                .map(|spec| spec.source.clone())
-                .collect(),
-        )
+        compile_document_from_ir(ir)
     }
 }
 
@@ -404,6 +395,7 @@ pub fn create_compiler(config: Option<CompilerConfig>) -> MarkflowCompiler {
     MarkflowCompiler::new(config)
 }
 
+#[cfg(test)]
 fn compile_document(
     config: &InternalCompilerConfig,
     source: String,
@@ -411,63 +403,44 @@ fn compile_document(
     options: Option<FileOptions>,
     hoisted_imports: Vec<String>,
 ) -> napi::Result<CompileResult> {
-    let options = options.unwrap_or_default();
-    let effective_path = options.file.clone().unwrap_or_else(|| filepath.clone());
-    let file_type = options
-        .file_type
-        .map(FileType::from)
-        .unwrap_or_else(|| FileType::from_path(Path::new(&effective_path)));
-
-    let frontmatter_extraction = extract_frontmatter(&source)
-        .map_err(|err| convert_error(MarkflowError::MarkdownAdapter(err.to_string())))?;
-    let frontmatter = frontmatter_extraction.value;
-    let raw_body = source[frontmatter_extraction.body_start..].to_string();
-
-    let parse_result = markflow_core::parse_with_options(&raw_body, RewriteOptions::default())
-        .map_err(convert_error)?;
-    let hoisted_imports = hoisted_imports
-        .into_iter()
-        .map(|src| ImportSpec {
-            source: src,
-            kind: ImportKind::Hoisted,
-        })
-        .chain(parse_result.imports.into_iter().map(|spec| ImportSpec {
-            source: spec.source,
-            kind: match spec.kind {
-                markflow_core::ImportKind::Hoisted => ImportKind::Hoisted,
-                markflow_core::ImportKind::Transform => ImportKind::Transform,
-            },
-        }))
-        .collect::<Vec<_>>();
-
-    let headings = collect_headings(&raw_body, file_type)?;
-    let layout_import: Option<String> = frontmatter
-        .get("layout")
-        .and_then(|value| value.as_str())
-        .map(|s| s.to_string());
-
-    let code = generate_module_code(
-        &config.jsx_import_source,
-        layout_import.as_deref(),
-        &hoisted_imports
-            .iter()
-            .map(|spec| spec.source.as_str())
-            .collect::<Vec<_>>(),
-        &parse_result.html,
-        &frontmatter,
-        &effective_path,
-        options.url.as_deref(),
-        &headings,
+    let mut ir = compile_ir(
+        source,
+        filepath,
+        options,
+        Some(CompilerConfig {
+            jsx_import_source: Some(config.jsx_import_source.clone()),
+            ..CompilerConfig::default()
+        }),
     )?;
 
-    let imports = build_import_list(layout_import.as_deref(), Path::new(&effective_path));
-    let frontmatter_json = serde_json::to_string(&frontmatter).unwrap_or_else(|_| "{}".to_string());
+    if !hoisted_imports.is_empty() {
+        ir.hoisted_imports
+            .extend(hoisted_imports.into_iter().map(|source| ImportSpec {
+                source,
+                kind: ImportKind::Hoisted,
+            }));
+    }
+
+    compile_document_from_ir(ir)
+}
+
+fn compile_document_from_ir(ir: CompileIrResult) -> napi::Result<CompileResult> {
+    let hoisted_imports = dedupe_imports(
+        ir.hoisted_imports
+            .iter()
+            .map(|spec| spec.source.clone())
+            .collect(),
+    );
+    let headings_json =
+        serde_json::to_string(&ir.headings).unwrap_or_else(|_| "[]".to_string());
+    let code = generate_module_code_from_ir(&ir, &hoisted_imports, &headings_json)?;
+    let imports = build_import_list(ir.layout_import.as_deref(), Path::new(&ir.file_path));
 
     Ok(CompileResult {
         code,
         map: None,
-        frontmatter_json,
-        headings,
+        frontmatter_json: ir.frontmatter_json,
+        headings: ir.headings,
         imports,
     })
 }
@@ -581,25 +554,20 @@ struct HeadingCapture {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn generate_module_code(
-    runtime_module: &str,
-    layout_import: Option<&str>,
-    hoisted_imports: &[&str],
-    html: &str,
-    frontmatter: &JsonValue,
-    file_path: &str,
-    url: Option<&str>,
-    headings: &[HeadingEntry],
+fn generate_module_code_from_ir(
+    ir: &CompileIrResult,
+    hoisted_imports: &[String],
+    headings_json: &str,
 ) -> napi::Result<String> {
     let mut code = String::new();
     writeln!(
         code,
         "import {{ createComponent, markHTMLString }} from '{}';",
-        runtime_module
+        ir.runtime_import
     )
     .map_err(|err| Error::from_reason(err.to_string()))?;
 
-    if layout_import.is_some() {
+    if ir.layout_import.is_some() {
         writeln!(
             code,
             "import {{ renderComponentToString }} from '{}';",
@@ -608,7 +576,7 @@ fn generate_module_code(
         .map_err(|err| Error::from_reason(err.to_string()))?;
     }
 
-    if let Some(layout) = layout_import {
+    if let Some(layout) = ir.layout_import.as_deref() {
         writeln!(code, "import Layout from {};", js_string_literal(layout))
             .map_err(|err| Error::from_reason(err.to_string()))?;
     }
@@ -617,35 +585,38 @@ fn generate_module_code(
         writeln!(code, "{}", import).map_err(|err| Error::from_reason(err.to_string()))?;
     }
 
-    writeln!(code, "const _html = `{}`;", escape_template_literal(html))
-        .map_err(|err| Error::from_reason(err.to_string()))?;
+    writeln!(
+        code,
+        "const _html = `{}`;",
+        escape_template_literal(&ir.html)
+    )
+    .map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(code, "const _markflowHtml = markHTMLString(_html);")
         .map_err(|err| Error::from_reason(err.to_string()))?;
 
-    let frontmatter_literal =
-        serde_json::to_string(frontmatter).unwrap_or_else(|_| "{}".to_string());
-    writeln!(code, "export const frontmatter = {};", frontmatter_literal)
+    writeln!(code, "export const frontmatter = {};", ir.frontmatter_json)
         .map_err(|err| Error::from_reason(err.to_string()))?;
 
     writeln!(
         code,
         "export const file = {};",
-        js_string_literal(file_path)
+        js_string_literal(&ir.file_path)
     )
     .map_err(|err| Error::from_reason(err.to_string()))?;
 
-    let url_literal = url
+    let url_literal = ir
+        .url
+        .as_deref()
         .map(js_string_literal)
         .unwrap_or_else(|| "undefined".to_string());
     writeln!(code, "export const url = {};", url_literal)
         .map_err(|err| Error::from_reason(err.to_string()))?;
 
-    let headings_literal = serde_json::to_string(headings).unwrap_or_else(|_| "[]".to_string());
-    writeln!(code, "export const headings = {};", headings_literal)
+    writeln!(code, "export const headings = {};", headings_json)
         .map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(code, "export function getHeadings() {{")
         .map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "  return {};", headings_literal)
+    writeln!(code, "  return {};", headings_json)
         .map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(code, "}}").map_err(|err| Error::from_reason(err.to_string()))?;
 
@@ -655,7 +626,7 @@ fn generate_module_code(
     )
     .map_err(|err| Error::from_reason(err.to_string()))?;
 
-    if layout_import.is_some() {
+    if ir.layout_import.is_some() {
         writeln!(
             code,
             "const _MarkflowPage = createComponent(async (result, props, slots) => {{"
@@ -687,6 +658,59 @@ fn generate_module_code(
     }
 
     Ok(code)
+}
+
+fn normalize_import_key(source: &str) -> String {
+    let mut key = String::with_capacity(source.len());
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut in_backtick = false;
+    let mut escape = false;
+
+    for ch in source.chars() {
+        if escape {
+            key.push(ch);
+            escape = false;
+            continue;
+        }
+
+        if ch == '\\' && (in_single || in_double || in_backtick) {
+            key.push(ch);
+            escape = true;
+            continue;
+        }
+
+        match ch {
+            '\'' if !in_double && !in_backtick => {
+                in_single = !in_single;
+                key.push(ch);
+            }
+            '"' if !in_single && !in_backtick => {
+                in_double = !in_double;
+                key.push(ch);
+            }
+            '`' if !in_single && !in_double => {
+                in_backtick = !in_backtick;
+                key.push(ch);
+            }
+            ch if ch.is_whitespace() && !(in_single || in_double || in_backtick) => {}
+            _ => key.push(ch),
+        }
+    }
+
+    key
+}
+
+fn dedupe_imports(mut imports: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::with_capacity(imports.len());
+    for import in imports.drain(..) {
+        let key = normalize_import_key(&import);
+        if seen.insert(key) {
+            deduped.push(import);
+        }
+    }
+    deduped
 }
 
 fn build_import_list(layout: Option<&str>, filepath: &Path) -> Vec<ImportedModule> {

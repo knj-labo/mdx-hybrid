@@ -34,13 +34,18 @@ impl MarkdownParser {
 
     pub fn new_with_config(input: &str, config: ParseConfig) -> Result<Self, Message> {
         let options = build_parse_options(config);
-        let tree = to_mdast(input, &options)?;
+        let normalized = if config.constructs.jsx {
+            normalize_mdx_jsx_indentation(input)
+        } else {
+            input.to_owned()
+        };
+        let tree = to_mdast(&normalized, &options)?;
 
         let mut iter = Self {
             stack: Vec::new(),
             pending_events: VecDeque::new(),
             tight_list_stack: Vec::new(),
-            source: input.to_owned(),
+            source: normalized,
             definitions: HashMap::new(),
             config,
             slugger: Slugger::new(),
@@ -541,6 +546,125 @@ fn format_frontmatter(kind: &str, value: &str) -> String {
 
 fn normalize_identifier(id: &str) -> String {
     id.trim().to_lowercase()
+}
+
+fn normalize_mdx_jsx_indentation(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut in_fence = false;
+    let mut fence_marker: Option<char> = None;
+    let mut jsx_stack: Vec<String> = Vec::new();
+
+    for line in input.split_inclusive('\n') {
+        let (line_body, line_ending) = if let Some(stripped) = line.strip_suffix('\n') {
+            let stripped = stripped.strip_suffix('\r').unwrap_or(stripped);
+            (stripped, &line[stripped.len()..])
+        } else {
+            (line, "")
+        };
+
+        let trimmed = line_body.trim_start();
+        let fence = trimmed.starts_with("```") || trimmed.starts_with("~~~");
+        if fence {
+            let marker = trimmed.chars().next();
+            if in_fence {
+                if marker == fence_marker {
+                    in_fence = false;
+                    fence_marker = None;
+                }
+            } else {
+                in_fence = true;
+                fence_marker = marker;
+            }
+            if jsx_stack.is_empty() {
+                output.push_str(line_body);
+            } else {
+                output.push_str(trimmed);
+            }
+            output.push_str(line_ending);
+            continue;
+        }
+
+        if !in_fence {
+            if let Some(tag) = jsx_open_tag(trimmed) {
+                if !tag.self_closing {
+                    jsx_stack.push(tag.name);
+                }
+                output.push_str(trimmed);
+                output.push_str(line_ending);
+                continue;
+            }
+
+            if let Some(tag_name) = jsx_close_tag(trimmed) {
+                if let Some(last) = jsx_stack.pop() {
+                    if last != tag_name {
+                        jsx_stack.clear();
+                    }
+                }
+                output.push_str(trimmed);
+                output.push_str(line_ending);
+                continue;
+            }
+
+            if !jsx_stack.is_empty() {
+                output.push_str(trimmed);
+                output.push_str(line_ending);
+                continue;
+            }
+        }
+
+        output.push_str(line_body);
+        output.push_str(line_ending);
+    }
+
+    output
+}
+
+struct JsxTag {
+    name: String,
+    self_closing: bool,
+}
+
+fn jsx_open_tag(trimmed: &str) -> Option<JsxTag> {
+    if !trimmed.starts_with('<') || trimmed.starts_with("</") || trimmed.starts_with("<!") {
+        return None;
+    }
+    let mut chars = trimmed.chars().peekable();
+    chars.next();
+    let mut name = String::new();
+    while let Some(&ch) = chars.peek() {
+        if ch.is_whitespace() || ch == '>' || ch == '/' {
+            break;
+        }
+        name.push(ch);
+        chars.next();
+    }
+    if name.is_empty() {
+        return None;
+    }
+    let self_closing = trimmed.trim_end().ends_with("/>");
+    Some(JsxTag { name, self_closing })
+}
+
+fn jsx_close_tag(trimmed: &str) -> Option<String> {
+    if !trimmed.starts_with("</") {
+        return None;
+    }
+    let mut chars = trimmed.chars().peekable();
+    chars.next();
+    chars.next();
+    let mut name = String::new();
+    while let Some(&ch) = chars.peek() {
+        if ch.is_whitespace() || ch == '>' {
+            break;
+        }
+        name.push(ch);
+        chars.next();
+    }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 fn build_parse_options(config: ParseConfig) -> ParseOptions {
