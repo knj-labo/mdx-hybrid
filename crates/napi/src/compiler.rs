@@ -143,7 +143,7 @@ pub(crate) fn compile_document_from_ir(ir: CompileIrResult) -> napi::Result<Comp
             .collect(),
     );
     let headings_json = serde_json::to_string(&ir.headings).unwrap_or_else(|_| "[]".to_string());
-    let code = super::generate_module_code_from_ir(&ir, &hoisted_imports, &headings_json)?;
+    let code = super::codegen::generate_module_code_from_ir(&ir, &hoisted_imports, &headings_json)?;
     let imports = super::build_import_list(ir.layout_import.as_deref(), Path::new(&ir.file_path));
 
     Ok(CompileResult {

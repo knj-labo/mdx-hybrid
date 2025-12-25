@@ -118,6 +118,14 @@ pub struct ImportedModule {
 
 Frontmatterを文字列化して返し、JS側で `JSON.parse()` することでFFIコールを最小化する。
 
+### 3.4 実装配置（最小分割）
+NAPIの責務集中を避けるため、コード生成ロジックは別モジュールに隔離する。
+
+- `crates/napi/src/lib.rs`: NAPIエントリ・共有ユーティリティ。
+- `crates/napi/src/codegen.rs`: `generate_module_code_from_ir` などモジュール生成ロジック。
+- `crates/napi/src/headings.rs`: 見出し抽出ロジック（HeadingCollector など）。
+- `crates/napi/src/utils.rs`: 文字列処理と小物ヘルパー（dedupe/import 等）。
+
 ## 4. Frontmatter処理戦略とLayout実装
 AstroのFrontmatterは `layout` プロパティによりデフォルトエクスポートをラップする。MarkflowはRustレベルでこの挙動を再現する必要がある。
 
