@@ -71,9 +71,12 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
     }
 }
 
+/// Represents the type of the input file, either Markdown or MDX.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileType {
+    /// Standard Markdown file.
     Markdown,
+    /// MDX (Markdown with JSX) file.
     Mdx,
 }
 
@@ -385,6 +388,11 @@ fn empty_frontmatter() -> JsonValue {
     JsonValue::Object(Default::default())
 }
 
+/// Collects heading information from the raw markdown body.
+///
+/// This function parses the input `raw_body` and extracts all headings,
+/// returning them as a vector of `HeadingEntry`. The `file_type`
+/// parameter can be used to configure the parser for Markdown or MDX.
 pub fn collect_headings(raw_body: &str, file_type: FileType) -> napi::Result<Vec<HeadingEntry>> {
     let mut collector = HeadingCollector::new();
     let config = match file_type {
