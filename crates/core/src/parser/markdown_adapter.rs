@@ -660,11 +660,7 @@ fn jsx_close_tag(trimmed: &str) -> Option<String> {
         name.push(ch);
         chars.next();
     }
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
-    }
+    if name.is_empty() { None } else { Some(name) }
 }
 
 fn build_parse_options(config: ParseConfig) -> ParseOptions {

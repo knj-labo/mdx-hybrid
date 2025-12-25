@@ -1,4 +1,4 @@
-use markflow_core::{parse, parse_with_options, render_to_jsx, RewriteOptions};
+use markflow_core::{RewriteOptions, parse, parse_with_options, render_to_jsx};
 use std::fs;
 use std::path::PathBuf;
 
@@ -68,9 +68,7 @@ fn test_parse_table_alignment_and_math() {
     let output = parse(input).unwrap().html;
     assert!(output.contains("<table>"));
     assert!(
-        output.contains(
-            "<td style=\"text-align:left\"><span class=\"math-inline\">x</span></td>"
-        )
+        output.contains("<td style=\"text-align:left\"><span class=\"math-inline\">x</span></td>")
     );
     assert!(output.contains("<span class=\"math-inline\">y</span>"));
 }

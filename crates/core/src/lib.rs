@@ -3,6 +3,10 @@
 
 /// Markdown event to `io::Write` bridge utilities.
 pub mod adapter;
+/// Core parsing and rewriting engine.
+pub mod engine;
+/// Error types and utilities.
+pub mod error;
 /// Core event types that decouple Markflow from pulldown-cmark specifics.
 #[allow(missing_docs)]
 pub mod event;
@@ -12,19 +16,15 @@ pub mod frontmatter;
 pub mod parser;
 /// Rendering layer (HTML/JSX writers + streaming rewriter).
 pub mod renderer;
-/// Streaming transformers (hoist, directives, code fences, etc.).
-pub mod transform;
 /// Slug generation utilities.
 pub mod slug;
-/// Core parsing and rewriting engine.
-pub mod engine;
-/// Error types and utilities.
-pub mod error;
+/// Streaming transformers (hoist, directives, code fences, etc.).
+pub mod transform;
 
 pub use adapter::MarkdownStream;
 pub use engine::{
-    get_event_iterator, get_event_iterator_with_config, parse, parse_with_options, ImportKind,
-    ImportSpec, ParseResult,
+    ImportKind, ImportSpec, ParseResult, get_event_iterator, get_event_iterator_with_config, parse,
+    parse_with_options,
 };
 pub use error::MarkflowError;
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
@@ -40,9 +40,5 @@ pub use transform::{
 
 use crate::parser::markdown_adapter;
 
-
-
 /// Iterator alias so callers don't need to depend on the adapter module path.
 pub type MarkdownEventStream = markdown_adapter::MarkdownParser;
-
-

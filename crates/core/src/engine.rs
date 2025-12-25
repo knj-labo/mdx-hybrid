@@ -1,12 +1,12 @@
 //! Core parsing and rewriting engine.
 
+use crate::MarkflowError;
 use crate::adapter::MarkdownStream;
 use crate::event::Event;
-use crate::parser::{markdown_adapter, ParseConfig};
+use crate::parser::{ParseConfig, markdown_adapter};
 use crate::renderer::{RewriteOptions, StreamingRewriter};
 use crate::transform::smartypants::apply_smartypants;
 use crate::transform::{DirectiveAdapter, HoistAdapter};
-use crate::MarkflowError;
 use std::cell::RefCell;
 use std::rc::Rc;
 
