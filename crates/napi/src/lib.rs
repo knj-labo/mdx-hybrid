@@ -402,7 +402,7 @@ pub fn collect_headings(raw_body: &str, _file_type: FileType) -> napi::Result<Ve
 mod tests {
     use super::render_to_jsx_napi;
     use super::{empty_frontmatter, parse_frontmatter};
-    use crate::compiler::{InternalCompilerConfig, compile_document};
+    use crate::compiler::{InternalCompilerConfig};
     use serde_json::Value as JsonValue;
 
     #[test]
