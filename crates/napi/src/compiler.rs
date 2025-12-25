@@ -41,9 +41,9 @@ impl MarkflowCompiler {
 
     /// Compiles Markdown/MDX into an Astro-compatible module string.
     ///
-    // Internally this delegates to `compile_ir` for parsing/rewriting, then
-    // formats the legacy Astro module code. A future adapter hook can replace
-    // the codegen step without changing the JS-facing signature.
+    /// Internally this delegates to `compile_ir` for parsing/rewriting, then
+    /// formats the legacy Astro module code. A future adapter hook can replace
+    /// the codegen step without changing the JS-facing signature.
     #[napi(js_name = "compile")]
     pub fn compile_mdx(
         &self,
