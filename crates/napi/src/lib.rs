@@ -378,7 +378,7 @@ fn escape_template_literal(value: &str) -> String {
 }
 
 fn js_string_literal(value: &str) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "".to_string())
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
 fn empty_frontmatter() -> JsonValue {
