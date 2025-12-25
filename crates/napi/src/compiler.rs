@@ -66,7 +66,6 @@ impl MarkflowCompiler {
     }
 }
 
-/// Helper factory to share a compiler instance across the Vite plugin lifecycle.
 #[napi]
 /// Helper factory exposed to JavaScript for ergonomic reuse.
 pub fn create_compiler(config: Option<CompilerConfig>) -> MarkflowCompiler {
