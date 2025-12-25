@@ -147,3 +147,32 @@ pub(crate) fn compile_document_from_ir(ir: CompileIrResult) -> napi::Result<Comp
         imports,
     })
 }
+
+#[cfg(test)]
+pub(crate) fn compile_document(
+    config: &InternalCompilerConfig,
+    source: String,
+    filepath: String,
+    options: Option<FileOptions>,
+    hoisted_imports: Vec<String>,
+) -> napi::Result<CompileResult> {
+    let mut ir = compile_ir(
+        source,
+        filepath,
+        options,
+        Some(CompilerConfig {
+            jsx_import_source: Some(config.jsx_import_source.clone()),
+            ..CompilerConfig::default()
+        }),
+    )?;
+
+    if !hoisted_imports.is_empty() {
+        ir.hoisted_imports
+            .extend(hoisted_imports.into_iter().map(|source| ImportSpec {
+                source,
+                kind: ImportKind::Hoisted,
+            }));
+    }
+
+    compile_document_from_ir(ir)
+}

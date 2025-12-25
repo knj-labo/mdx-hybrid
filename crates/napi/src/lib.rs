@@ -1,11 +1,13 @@
-#![deny(missing_docs)]
+#!deny(missing_docs)
 //! Node.js bindings that surface Markflow's Rust implementation.
 
 use markflow_core::event::{
     Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd,
 };
-use markflow_core::{MarkflowError, ParseConfig};
+use markflow_core::{extract_frontmatter, MarkflowError, ParseConfig, RewriteOptions};
 use napi::bindgen_prelude::*;
+use napi_derive::napi;
+use serde_json::Value as JsonValue;
 use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
 use std::path::{Path, PathBuf};
@@ -18,9 +20,56 @@ pub use types::*;
 
 const ASTRO_RENDER_HELPERS: &str = "astro/runtime/server/render/index.js";
 
+/// Parses markdown string to HTML with default options
+#[napi]
+pub fn parse(input: String) -> napi::Result<String> {
+    let result = markflow_core::parse(&input).map_err(convert_error)?;
+    Ok(result.html)
+}
 
+/// Renders markdown/MDX to a JSX string while preserving raw JSX nodes.
+#[napi(js_name = "renderToJsx")]
+pub fn render_to_jsx_napi(input: String) -> napi::Result<String> {
+    markflow_core::render_to_jsx(&input).map_err(convert_error)
+}
 
+/// Parses markdown string to HTML with custom rewrite options
+#[napi]
+pub fn parse_with_options(input: String, config: RewriteConfig) -> napi::Result<String> {
+    let options: RewriteOptions = config.into();
+    let result = markflow_core::parse_with_options(&input, options).map_err(convert_error)?;
+    Ok(result.html)
+}
 
+/// Parses markdown and returns both HTML output and processing statistics
+#[napi]
+pub fn parse_with_stats(input: String) -> napi::Result<ParseResult> {
+    use std::time::Instant;
+
+    let start = Instant::now();
+    let html = parse(input)?;
+    let elapsed = start.elapsed();
+
+    Ok(ParseResult {
+        html,
+        processing_time_ms: elapsed.as_secs_f64() * 1000.0,
+    })
+}
+
+/// Extracts YAML or TOML frontmatter without compiling the entire Markdown document.
+#[napi]
+pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
+    match extract_frontmatter(&content) {
+        Ok(result) => Ok(FrontmatterResult {
+            frontmatter: result.value,
+            errors: Vec::new(),
+        }),
+        Err(err) => Ok(FrontmatterResult {
+            frontmatter: empty_frontmatter(),
+            errors: vec![err.to_string()],
+        }),
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FileType {
@@ -237,13 +286,11 @@ fn generate_module_code_from_ir(
     if ir.layout_import.is_some() {
         writeln!(
             code,
-            "const _MarkflowPage = createComponent(async (result, props, slots) => {{"
-        )
+            "const _MarkflowPage = createComponent(async (result, props, slots) => {{")
         .map_err(|err| Error::from_reason(err.to_string()))?;
         writeln!(
             code,
-            "  const html = await renderComponentToString(result, 'Layout', Layout, {{ ...props, frontmatter }}, {{"
-        )
+            "  const html = await renderComponentToString(result, 'Layout', Layout, {{ ...props, frontmatter }}, {{")
         .map_err(|err| Error::from_reason(err.to_string()))?;
         writeln!(
             code,
@@ -344,14 +391,18 @@ fn escape_template_literal(value: &str) -> String {
 }
 
 fn js_string_literal(value: &str) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
+    serde_json::to_string(value).unwrap_or_else(|_| "".to_string())
+}
+
+fn empty_frontmatter() -> JsonValue {
+    JsonValue::Object(Default::default())
 }
 
 #[cfg(test)]
-
 mod tests {
-    use super::{InternalCompilerConfig, compile_document, empty_frontmatter, parse_frontmatter};
-    use crate::render_to_jsx_napi;
+    use super::{empty_frontmatter, parse_frontmatter};
+    use super::render_to_jsx_napi;
+    use crate::compiler::{compile_document, InternalCompilerConfig};
     use serde_json::Value as JsonValue;
 
     #[test]
@@ -386,8 +437,9 @@ mod tests {
     fn compile_document_emits_frontmatter_json() {
         let config = InternalCompilerConfig::new(None);
         let source = "---\ntitle: Test\n---\n# Hello".to_string();
-        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-            .expect("compile success");
+        let result =
+            crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
         assert_eq!(result.frontmatter_json, "{\"title\":\"Test\"}");
         assert!(
             result
@@ -402,8 +454,9 @@ mod tests {
     fn compile_document_handles_missing_frontmatter() {
         let config = InternalCompilerConfig::new(None);
         let source = "# Hello".to_string();
-        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-            .expect("compile success");
+        let result =
+            crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
         assert_eq!(result.frontmatter_json, "{}");
         assert!(
             result.code.contains("export const frontmatter = {};"),
@@ -416,8 +469,9 @@ mod tests {
     fn compile_document_hoists_root_imports() {
         let config = InternalCompilerConfig::new(None);
         let source = "import X from './x';\n\n# Title".to_string();
-        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-            .expect("compile success");
+        let result =
+            crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
         assert!(
             result.code.contains("import X from './x';"),
             "code missing hoisted import: {}",
@@ -434,8 +488,9 @@ mod tests {
     fn compile_document_ignores_imports_inside_fences() {
         let config = InternalCompilerConfig::new(None);
         let source = "```\nimport Y from './y'\n```\n\n# Title".to_string();
-        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-            .expect("compile success");
+        let result =
+            crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
         assert!(
             !result.code.contains("import Y from './y'"),
             "fenced import should not hoist: {}",
@@ -451,15 +506,12 @@ mod tests {
     #[test]
     fn compile_document_hoists_exports_variants() {
         let config = InternalCompilerConfig::new(None);
-        let source = "\
-export const foo = () => {\n  return 1\n}\n\
-export default function bar()\n{\n  return foo();\n}\n\
-export { foo };\n\
-\n# Title"
+        let source = "\nexport const foo = () => {\n  return 1\n}\n\nexport default function bar()\n{\n  return foo();\n}\n\nexport { foo };\n\n\n# Title"
             .to_string();
 
-        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-            .expect("compile success");
+        let result =
+            crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
 
         // hoisted exports appear before _html declaration
         let hoist_pos = result.code.find("export const foo").unwrap();
@@ -494,8 +546,9 @@ export { foo };\n\
     fn compile_document_does_not_hoist_exports_inside_fence() {
         let config = InternalCompilerConfig::new(None);
         let source = "```\nexport const no = true\n```\n\nexport const yes = true;".to_string();
-        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-            .expect("compile success");
+        let result =
+            crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
 
         assert!(
             result.code.contains("export const yes = true;"),
@@ -514,15 +567,12 @@ export { foo };\n\
     #[test]
     fn compile_document_hoists_export_edge_cases() {
         let config = InternalCompilerConfig::new(None);
-        let source = "\
-export default async () => {\n  return 1\n}\n\
-export * from './mod';\n\
-export const foo = 1 // inline\n\
-\n# Title"
+        let source = "\nexport default async () => {\n  return 1\n}\n\nexport * from './mod';\n\nexport const foo = 1 // inline\n\n\n# Title"
             .to_string();
 
-        let result = compile_document(&config, source, "test.mdx".into(), None, Vec::new())
-            .expect("compile success");
+        let result =
+            crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
 
         let html_pos = result.code.find("const _html = `").unwrap();
         assert!(

@@ -155,3 +155,18 @@ pub enum ImportKind {
     /// Import required by transforms (e.g., directive mapper).
     Transform,
 }
+
+use markflow_core::RewriteOptions;
+
+impl From<RewriteConfig> for RewriteOptions {
+    fn from(config: RewriteConfig) -> Self {
+        RewriteOptions {
+            enforce_img_loading_lazy: config.enforce_img_loading_lazy,
+            enable_directives: config.enable_directives.unwrap_or(true),
+            enable_hoist: config.enable_hoist.unwrap_or(true),
+            enable_smartypants: config.enable_smartypants.unwrap_or(true),
+            enable_components: config.enable_components.unwrap_or(true),
+            ..RewriteOptions::default()
+        }
+    }
+}
