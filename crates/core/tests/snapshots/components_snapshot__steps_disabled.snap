@@ -1,11 +1,10 @@
 ---
 source: crates/core/tests/components_snapshot.rs
-assertion_line: 20
 expression: output
 ---
 <Steps>
-  <Step>First</Step>
-  <Step>
-    <p>Second</p>
-  </Step>
+<Step>First</Step>
+<Step>
+<p>Second</p>
+</Step>
 </Steps>

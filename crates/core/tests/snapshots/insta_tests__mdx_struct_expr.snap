@@ -1,8 +1,7 @@
 ---
 source: crates/core/tests/insta_tests.rs
-assertion_line: 10
 expression: result
 ---
 <Chart data={items.filter((x) => x.ok)} title={`Val-${foo}`} />{items.map((x) => (
-  <Row key={x.id}>{x.label}</Row>
+<Row key={x.id}>{x.label}</Row>
 ))}
