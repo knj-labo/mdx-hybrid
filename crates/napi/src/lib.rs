@@ -385,9 +385,12 @@ fn empty_frontmatter() -> JsonValue {
     JsonValue::Object(Default::default())
 }
 
-pub fn collect_headings(raw_body: &str, _file_type: FileType) -> napi::Result<Vec<HeadingEntry>> {
+pub fn collect_headings(raw_body: &str, file_type: FileType) -> napi::Result<Vec<HeadingEntry>> {
     let mut collector = HeadingCollector::new();
-    let config = markflow_core::ParseConfig::default(); // Or create a config based on file_type if needed
+    let config = match file_type {
+        FileType::Markdown => markflow_core::ParseConfig::markdown(),
+        FileType::Mdx => markflow_core::ParseConfig::mdx(),
+    };
     let event_iterator =
         markflow_core::get_event_iterator_with_config(raw_body, config).map_err(convert_error)?;
 
