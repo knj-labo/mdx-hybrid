@@ -4,7 +4,7 @@
 use markflow_core::event::{
     Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd,
 };
-use markflow_core::{extract_frontmatter, MarkflowError, ParseConfig, RewriteOptions};
+use markflow_core::{MarkflowError, RewriteOptions, extract_frontmatter};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde_json::Value as JsonValue;
@@ -12,10 +12,10 @@ use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
 use std::path::{Path, PathBuf};
 
-/// NAPI-exposed data structures.
-pub mod types;
 /// The stateful compiler and its configuration.
 pub mod compiler;
+/// NAPI-exposed data structures.
+pub mod types;
 pub use types::*;
 
 const ASTRO_RENDER_HELPERS: &str = "astro/runtime/server/render/index.js";
@@ -72,7 +72,7 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FileType {
+pub enum FileType {
     Markdown,
     Mdx,
 }
@@ -116,20 +116,6 @@ fn convert_error<E: Into<MarkflowError>>(err: E) -> Error {
             Error::from_reason(format!("Markdown parser error: {}", msg))
         }
     }
-}
-
-fn collect_headings(body: &str, file_type: FileType) -> napi::Result<Vec<HeadingEntry>> {
-    let parse_config = match file_type {
-        FileType::Markdown => ParseConfig::markdown(),
-        FileType::Mdx => ParseConfig::mdx(),
-    };
-    let events =
-        markflow_core::get_event_iterator_with_config(body, parse_config).map_err(convert_error)?;
-    let mut collector = HeadingCollector::new();
-    for event in events {
-        collector.observe(&event);
-    }
-    Ok(collector.into_entries())
 }
 
 struct HeadingCollector {
@@ -286,7 +272,8 @@ fn generate_module_code_from_ir(
     if ir.layout_import.is_some() {
         writeln!(
             code,
-            "const _MarkflowPage = createComponent(async (result, props, slots) => {{")
+            "const _MarkflowPage = createComponent(async (result, props, slots) => {{"
+        )
         .map_err(|err| Error::from_reason(err.to_string()))?;
         writeln!(
             code,
@@ -398,11 +385,27 @@ fn empty_frontmatter() -> JsonValue {
     JsonValue::Object(Default::default())
 }
 
+pub fn collect_headings(
+    raw_body: &str,
+    _file_type: FileType,
+) -> napi::Result<Vec<HeadingEntry>> {
+    let mut collector = HeadingCollector::new();
+    let config = markflow_core::ParseConfig::default(); // Or create a config based on file_type if needed
+    let event_iterator = markflow_core::get_event_iterator_with_config(raw_body, config)
+        .map_err(convert_error)?;
+
+    for event in event_iterator {
+        collector.observe(&event);
+    }
+
+    Ok(collector.into_entries())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{empty_frontmatter, parse_frontmatter};
     use super::render_to_jsx_napi;
-    use crate::compiler::{compile_document, InternalCompilerConfig};
+    use super::{empty_frontmatter, parse_frontmatter};
+    use crate::compiler::{InternalCompilerConfig, compile_document};
     use serde_json::Value as JsonValue;
 
     #[test]
