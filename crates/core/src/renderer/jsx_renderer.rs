@@ -1,7 +1,8 @@
 #![allow(missing_docs)]
 use crate::event::{CodeBlockKind, Event, Tag, TagEnd};
 use crate::{
-    DirectiveAdapter, MarkflowError, ParseResult, RewriteOptions, get_event_iterator, parse,
+    DirectiveAdapter, HoistAdapter, MarkflowError, ParseResult, RewriteOptions, get_event_iterator,
+    parse,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -10,7 +11,11 @@ use std::rc::Rc;
 pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
     let ParseResult { html: _, imports } = parse(input)?;
     let rewrite_options = RewriteOptions::default();
-    let events = get_event_iterator(input)?;
+    let hoisted = Rc::new(RefCell::new(Vec::new()));
+    let mut events: Box<dyn Iterator<Item = Event<'static>>> = Box::new(get_event_iterator(input)?);
+    if rewrite_options.enable_hoist {
+        events = Box::new(HoistAdapter::new(events, Rc::clone(&hoisted)));
+    }
     let events = DirectiveAdapter::new(
         events,
         Rc::new(RefCell::new(0)),

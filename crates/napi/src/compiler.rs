@@ -1,7 +1,7 @@
 //! The stateful compiler and its configuration.
 
 use crate::types::*;
-use markflow_core::{MarkflowError, RewriteOptions};
+use markflow_core::{MarkflowError, RewriteOptions, render_to_jsx};
 use napi_derive::napi;
 use std::path::Path;
 
@@ -95,6 +95,15 @@ pub fn compile_ir(
 
     let parse_result = markflow_core::parse_with_options(&raw_body, RewriteOptions::default())
         .map_err(super::convert_error)?;
+    let mut jsx = render_to_jsx(&raw_body).map_err(super::convert_error)?;
+    let import_prefix_len: usize = parse_result
+        .imports
+        .iter()
+        .map(|spec| spec.source.len() + 1)
+        .sum();
+    if import_prefix_len > 0 && jsx.len() >= import_prefix_len {
+        jsx = jsx[import_prefix_len..].to_string();
+    }
 
     let headings = super::collect_headings(&raw_body, file_type)?;
     let layout_import: Option<String> = frontmatter
@@ -105,7 +114,7 @@ pub fn compile_ir(
     let frontmatter_json = serde_json::to_string(&frontmatter).unwrap_or_else(|_| "{}".to_string());
 
     Ok(CompileIrResult {
-        html: parse_result.html,
+        html: jsx,
         hoisted_imports: parse_result
             .imports
             .into_iter()

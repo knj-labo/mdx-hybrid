@@ -24,11 +24,16 @@ Plan how to wire the updated NAPI/WASM JSX renderer into the Astro plugin, and v
 - `escapeHtml` (boolean, default: true) — text escaping flag passed through.
 - `useWasm` (boolean, default: false) — switch between NAPI and WASM backend.
 - `trace` (boolean, default: false) — emit timing/logs for harness comparisons.
+- Vite JSX handling:
+  - Virtual module IDs use a `.markflow.jsx` suffix to ensure JSX parsing.
+  - The `load` hook sets `meta: { vite: { jsx: true } }` on compiled modules.
+  - `configResolved` fills `esbuild.jsx="automatic"` and `esbuild.jsxImportSource="astro"` only when unset (and `esbuild` is not `false`).
 
 ## Harness Validation Plan
 - `scripts/run-astro-harness.mjs` で baseline / markflow をビルド。`compare-astro-harness.mjs` はビルド時間を記録するのみ（HTML diff なし）。
 - 必要に応じて dev モードの手動比較やセマンティック diff を追加実装する。
 - 回帰ポイント: directive hydration、frontmatter layout、auto-imported components、コードフェンス内 import。
+- JSX 出力の初期確認は `markflow-napi` の既存テストに依存し、新規テストは現段階では追加しない。
 
 ## withastro/docs Rollout Plan (staged)
 1) **Preview subset**: apply plugin to a small folder (e.g., `/en/getting-started`), feature-flag via `renderToJsx` option.
