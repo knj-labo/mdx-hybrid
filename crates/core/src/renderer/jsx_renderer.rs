@@ -1,5 +1,5 @@
 #![allow(missing_docs)]
-use crate::event::{CodeBlockKind, Event, Tag, TagEnd};
+use crate::event::{CodeBlockKind, Event, HeadingLevel, Tag, TagEnd};
 use crate::{
     DirectiveAdapter, HoistAdapter, MarkflowError, ParseResult, RewriteOptions, get_event_iterator,
     parse,
@@ -30,10 +30,20 @@ pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
     }
 
     let mut stack: Vec<Tag<'_>> = Vec::new();
+    let mut heading_stack: Vec<HeadingContext> = Vec::new();
 
     for event in events {
         match event {
             Event::Start(tag) => {
+                if let Tag::Heading { level, id, .. } = &tag {
+                    if let Some(id) = id.as_ref() {
+                        output.push_str(&heading_wrapper_start(*level));
+                        heading_stack.push(HeadingContext {
+                            id: id.to_string(),
+                            text: String::new(),
+                        });
+                    }
+                }
                 output.push_str(&start_tag(&tag));
                 stack.push(tag);
             }
@@ -42,15 +52,25 @@ pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
                     && matches_end(&open, &end)
                 {
                     output.push_str(&end_tag(&end));
+                    if let Tag::Heading { id, .. } = &open {
+                        if let Some(id) = id.as_ref() {
+                            let heading_text =
+                                heading_stack.pop().map(|ctx| ctx.text).unwrap_or_default();
+                            output.push_str(&anchor_link(id.as_ref(), &heading_text));
+                            output.push_str("</div>");
+                        }
+                    }
                 }
             }
             Event::Text(text) => {
                 output.push_str(&escape_text(text.as_ref()));
+                push_heading_text(&mut heading_stack, text.as_ref());
             }
             Event::Code(text) => {
                 output.push_str("<code>");
                 output.push_str(&escape_text(text.as_ref()));
                 output.push_str("</code>");
+                push_heading_text(&mut heading_stack, text.as_ref());
             }
             Event::Html(text) | Event::InlineHtml(text) => {
                 output.push_str(text.as_ref());
@@ -60,15 +80,18 @@ pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
             }
             Event::InlineMath(math) => {
                 output.push_str(&format!("<span class=\"math-inline\">{}</span>", math));
+                push_heading_text(&mut heading_stack, math.as_ref());
             }
             Event::DisplayMath(math) => {
                 output.push_str(&format!("<div class=\"math-display\">{}</div>", math));
+                push_heading_text(&mut heading_stack, math.as_ref());
             }
             Event::FootnoteReference(label) => {
                 output.push_str(&format!(
                     "<sup class=\"footnote-ref\"><a href=\"#fn-{0}\" id=\"fnref-{0}\">{0}</a></sup>",
                     label
                 ));
+                push_heading_text(&mut heading_stack, label.as_ref());
             }
             Event::TaskListMarker(done) => {
                 if done {
@@ -78,8 +101,14 @@ pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
                 }
             }
             Event::Rule => output.push_str("<hr />\n"),
-            Event::HardBreak => output.push_str("<br />\n"),
-            Event::SoftBreak => output.push('\n'),
+            Event::HardBreak => {
+                output.push_str("<br />\n");
+                push_heading_text(&mut heading_stack, " ");
+            }
+            Event::SoftBreak => {
+                output.push('\n');
+                push_heading_text(&mut heading_stack, " ");
+            }
         }
     }
 
@@ -202,6 +231,29 @@ fn matches_end(tag: &Tag<'_>, end: &TagEnd) -> bool {
             | (Tag::Link { .. }, TagEnd::Link)
             | (Tag::Image { .. }, TagEnd::Image)
     )
+}
+
+struct HeadingContext {
+    id: String,
+    text: String,
+}
+
+fn heading_wrapper_start(level: HeadingLevel) -> String {
+    format!("<div class=\"sl-heading-wrapper level-h{}\">", level as u8)
+}
+
+fn anchor_link(id: &str, heading_text: &str) -> String {
+    let label = format!("Section titled \"{}\"", heading_text.trim());
+    format!(
+        "<a class=\"sl-anchor-link\" href=\"#{id}\"><span aria-hidden=\"true\" class=\"sl-anchor-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\"><path fill=\"currentcolor\" d=\"m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z\"></path></svg></span><span class=\"sr-only\">{}</span></a>",
+        escape_text(&label)
+    )
+}
+
+fn push_heading_text(heading_stack: &mut Vec<HeadingContext>, text: &str) {
+    if let Some(current) = heading_stack.last_mut() {
+        current.text.push_str(text);
+    }
 }
 
 fn escape_text(text: &str) -> String {

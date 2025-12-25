@@ -27,6 +27,7 @@ Plan how to wire the updated NAPI/WASM JSX renderer into the Astro plugin, and v
 - Vite JSX handling:
   - Virtual module IDs use a `.markflow.jsx` suffix to ensure JSX parsing.
   - The `load` hook sets `meta: { vite: { jsx: true } }` on compiled modules.
+  - The `load` hook runs `transformWithEsbuild` with `loader: "jsx"`, `jsx: "transform"`, `jsxFactory: "_jsx"`, and `jsxFragment: "_Fragment"` (classic JSX) to bridge JSX into JS without extra deps.
   - `configResolved` fills `esbuild.jsx="automatic"` and `esbuild.jsxImportSource="astro"` only when unset (and `esbuild` is not `false`).
 
 ## Harness Validation Plan

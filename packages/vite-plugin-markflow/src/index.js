@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { transformWithEsbuild } from "vite";
 
 const DEFAULT_EXTENSIONS = new Set([".md", ".mdx"]);
 let bindingPromise;
@@ -180,9 +181,15 @@ export function markflowPlugin(userOptions = {}) {
           }
         }
       }
+      const transformed = await transformWithEsbuild(result.code, id, {
+        loader: "jsx",
+        jsx: "transform",
+        jsxFactory: "_jsx",
+        jsxFragment: "_Fragment",
+      });
       return {
-        code: result.code,
-        map: result.map ?? undefined,
+        code: transformed.code,
+        map: transformed.map ?? result.map ?? undefined,
         meta: {
           vite: {
             jsx: true,
