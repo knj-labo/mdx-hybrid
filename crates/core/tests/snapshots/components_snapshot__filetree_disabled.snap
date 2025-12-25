@@ -1,9 +1,8 @@
 ---
 source: crates/core/tests/components_snapshot.rs
-assertion_line: 20
 expression: output
 ---
 <FileTree>
-  <File>src</File>
-  <File>README.md</File>
+<File>src</File>
+<File>README.md</File>
 </FileTree>

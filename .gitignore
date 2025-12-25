@@ -176,3 +176,7 @@ web/.astro/
 fixtures/integration/astro-harness/dist*/
 fixtures/integration/astro-harness/harness-summary.json
 harness-summary.json
+
+# General
+.DS_Store
+tmp/

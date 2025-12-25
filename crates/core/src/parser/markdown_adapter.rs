@@ -595,10 +595,10 @@ fn normalize_mdx_jsx_indentation(input: &str) -> String {
             }
 
             if let Some(tag_name) = jsx_close_tag(trimmed) {
-                if let Some(last) = jsx_stack.pop() {
-                    if last != tag_name {
-                        jsx_stack.clear();
-                    }
+                if let Some(last) = jsx_stack.pop()
+                    && last != tag_name
+                {
+                    jsx_stack.clear();
                 }
                 output.push_str(trimmed);
                 output.push_str(line_ending);
@@ -660,11 +660,7 @@ fn jsx_close_tag(trimmed: &str) -> Option<String> {
         name.push(ch);
         chars.next();
     }
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
-    }
+    if name.is_empty() { None } else { Some(name) }
 }
 
 fn build_parse_options(config: ParseConfig) -> ParseOptions {
