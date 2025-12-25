@@ -1,7 +1,6 @@
 //! The stateful compiler and its configuration.
 
 use crate::types::*;
-use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use markflow_core::{RewriteOptions, MarkflowError};
 use std::path::Path;

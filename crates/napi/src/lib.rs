@@ -4,10 +4,8 @@
 use markflow_core::event::{
     Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd,
 };
-use markflow_core::{MarkflowError, ParseConfig, extract_frontmatter};
+use markflow_core::{MarkflowError, ParseConfig};
 use napi::bindgen_prelude::*;
-use napi_derive::napi;
-use serde_json::Value as JsonValue;
 use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
 use std::path::{Path, PathBuf};
@@ -18,7 +16,6 @@ pub mod types;
 pub mod compiler;
 pub use types::*;
 
-const ASTRO_DEFAULT_RUNTIME: &str = "astro/runtime/server/index.js";
 const ASTRO_RENDER_HELPERS: &str = "astro/runtime/server/render/index.js";
 
 
@@ -350,11 +347,8 @@ fn js_string_literal(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
-fn empty_frontmatter() -> JsonValue {
-    JsonValue::Object(Default::default())
-}
-
 #[cfg(test)]
+
 mod tests {
     use super::{InternalCompilerConfig, compile_document, empty_frontmatter, parse_frontmatter};
     use crate::render_to_jsx_napi;

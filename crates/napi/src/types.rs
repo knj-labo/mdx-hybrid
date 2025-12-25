@@ -1,6 +1,5 @@
 //! NAPI-exposed data structures.
 
-use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
