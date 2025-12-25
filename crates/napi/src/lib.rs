@@ -18,8 +18,6 @@ pub mod compiler;
 pub mod types;
 pub use types::*;
 
-const ASTRO_RENDER_HELPERS: &str = "astro/runtime/server/render/index.js";
-
 /// Parses markdown string to HTML with default options
 #[napi]
 pub fn parse(input: String) -> napi::Result<String> {
@@ -208,20 +206,9 @@ fn generate_module_code_from_ir(
     let mut code = String::new();
     writeln!(
         code,
-        "import {{ createComponent, markHTMLString }} from '{}';",
-        ir.runtime_import
+        "import {{ Fragment as _Fragment, jsx as _jsx }} from 'astro/jsx-runtime';"
     )
     .map_err(|err| Error::from_reason(err.to_string()))?;
-
-    if ir.layout_import.is_some() {
-        writeln!(
-            code,
-            "import {{ renderComponentToString }} from '{}';",
-            ASTRO_RENDER_HELPERS
-        )
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-    }
-
     if let Some(layout) = ir.layout_import.as_deref() {
         writeln!(code, "import Layout from {};", js_string_literal(layout))
             .map_err(|err| Error::from_reason(err.to_string()))?;
@@ -230,15 +217,6 @@ fn generate_module_code_from_ir(
     for import in hoisted_imports {
         writeln!(code, "{}", import).map_err(|err| Error::from_reason(err.to_string()))?;
     }
-
-    writeln!(
-        code,
-        "const _html = `{}`;",
-        escape_template_literal(&ir.html)
-    )
-    .map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "const _markflowHtml = markHTMLString(_html);")
-        .map_err(|err| Error::from_reason(err.to_string()))?;
 
     writeln!(code, "export const frontmatter = {};", ir.frontmatter_json)
         .map_err(|err| Error::from_reason(err.to_string()))?;
@@ -266,39 +244,39 @@ fn generate_module_code_from_ir(
         .map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(code, "}}").map_err(|err| Error::from_reason(err.to_string()))?;
 
-    writeln!(
-        code,
-        "const _MarkflowContent = createComponent(async () => _markflowHtml);"
-    )
-    .map_err(|err| Error::from_reason(err.to_string()))?;
+    writeln!(code, "function MarkflowContent(props) {{")
+        .map_err(|err| Error::from_reason(err.to_string()))?;
+    writeln!(code, "  return (").map_err(|err| Error::from_reason(err.to_string()))?;
+    writeln!(code, "    <>").map_err(|err| Error::from_reason(err.to_string()))?;
+    code.push_str(&ir.html);
+    if !ir.html.ends_with('\n') {
+        code.push('\n');
+    }
+    writeln!(code, "    </>").map_err(|err| Error::from_reason(err.to_string()))?;
+    writeln!(code, "  );").map_err(|err| Error::from_reason(err.to_string()))?;
+    writeln!(code, "}}").map_err(|err| Error::from_reason(err.to_string()))?;
+
+    writeln!(code, "export const Content = MarkflowContent;")
+        .map_err(|err| Error::from_reason(err.to_string()))?;
 
     if ir.layout_import.is_some() {
+        writeln!(code, "function MarkflowPage(props) {{")
+            .map_err(|err| Error::from_reason(err.to_string()))?;
+        writeln!(code, "  return (").map_err(|err| Error::from_reason(err.to_string()))?;
         writeln!(
             code,
-            "const _MarkflowPage = createComponent(async (result, props, slots) => {{"
+            "    <Layout {{...props}} frontmatter={{frontmatter}}>"
         )
         .map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(
-            code,
-            "  const html = await renderComponentToString(result, 'Layout', Layout, {{ ...props, frontmatter }}, {{")
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(
-            code,
-            "    'default': () => _MarkflowContent(result, props, slots)"
-        )
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "  }});").map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "  return markHTMLString(html);")
+        writeln!(code, "      <MarkflowContent {{...props}} />")
             .map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "}});").map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "export const Content = _MarkflowContent;")
-            .map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "export default _MarkflowPage;")
+        writeln!(code, "    </Layout>").map_err(|err| Error::from_reason(err.to_string()))?;
+        writeln!(code, "  );").map_err(|err| Error::from_reason(err.to_string()))?;
+        writeln!(code, "}}").map_err(|err| Error::from_reason(err.to_string()))?;
+        writeln!(code, "export default MarkflowPage;")
             .map_err(|err| Error::from_reason(err.to_string()))?;
     } else {
-        writeln!(code, "export const Content = _MarkflowContent;")
-            .map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "export default _MarkflowContent;")
+        writeln!(code, "export default MarkflowContent;")
             .map_err(|err| Error::from_reason(err.to_string()))?;
     }
 
@@ -371,13 +349,6 @@ fn build_import_list(layout: Option<&str>, filepath: &Path) -> Vec<ImportedModul
         });
     }
     imports
-}
-
-fn escape_template_literal(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('`', "\\`")
-        .replace("${", "\\${")
 }
 
 fn js_string_literal(value: &str) -> String {
@@ -483,14 +454,17 @@ mod tests {
         let result =
             crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
                 .expect("compile success");
+        let content_pos = result.code.find("function MarkflowContent").unwrap();
+        let hoist_pos = result.code.find("import X from './x';").unwrap();
         assert!(
-            result.code.contains("import X from './x';"),
-            "code missing hoisted import: {}",
+            hoist_pos < content_pos,
+            "import should be hoisted before JSX content: {}",
             result.code
         );
-        assert!(
-            !result.code.contains("const _html = `import X from './x';`"),
-            "import leaked into HTML template: {}",
+        assert_eq!(
+            result.code.matches("import X from './x';").count(),
+            1,
+            "hoisted import should not appear in JSX body: {}",
             result.code
         );
     }
@@ -502,14 +476,22 @@ mod tests {
         let result =
             crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
                 .expect("compile success");
+        let content_pos = result.code.find("function MarkflowContent").unwrap();
+        let fenced_pos = result.code.find("import Y from './y'").unwrap();
         assert!(
-            !result.code.contains("import Y from './y'"),
-            "fenced import should not hoist: {}",
+            fenced_pos > content_pos,
+            "fenced import should remain in JSX body: {}",
+            result.code
+        );
+        assert_eq!(
+            result.code.matches("import Y from './y'").count(),
+            1,
+            "fenced import should not be hoisted: {}",
             result.code
         );
         assert!(
-            result.code.contains("import Y from &#39;./y&#39;"),
-            "fenced import should remain in rendered HTML: {}",
+            result.code.contains("<pre><code") && result.code.contains("import Y from './y'"),
+            "fenced import should stay in rendered JSX: {}",
             result.code
         );
     }
@@ -523,32 +505,27 @@ mod tests {
         let result =
             crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
                 .expect("compile success");
+        let content_pos = result.code.find("function MarkflowContent").unwrap();
 
-        // hoisted exports appear before _html declaration
+        // hoisted exports appear before JSX content
         let hoist_pos = result.code.find("export const foo").unwrap();
-        let html_pos = result.code.find("const _html = `").unwrap();
         assert!(
-            hoist_pos < html_pos,
-            "exports should be hoisted before HTML: {}",
+            hoist_pos < content_pos,
+            "exports should be hoisted before JSX content: {}",
+            result.code
+        );
+        assert_eq!(
+            result.code.matches("export const foo").count(),
+            1,
+            "hoisted exports should not appear in JSX body: {}",
             result.code
         );
 
-        // exports should not leak into HTML template
+        // default export body hoisted, not in JSX
+        let default_pos = result.code.find("export default function bar()").unwrap();
         assert!(
-            !result.code.contains("const _html = `export const foo"),
-            "exports leaked into HTML: {}",
-            result.code
-        );
-
-        // default export body hoisted, not in HTML
-        assert!(
-            result.code.contains("export default function bar()"),
-            "default export missing: {}",
-            result.code
-        );
-        assert!(
-            !result.code.contains("bar()\\n{\\n  return foo();\\n}\\n"),
-            "default export text appeared in HTML: {}",
+            default_pos < content_pos,
+            "default export should be hoisted before JSX content: {}",
             result.code
         );
     }
@@ -560,17 +537,22 @@ mod tests {
         let result =
             crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
                 .expect("compile success");
-
+        let content_pos = result.code.find("function MarkflowContent").unwrap();
+        let hoisted_pos = result.code.find("export const yes = true;").unwrap();
+        let fenced_pos = result.code.find("export const no = true").unwrap();
         assert!(
-            result.code.contains("export const yes = true;"),
+            hoisted_pos < content_pos,
             "export outside fence should hoist: {}",
             result.code
         );
         assert!(
-            result
-                .code
-                .contains("const _html = `<pre><code>export const no = true</code></pre>"),
-            "fenced export should stay in HTML: {}",
+            fenced_pos > content_pos,
+            "fenced export should stay in JSX body: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("<pre><code") && result.code.contains("export const no = true"),
+            "fenced export should stay in rendered JSX: {}",
             result.code
         );
     }
@@ -584,25 +566,26 @@ mod tests {
         let result =
             crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
                 .expect("compile success");
-
-        let html_pos = result.code.find("const _html = `").unwrap();
+        let content_pos = result.code.find("function MarkflowContent").unwrap();
         assert!(
-            result.code.find("export default async () => {").unwrap() < html_pos,
+            result.code.find("export default async () => {").unwrap() < content_pos,
             "default async export should be hoisted"
         );
         assert!(
-            result.code.find("export * from './mod';").unwrap() < html_pos,
+            result.code.find("export * from './mod';").unwrap() < content_pos,
             "export * should be hoisted"
         );
         assert!(
-            result.code.find("export const foo = 1 // inline").unwrap() < html_pos,
+            result.code.find("export const foo = 1 // inline").unwrap() < content_pos,
             "inline comment export should be hoisted"
         );
-        assert!(
-            !result
+        assert_eq!(
+            result
                 .code
-                .contains("export const foo = 1 // inline\\n# Title"),
-            "export should not leak into HTML: {}",
+                .matches("export const foo = 1 // inline")
+                .count(),
+            1,
+            "inline export should not appear in JSX body: {}",
             result.code
         );
     }

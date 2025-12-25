@@ -37,7 +37,12 @@ Specify how Markdown→JSX output is wrapped with layout/components, including p
     ```
   - If no layout: `export default Content;`
 - Runtime helpers:
-  - Keep existing runtime imports (`createComponent`, etc.) out-of-scope for this spec; defer to MF-150/JSX runtime spec.
+  - Emit `import { Fragment as _Fragment, jsx as _jsx } from 'astro/jsx-runtime';` at the top of the module.
+  - Do not use `markHTMLString`/`createComponent` in JSX mode.
+  - Keep the runtime import before any hoisted imports/exports.
+  - Limit runtime symbols to `_Fragment` and `_jsx` (no `jsxs` / `jsxDEV`).
+- IR payload:
+  - `CompileIrResult.html` holds the JSX source string (name retained for compatibility).
 - Slots/children:
   - Only `default` slot is supported in this phase; nested/ named slots are out-of-scope.
 - Hoisted imports:

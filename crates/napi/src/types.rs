@@ -118,7 +118,7 @@ pub struct CompileResult {
 #[napi(object)]
 #[derive(Debug, Clone)]
 pub struct CompileIrResult {
-    /// Rendered HTML output.
+    /// Rendered JSX output (string form).
     pub html: String,
     /// Hoisted imports/exports captured during parsing (structured).
     pub hoisted_imports: Vec<ImportSpec>,

@@ -103,6 +103,19 @@ export function markflowPlugin(userOptions = {}) {
     enforce: "pre",
     async configResolved(config) {
       resolvedConfig = config;
+      if (config.esbuild == null) {
+        config.esbuild = {
+          jsx: "automatic",
+          jsxImportSource: "astro",
+        };
+      } else if (config.esbuild !== false) {
+        if (config.esbuild.jsx == null) {
+          config.esbuild.jsx = "automatic";
+        }
+        if (config.esbuild.jsxImportSource == null) {
+          config.esbuild.jsxImportSource = "astro";
+        }
+      }
       const binding = providedBinding ?? (await loadMarkflowBinding());
       const createCompiler = binding.createCompiler
         ? binding.createCompiler
@@ -143,7 +156,7 @@ export function markflowPlugin(userOptions = {}) {
         resolved && resolved.id
           ? stripQuery(unwrapVirtual(resolved.id))
           : fallback();
-      const virtualId = `${VIRTUAL_PREFIX}${resolvedId}.markflow`;
+      const virtualId = `${VIRTUAL_PREFIX}${resolvedId}.markflow.jsx`;
       sourceLookup.set(virtualId, resolvedId);
       return virtualId;
     },
@@ -155,7 +168,8 @@ export function markflowPlugin(userOptions = {}) {
         throw new Error("Markflow compiler has not been initialized");
       }
       const filename =
-        sourceLookup.get(id) ?? stripQuery(id.slice(VIRTUAL_PREFIX.length));
+        sourceLookup.get(id) ??
+        stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ""));
       const source = await readFile(filename, "utf8");
       const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
       const result = compiler.compile(source, filename, fileOptions);
@@ -169,6 +183,11 @@ export function markflowPlugin(userOptions = {}) {
       return {
         code: result.code,
         map: result.map ?? undefined,
+        meta: {
+          vite: {
+            jsx: true,
+          },
+        },
       };
     },
   };
