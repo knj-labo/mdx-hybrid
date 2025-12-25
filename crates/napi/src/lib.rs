@@ -1,4 +1,4 @@
-#!deny(missing_docs)
+#![deny(missing_docs)]
 //! Node.js bindings that surface Markflow's Rust implementation.
 
 use markflow_core::event::{
