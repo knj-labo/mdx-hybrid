@@ -32,6 +32,37 @@ pub fn render_to_jsx_napi(input: String) -> napi::Result<String> {
     markflow_core::render_to_jsx(&input).map_err(convert_error)
 }
 
+fn wrap_jsx_fragment_as_module(input: &str) -> String {
+    let mut imports = Vec::new();
+    let mut body_lines = Vec::new();
+    let mut in_import_block = true;
+
+    for line in input.lines() {
+        if in_import_block && line.trim_start().starts_with("import ") {
+            imports.push(line);
+            continue;
+        }
+
+        if in_import_block && line.trim().is_empty() {
+            continue;
+        }
+
+        in_import_block = false;
+        body_lines.push(line);
+    }
+
+    let imports = if imports.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n\n", imports.join("\n"))
+    };
+    let body = body_lines.join("\n");
+
+    format!(
+        "{imports}export default function _Tmp() {{\n  return (\n    <>\n{body}\n    </>\n  );\n}}\n"
+    )
+}
+
 /// Parses markdown string to HTML with custom rewrite options
 #[napi]
 pub fn parse_with_options(input: String, config: RewriteConfig) -> napi::Result<String> {
@@ -157,6 +188,15 @@ mod tests {
         let output = render_to_jsx_napi(input).expect("render_to_jsx succeeds");
         assert!(output.starts_with("import X from './x'"));
         assert!(output.contains("<MyComponent />"));
+    }
+
+    #[test]
+    fn wrap_jsx_fragment_as_module_preserves_imports_and_body() {
+        let input = "import X from './x'\n\n<div />".to_string();
+        let output = super::wrap_jsx_fragment_as_module(&input);
+        assert!(output.starts_with("import X from './x'"));
+        assert!(output.contains("export default function _Tmp"));
+        assert!(output.contains("<div />"));
     }
 
     #[test]
