@@ -4,7 +4,6 @@
 use markflow_core::{MarkflowError, RewriteOptions, extract_frontmatter};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use serde_json::Value as JsonValue;
 use std::path::Path;
 
 /// Module code generation helpers.
@@ -18,6 +17,8 @@ pub mod types;
 /// Utility helpers.
 mod utils;
 pub use types::*;
+use utils::empty_frontmatter;
+pub(crate) use utils::{build_import_list, dedupe_imports};
 
 /// Parses markdown string to HTML with default options
 #[napi]
@@ -32,6 +33,7 @@ pub fn render_to_jsx_napi(input: String) -> napi::Result<String> {
     markflow_core::render_to_jsx(&input).map_err(convert_error)
 }
 
+#[cfg(test)]
 fn wrap_jsx_fragment_as_module(input: &str) -> String {
     let mut imports = Vec::new();
     let mut body_lines = Vec::new();
@@ -372,5 +374,3 @@ mod tests {
         );
     }
 }
-use utils::empty_frontmatter;
-pub(crate) use utils::{build_import_list, dedupe_imports};

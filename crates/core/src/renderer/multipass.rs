@@ -223,89 +223,6 @@ fn merge_ranges(a: &[(usize, usize)], b: &[(usize, usize)]) -> Vec<(usize, usize
     merged
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{Block, scan_blocks};
-
-    #[test]
-    fn scan_blocks_markdown_only() {
-        let input = "Just markdown\n\nSecond line.";
-        let blocks = scan_blocks(input);
-        assert_eq!(blocks, vec![Block::Markdown(input)]);
-    }
-
-    #[test]
-    fn scan_blocks_self_closing_jsx() {
-        let input = "<Tabs />\n";
-        let blocks = scan_blocks(input);
-        assert_eq!(
-            blocks,
-            vec![
-                Block::JsxSelfClosing { raw: "<Tabs />" },
-                Block::Markdown("\n"),
-            ]
-        );
-    }
-
-    #[test]
-    fn scan_blocks_nested_same_tag() {
-        let input = "<Steps>\n<Steps>Inner</Steps>\n</Steps>";
-        let blocks = scan_blocks(input);
-        assert_eq!(
-            blocks,
-            vec![Block::JsxElement {
-                name: "Steps",
-                open: "<Steps>",
-                children: vec![
-                    Block::Markdown("\n"),
-                    Block::JsxElement {
-                        name: "Steps",
-                        open: "<Steps>",
-                        children: vec![Block::Markdown("Inner")],
-                        close: "</Steps>",
-                    },
-                    Block::Markdown("\n"),
-                ],
-                close: "</Steps>",
-            }]
-        );
-    }
-
-    #[test]
-    fn scan_blocks_ignores_fenced_jsx() {
-        let input = "```\n<Steps>\n```\n<Tabs />\n";
-        let blocks = scan_blocks(input);
-        assert_eq!(
-            blocks,
-            vec![
-                Block::Markdown("```\n<Steps>\n```\n"),
-                Block::JsxSelfClosing { raw: "<Tabs />" },
-                Block::Markdown("\n"),
-            ]
-        );
-    }
-
-    #[test]
-    fn scan_blocks_ignores_inline_code_jsx() {
-        let input = "`<BUCKET_NAME>`\n<Tabs />\n";
-        let blocks = scan_blocks(input);
-        assert_eq!(
-            blocks,
-            vec![
-                Block::Markdown("`<BUCKET_NAME>`\n"),
-                Block::JsxSelfClosing { raw: "<Tabs />" },
-                Block::Markdown("\n"),
-            ]
-        );
-    }
-
-    #[test]
-    fn scan_blocks_ignores_indented_jsx() {
-        let input = "1. item\n    <Tabs />\n";
-        let blocks = scan_blocks(input);
-        assert_eq!(blocks, vec![Block::Markdown(input)]);
-    }
-}
 fn parse_open_tag(input: &str, open_start: usize) -> Option<(&str, usize)> {
     let bytes = input.as_bytes();
     let mut name_end = open_start + 1;
@@ -426,4 +343,88 @@ fn find_byte(bytes: &[u8], start: usize, target: u8) -> Option<usize> {
         i += 1;
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Block, scan_blocks};
+
+    #[test]
+    fn scan_blocks_markdown_only() {
+        let input = "Just markdown\n\nSecond line.";
+        let blocks = scan_blocks(input);
+        assert_eq!(blocks, vec![Block::Markdown(input)]);
+    }
+
+    #[test]
+    fn scan_blocks_self_closing_jsx() {
+        let input = "<Tabs />\n";
+        let blocks = scan_blocks(input);
+        assert_eq!(
+            blocks,
+            vec![
+                Block::JsxSelfClosing { raw: "<Tabs />" },
+                Block::Markdown("\n"),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_blocks_nested_same_tag() {
+        let input = "<Steps>\n<Steps>Inner</Steps>\n</Steps>";
+        let blocks = scan_blocks(input);
+        assert_eq!(
+            blocks,
+            vec![Block::JsxElement {
+                name: "Steps",
+                open: "<Steps>",
+                children: vec![
+                    Block::Markdown("\n"),
+                    Block::JsxElement {
+                        name: "Steps",
+                        open: "<Steps>",
+                        children: vec![Block::Markdown("Inner")],
+                        close: "</Steps>",
+                    },
+                    Block::Markdown("\n"),
+                ],
+                close: "</Steps>",
+            }]
+        );
+    }
+
+    #[test]
+    fn scan_blocks_ignores_fenced_jsx() {
+        let input = "```\n<Steps>\n```\n<Tabs />\n";
+        let blocks = scan_blocks(input);
+        assert_eq!(
+            blocks,
+            vec![
+                Block::Markdown("```\n<Steps>\n```\n"),
+                Block::JsxSelfClosing { raw: "<Tabs />" },
+                Block::Markdown("\n"),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_blocks_ignores_inline_code_jsx() {
+        let input = "`<BUCKET_NAME>`\n<Tabs />\n";
+        let blocks = scan_blocks(input);
+        assert_eq!(
+            blocks,
+            vec![
+                Block::Markdown("`<BUCKET_NAME>`\n"),
+                Block::JsxSelfClosing { raw: "<Tabs />" },
+                Block::Markdown("\n"),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_blocks_ignores_indented_jsx() {
+        let input = "1. item\n    <Tabs />\n";
+        let blocks = scan_blocks(input);
+        assert_eq!(blocks, vec![Block::Markdown(input)]);
+    }
 }
