@@ -575,11 +575,8 @@ fn normalize_mdx_jsx_indentation(input: &str) -> String {
                 in_fence = true;
                 fence_marker = marker;
             }
-            if jsx_stack.is_empty() {
-                output.push_str(line_body);
-            } else {
-                output.push_str(trimmed);
-            }
+            // Preserve indentation for fence marker lines even inside JSX.
+            output.push_str(line_body);
             output.push_str(line_ending);
             continue;
         }
@@ -729,6 +726,37 @@ mod tests {
             events
                 .iter()
                 .any(|event| matches!(event, MfEvent::Start(Tag::Paragraph)))
+        );
+    }
+
+    #[test]
+    fn jsx_fence_indentation_is_preserved() {
+        let input = "<Steps>\n\
+1. Step\n\
+\n\
+   <PackageManagerTabs>\n\
+   ```yaml\n\
+   first: line\n\
+   second: line\n\
+   ```\n\
+   </PackageManagerTabs>\n\
+</Steps>\n";
+        let events = collect_events_with_config(input, ParseConfig::mdx());
+        let code_text = events.iter().find_map(|event| match event {
+            MfEvent::Text(text)
+                if text.as_ref().contains("first: line")
+                    && text.as_ref().contains("second: line") =>
+            {
+                Some(text.as_ref().to_string())
+            }
+            _ => None,
+        });
+        let Some(code_text) = code_text else {
+            panic!("expected fenced code block text in events");
+        };
+        assert!(
+            code_text.contains('\n'),
+            "expected newline in code fence text, got: {code_text:?}"
         );
     }
 

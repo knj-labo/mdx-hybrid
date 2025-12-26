@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 pub mod html_renderer;
 pub mod jsx_renderer;
+mod multipass;
 pub mod streaming_rewriter;
 
 pub use jsx_renderer::render_to_jsx;
