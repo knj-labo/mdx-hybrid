@@ -7,6 +7,24 @@ use std::path::Path;
 
 const ASTRO_DEFAULT_RUNTIME: &str = "astro/runtime/server/index.js";
 
+fn strip_leading_imports(input: &str) -> String {
+    let mut out = Vec::new();
+    let mut skipping = true;
+
+    for line in input.lines() {
+        if skipping {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("import ") || trimmed.is_empty() {
+                continue;
+            }
+            skipping = false;
+        }
+        out.push(line);
+    }
+
+    out.join("\n")
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct InternalCompilerConfig {
     pub(crate) jsx_import_source: String,
@@ -95,15 +113,8 @@ pub fn compile_ir(
 
     let parse_result = markflow_core::parse_with_options(&raw_body, RewriteOptions::default())
         .map_err(super::convert_error)?;
-    let mut jsx = render_to_jsx(&raw_body).map_err(super::convert_error)?;
-    let import_prefix_len: usize = parse_result
-        .imports
-        .iter()
-        .map(|spec| spec.source.len() + 1)
-        .sum();
-    if import_prefix_len > 0 && jsx.len() >= import_prefix_len {
-        jsx = jsx[import_prefix_len..].to_string();
-    }
+    let jsx = render_to_jsx(&raw_body).map_err(super::convert_error)?;
+    let jsx = strip_leading_imports(&jsx);
 
     let headings = super::collect_headings(&raw_body, file_type)?;
     let layout_import: Option<String> = frontmatter
