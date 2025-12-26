@@ -180,3 +180,6 @@ harness-summary.json
 # General
 .DS_Store
 tmp/
+
+# Astro dev artifacts
+.astro/
