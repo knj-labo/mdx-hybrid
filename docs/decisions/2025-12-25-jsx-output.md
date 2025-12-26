@@ -18,6 +18,13 @@
 - Vite virtual module IDs use `.markflow.jsx`, and `load` returns `meta: { vite: { jsx: true } }` to force JSX parsing.
 - Always emit `import { Fragment as _Fragment, jsx as _jsx } from 'astro/jsx-runtime';` before hoisted imports; do not include `jsxs` / `jsxDEV`.
 - Vite `configResolved` fills `esbuild.jsx="automatic"` and `esbuild.jsxImportSource="astro"` when unset (unless `esbuild` is `false`).
+- Vite `load` bridges JSX with `transformWithEsbuild` (no new deps) using `loader: "jsx"` and `jsxImportSource: "astro"` to satisfy import analysis.
+- Vite `load` uses classic JSX transform (`jsx: "transform"`) with `jsxFactory: "_jsx"` and `jsxFragment: "_Fragment"` to avoid `Fragment` reference errors.
+- `Content` and default exports are wrapped with `createComponent((result, props) => renderJSX(result, _jsx(Component, { ...props })), file)` to avoid NoMatchingRenderer.
+- `createComponent`/`renderJSX` are imported from `astro/runtime/server/index.js` to avoid subpath resolution failures.
+- `MarkflowContent` itself is an Astro component factory (not a plain function) so JSX rendering never routes through a framework renderer.
+- `_jsx` is wrapped to coerce `props ?? {}` because Astro `createVNode` throws on `props = null`.
+- `Fragment` is imported directly, and `_Fragment` is derived from it so both `<Fragment>` and fragments `<>` resolve.
 - JSX 出力の初期確認は `cargo test -p markflow-napi` の既存テスト結果に依存し、追加テストは行わない（2025-12-25）。
 - JSON AST 化によるパフォーマンス最適化は将来タスクとして記録し、現段階では実装しない。
 
@@ -29,3 +36,4 @@
 - docs/specs/mf-172-jsx-layout-integration.md
 - docs/specs/mf-173-astro-plugin-harness.md
 - docs/specs/mf-170-markdown-to-jsx.md
+- Starlight-specific heading wrappers/anchors should be separated from Astro-generic output in a follow-up task.

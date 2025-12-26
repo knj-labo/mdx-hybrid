@@ -7,6 +7,11 @@ use std::path::Path;
 
 const ASTRO_DEFAULT_RUNTIME: &str = "astro/runtime/server/index.js";
 
+fn strip_leading_imports(input: &str) -> String {
+    let (_hoisted, body) = markflow_core::code_fence::collect_root_imports(input);
+    body.join("\n")
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct InternalCompilerConfig {
     pub(crate) jsx_import_source: String,
@@ -95,15 +100,8 @@ pub fn compile_ir(
 
     let parse_result = markflow_core::parse_with_options(&raw_body, RewriteOptions::default())
         .map_err(super::convert_error)?;
-    let mut jsx = render_to_jsx(&raw_body).map_err(super::convert_error)?;
-    let import_prefix_len: usize = parse_result
-        .imports
-        .iter()
-        .map(|spec| spec.source.len() + 1)
-        .sum();
-    if import_prefix_len > 0 && jsx.len() >= import_prefix_len {
-        jsx = jsx[import_prefix_len..].to_string();
-    }
+    let jsx = render_to_jsx(&raw_body).map_err(super::convert_error)?;
+    let jsx = strip_leading_imports(&jsx);
 
     let headings = super::collect_headings(&raw_body, file_type)?;
     let layout_import: Option<String> = frontmatter
@@ -143,7 +141,7 @@ pub(crate) fn compile_document_from_ir(ir: CompileIrResult) -> napi::Result<Comp
             .collect(),
     );
     let headings_json = serde_json::to_string(&ir.headings).unwrap_or_else(|_| "[]".to_string());
-    let code = super::generate_module_code_from_ir(&ir, &hoisted_imports, &headings_json)?;
+    let code = super::codegen::generate_module_code_from_ir(&ir, &hoisted_imports, &headings_json)?;
     let imports = super::build_import_list(ir.layout_import.as_deref(), Path::new(&ir.file_path));
 
     Ok(CompileResult {

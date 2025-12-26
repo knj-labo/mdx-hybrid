@@ -21,6 +21,23 @@ fn jsx_renderer_preserves_raw_jsx() {
 }
 
 #[test]
+fn jsx_steps_nested_tabs_stays_in_list_item() {
+    let input =
+        "<Steps>\n1. First\n   <Tabs>\n     <Tab title=\"A\">A</Tab>\n   </Tabs>\n</Steps>\n";
+    let output = render_to_jsx(input).expect("render_to_jsx succeeds");
+    let li_start = output.find("<li").expect("li should exist");
+    let li_close = output[li_start..]
+        .find("</li>")
+        .map(|idx| li_start + idx)
+        .expect("li should close");
+    let tabs_pos = output.find("<Tabs>").expect("tabs should exist");
+    assert!(
+        tabs_pos > li_start && tabs_pos < li_close,
+        "Tabs should be nested inside the list item. output: {output}"
+    );
+}
+
+#[test]
 fn test_parse() {
     let input = "# Hello, World!";
     let output = parse(input).unwrap().html;

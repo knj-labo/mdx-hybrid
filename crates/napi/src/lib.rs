@@ -1,22 +1,24 @@
 #![deny(missing_docs)]
 //! Node.js bindings that surface Markflow's Rust implementation.
 
-use markflow_core::event::{
-    Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd,
-};
 use markflow_core::{MarkflowError, RewriteOptions, extract_frontmatter};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use serde_json::Value as JsonValue;
-use std::collections::HashSet;
-use std::fmt::Write as FmtWrite;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+/// Module code generation helpers.
+mod codegen;
 /// The stateful compiler and its configuration.
 pub mod compiler;
+/// Heading extraction helpers.
+mod headings;
 /// NAPI-exposed data structures.
 pub mod types;
+/// Utility helpers.
+mod utils;
 pub use types::*;
+use utils::empty_frontmatter;
+pub(crate) use utils::{build_import_list, dedupe_imports};
 
 /// Parses markdown string to HTML with default options
 #[napi]
@@ -29,6 +31,38 @@ pub fn parse(input: String) -> napi::Result<String> {
 #[napi(js_name = "renderToJsx")]
 pub fn render_to_jsx_napi(input: String) -> napi::Result<String> {
     markflow_core::render_to_jsx(&input).map_err(convert_error)
+}
+
+#[cfg(test)]
+fn wrap_jsx_fragment_as_module(input: &str) -> String {
+    let mut imports = Vec::new();
+    let mut body_lines = Vec::new();
+    let mut in_import_block = true;
+
+    for line in input.lines() {
+        if in_import_block && line.trim_start().starts_with("import ") {
+            imports.push(line);
+            continue;
+        }
+
+        if in_import_block && line.trim().is_empty() {
+            continue;
+        }
+
+        in_import_block = false;
+        body_lines.push(line);
+    }
+
+    let imports = if imports.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n\n", imports.join("\n"))
+    };
+    let body = body_lines.join("\n");
+
+    format!(
+        "{imports}export default function _Tmp() {{\n  return (\n    <>\n{body}\n    </>\n  );\n}}\n"
+    )
 }
 
 /// Parses markdown string to HTML with custom rewrite options
@@ -119,266 +153,7 @@ fn convert_error<E: Into<MarkflowError>>(err: E) -> Error {
     }
 }
 
-struct HeadingCollector {
-    headings: Vec<HeadingEntry>,
-    slugger: markflow_core::Slugger,
-    current_heading: Option<HeadingCapture>,
-}
-
-impl HeadingCollector {
-    fn new() -> Self {
-        Self {
-            headings: Vec::new(),
-            slugger: markflow_core::Slugger::new(),
-            current_heading: None,
-        }
-    }
-
-    fn record_heading(&mut self, text: &str, level: HeadingLevel, id: Option<String>) {
-        let slug = id.unwrap_or_else(|| self.slugger.next_slug(text));
-        self.headings.push(HeadingEntry {
-            depth: level as u8,
-            slug,
-            text: text.to_string(),
-        });
-    }
-
-    fn begin_heading(&mut self, level: HeadingLevel, id: Option<String>) {
-        self.current_heading = Some(HeadingCapture {
-            level,
-            buffer: String::new(),
-            id,
-        });
-    }
-
-    fn push_heading_text(&mut self, text: &str) {
-        if let Some(capture) = self.current_heading.as_mut() {
-            capture.buffer.push_str(text);
-        }
-    }
-
-    fn end_heading(&mut self, level: HeadingLevel) {
-        if let Some(capture) = self.current_heading.take()
-            && level == capture.level
-        {
-            let text = capture.buffer.trim();
-            if !text.is_empty() {
-                self.record_heading(text, level, capture.id.clone());
-            }
-        }
-    }
-
-    fn observe<'a>(&mut self, event: &CoreEvent<'a>) {
-        match event {
-            CoreEvent::Start(CoreTag::Heading { level, id, .. }) => {
-                let slug_from_tag = id.as_ref().map(|cow| cow.to_string());
-                self.begin_heading(*level, slug_from_tag)
-            }
-            CoreEvent::End(CoreTagEnd::Heading(level)) => self.end_heading(*level),
-            CoreEvent::Text(text)
-            | CoreEvent::Code(text)
-            | CoreEvent::Html(text)
-            | CoreEvent::InlineHtml(text)
-            | CoreEvent::InlineMath(text)
-            | CoreEvent::DisplayMath(text) => self.push_heading_text(text.as_ref()),
-            CoreEvent::SoftBreak | CoreEvent::HardBreak => self.push_heading_text(" "),
-            _ => {}
-        }
-    }
-
-    fn into_entries(self) -> Vec<HeadingEntry> {
-        self.headings
-    }
-}
-
-struct HeadingCapture {
-    level: HeadingLevel,
-    buffer: String,
-    id: Option<String>,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn generate_module_code_from_ir(
-    ir: &CompileIrResult,
-    hoisted_imports: &[String],
-    headings_json: &str,
-) -> napi::Result<String> {
-    let mut code = String::new();
-    writeln!(
-        code,
-        "import {{ Fragment as _Fragment, jsx as _jsx }} from 'astro/jsx-runtime';"
-    )
-    .map_err(|err| Error::from_reason(err.to_string()))?;
-    if let Some(layout) = ir.layout_import.as_deref() {
-        writeln!(code, "import Layout from {};", js_string_literal(layout))
-            .map_err(|err| Error::from_reason(err.to_string()))?;
-    }
-
-    for import in hoisted_imports {
-        writeln!(code, "{}", import).map_err(|err| Error::from_reason(err.to_string()))?;
-    }
-
-    writeln!(code, "export const frontmatter = {};", ir.frontmatter_json)
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-
-    writeln!(
-        code,
-        "export const file = {};",
-        js_string_literal(&ir.file_path)
-    )
-    .map_err(|err| Error::from_reason(err.to_string()))?;
-
-    let url_literal = ir
-        .url
-        .as_deref()
-        .map(js_string_literal)
-        .unwrap_or_else(|| "undefined".to_string());
-    writeln!(code, "export const url = {};", url_literal)
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-
-    writeln!(code, "export const headings = {};", headings_json)
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "export function getHeadings() {{")
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "  return {};", headings_json)
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "}}").map_err(|err| Error::from_reason(err.to_string()))?;
-
-    writeln!(code, "function MarkflowContent(props) {{")
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "  return (").map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "    <>").map_err(|err| Error::from_reason(err.to_string()))?;
-    code.push_str(&ir.html);
-    if !ir.html.ends_with('\n') {
-        code.push('\n');
-    }
-    writeln!(code, "    </>").map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "  );").map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "}}").map_err(|err| Error::from_reason(err.to_string()))?;
-
-    writeln!(code, "export const Content = MarkflowContent;")
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-
-    if ir.layout_import.is_some() {
-        writeln!(code, "function MarkflowPage(props) {{")
-            .map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "  return (").map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(
-            code,
-            "    <Layout {{...props}} frontmatter={{frontmatter}}>"
-        )
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "      <MarkflowContent {{...props}} />")
-            .map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "    </Layout>").map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "  );").map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "}}").map_err(|err| Error::from_reason(err.to_string()))?;
-        writeln!(code, "export default MarkflowPage;")
-            .map_err(|err| Error::from_reason(err.to_string()))?;
-    } else {
-        writeln!(code, "export default MarkflowContent;")
-            .map_err(|err| Error::from_reason(err.to_string()))?;
-    }
-
-    Ok(code)
-}
-
-fn normalize_import_key(source: &str) -> String {
-    let mut key = String::with_capacity(source.len());
-    let mut in_single = false;
-    let mut in_double = false;
-    let mut in_backtick = false;
-    let mut escape = false;
-
-    for ch in source.chars() {
-        if escape {
-            key.push(ch);
-            escape = false;
-            continue;
-        }
-
-        if ch == '\\' && (in_single || in_double || in_backtick) {
-            key.push(ch);
-            escape = true;
-            continue;
-        }
-
-        match ch {
-            '\'' if !in_double && !in_backtick => {
-                in_single = !in_single;
-                key.push(ch);
-            }
-            '"' if !in_single && !in_backtick => {
-                in_double = !in_double;
-                key.push(ch);
-            }
-            '`' if !in_single && !in_double => {
-                in_backtick = !in_backtick;
-                key.push(ch);
-            }
-            ch if ch.is_whitespace() && !(in_single || in_double || in_backtick) => {}
-            _ => key.push(ch),
-        }
-    }
-
-    key
-}
-
-fn dedupe_imports(mut imports: Vec<String>) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut deduped = Vec::with_capacity(imports.len());
-    for import in imports.drain(..) {
-        let key = normalize_import_key(&import);
-        if seen.insert(key) {
-            deduped.push(import);
-        }
-    }
-    deduped
-}
-
-fn build_import_list(layout: Option<&str>, filepath: &Path) -> Vec<ImportedModule> {
-    let mut imports = Vec::new();
-    if let Some(layout_path) = layout {
-        let resolved = filepath
-            .parent()
-            .map(|dir| dir.join(layout_path))
-            .unwrap_or_else(|| PathBuf::from(layout_path));
-        imports.push(ImportedModule {
-            path: resolved.to_string_lossy().to_string(),
-            kind: "layout".to_string(),
-        });
-    }
-    imports
-}
-
-fn js_string_literal(value: &str) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
-}
-
-fn empty_frontmatter() -> JsonValue {
-    JsonValue::Object(Default::default())
-}
-
-/// Collects heading information from the raw markdown body.
-///
-/// This function parses the input `raw_body` and extracts all headings,
-/// returning them as a vector of `HeadingEntry`. The `file_type`
-/// parameter can be used to configure the parser for Markdown or MDX.
-pub fn collect_headings(raw_body: &str, file_type: FileType) -> napi::Result<Vec<HeadingEntry>> {
-    let mut collector = HeadingCollector::new();
-    let config = match file_type {
-        FileType::Markdown => markflow_core::ParseConfig::markdown(),
-        FileType::Mdx => markflow_core::ParseConfig::mdx(),
-    };
-    let event_iterator =
-        markflow_core::get_event_iterator_with_config(raw_body, config).map_err(convert_error)?;
-
-    for event in event_iterator {
-        collector.observe(&event);
-    }
-
-    Ok(collector.into_entries())
-}
+pub(crate) use headings::collect_headings;
 
 #[cfg(test)]
 mod tests {
@@ -413,6 +188,15 @@ mod tests {
         let output = render_to_jsx_napi(input).expect("render_to_jsx succeeds");
         assert!(output.starts_with("import X from './x'"));
         assert!(output.contains("<MyComponent />"));
+    }
+
+    #[test]
+    fn wrap_jsx_fragment_as_module_preserves_imports_and_body() {
+        let input = "import X from './x'\n\n<div />".to_string();
+        let output = super::wrap_jsx_fragment_as_module(&input);
+        assert!(output.starts_with("import X from './x'"));
+        assert!(output.contains("export default function _Tmp"));
+        assert!(output.contains("<div />"));
     }
 
     #[test]

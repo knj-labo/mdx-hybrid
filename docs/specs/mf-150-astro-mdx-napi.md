@@ -118,6 +118,32 @@ pub struct ImportedModule {
 
 Frontmatterを文字列化して返し、JS側で `JSON.parse()` することでFFIコールを最小化する。
 
+### 3.4 実装配置（最小分割）
+NAPIの責務集中を避けるため、コード生成ロジックは別モジュールに隔離する。
+
+- `crates/napi/src/lib.rs`: NAPIエントリ・共有ユーティリティ。
+- `crates/napi/src/codegen.rs`: `generate_module_code_from_ir` などモジュール生成ロジック。
+- `crates/napi/src/headings.rs`: 見出し抽出ロジック（HeadingCollector など）。
+- `crates/napi/src/utils.rs`: 文字列処理と小物ヘルパー（dedupe/import 等）。
+
+### 3.5 JSX断片の検証用ラッパー（内部）
+`renderToJsx` は `import ...` 行と JSX 断片を返すため、esbuild による検証時は
+断片を `export default function _Tmp(){ return (<>{...}</>); }` で包む。
+`crates/napi/src/lib.rs` 内の `wrap_jsx_fragment_as_module` は検証用の内部ユーティリティとし、
+公開 API には含めない。
+
+### 3.6 `render_to_jsx` の先頭 import トリム
+`compile_ir` は `render_to_jsx` の出力から **先頭の import 行と空行のみ** を安全に除去する。
+import 行の文字数合計で本文をスライスする方式は、本文冒頭の欠落を引き起こすため使用しない。
+
+### 3.7 JSX返却は `renderJSX` 経由で行う
+`createComponent` の戻り値は JSX オブジェクトではなく、`renderJSX(result, jsx)` の結果を返す。
+JSX オブジェクトを直返しすると `[object Object]` が本文に出るため禁止する。
+
+### 3.8 `_jsx` ラッパーの children 対応
+Vite 側の `jsx: "transform"`（classic 形式）では `_jsx(type, props, ...children)` で children が渡される。
+`_jsx` ラッパーは children を `props.children` に代入してから `__jsx(type, props, props.key)` を呼ぶ。
+
 ## 4. Frontmatter処理戦略とLayout実装
 AstroのFrontmatterは `layout` プロパティによりデフォルトエクスポートをラップする。MarkflowはRustレベルでこの挙動を再現する必要がある。
 
