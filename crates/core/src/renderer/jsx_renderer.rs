@@ -180,11 +180,11 @@ fn preprocess_jsx_block_lines(input: &str) -> Result<JsxPreprocessResult, Markfl
 
         if let Some(state) = block.as_mut() {
             if !in_code_fence && is_jsx_closing_line(trimmed, &state.name) {
-                let rendered = render_blocks(&state.buffer)?;
                 let rendered = if state.name == "Steps" {
-                    normalize_steps_list_items(&rendered)
+                    let blocks = scan_blocks(&state.buffer);
+                    render_steps_children(&blocks)?
                 } else {
-                    rendered
+                    render_blocks(&state.buffer)?
                 };
                 let idx = replacements.len();
                 replacements.push(rendered);
@@ -220,11 +220,11 @@ fn preprocess_jsx_block_lines(input: &str) -> Result<JsxPreprocessResult, Markfl
     }
 
     if let Some(state) = block {
-        let rendered = render_blocks(&state.buffer)?;
         let rendered = if state.name == "Steps" {
-            normalize_steps_list_items(&rendered)
+            let blocks = scan_blocks(&state.buffer);
+            render_steps_children(&blocks)?
         } else {
-            rendered
+            render_blocks(&state.buffer)?
         };
         let idx = replacements.len();
         replacements.push(rendered);
@@ -261,7 +261,7 @@ fn render_block_list(blocks: &[Block<'_>]) -> Result<String, MarkflowError> {
                 children,
                 close,
             } => {
-                if name == "Steps" {
+                if *name == "Steps" {
                     let rendered = render_steps_children(children)?;
                     output.push_str(open);
                     output.push_str(&rendered);
@@ -283,7 +283,6 @@ fn render_block_list(blocks: &[Block<'_>]) -> Result<String, MarkflowError> {
 
 fn render_steps_children(children: &[Block<'_>]) -> Result<String, MarkflowError> {
     let mut rendered = String::new();
-    let mut trailing_jsx = String::new();
 
     for child in children {
         match child {
@@ -294,16 +293,16 @@ fn render_steps_children(children: &[Block<'_>]) -> Result<String, MarkflowError
                 rendered.push_str(&render_markdown_with_inline_jsx(text)?);
             }
             _ => {
-                trailing_jsx.push_str(&render_block_list(std::slice::from_ref(child))?);
+                let child_rendered = render_block_list(std::slice::from_ref(child))?;
+                if child_rendered.is_empty() {
+                    continue;
+                }
+                if let Some(insert_pos) = rendered.rfind("</li>") {
+                    rendered.insert_str(insert_pos, &child_rendered);
+                } else {
+                    rendered.push_str(&child_rendered);
+                }
             }
-        }
-    }
-
-    if !trailing_jsx.is_empty() {
-        if let Some(insert_pos) = rendered.rfind("</li>") {
-            rendered.insert_str(insert_pos, &trailing_jsx);
-        } else {
-            rendered.push_str(&trailing_jsx);
         }
     }
 
