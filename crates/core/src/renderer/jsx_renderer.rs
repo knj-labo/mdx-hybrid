@@ -1,10 +1,10 @@
 #![allow(missing_docs)]
 use crate::event::{CodeBlockKind, Event, HeadingLevel, Tag, TagEnd};
+use crate::renderer::multipass::{Block, scan_blocks};
 use crate::{
     DirectiveAdapter, HoistAdapter, MarkflowError, ParseResult, RewriteOptions, get_event_iterator,
     parse,
 };
-use crate::renderer::multipass::{Block, scan_blocks};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -163,7 +163,8 @@ fn preprocess_jsx_block_lines(input: &str) -> Result<JsxPreprocessResult, Markfl
 
     for line in input.split_inclusive('\n') {
         let (line_text, line_ending) = split_line_ending(line);
-        let line_text = normalize_code_fence_line(line_text).unwrap_or_else(|| line_text.to_string());
+        let line_text =
+            normalize_code_fence_line(line_text).unwrap_or_else(|| line_text.to_string());
         let trimmed = line_text.trim_start();
 
         if let Some(marker) = code_fence_marker(trimmed) {
@@ -188,10 +189,7 @@ fn preprocess_jsx_block_lines(input: &str) -> Result<JsxPreprocessResult, Markfl
                 };
                 let idx = replacements.len();
                 replacements.push(rendered);
-                output.push_str(&format!(
-                    "<mf-block data-mf-idx=\"{}\"></mf-block>",
-                    idx
-                ));
+                output.push_str(&format!("<mf-block data-mf-idx=\"{}\"></mf-block>", idx));
                 output.push_str(&line_text);
                 output.push_str(line_ending);
                 block = None;
@@ -228,10 +226,7 @@ fn preprocess_jsx_block_lines(input: &str) -> Result<JsxPreprocessResult, Markfl
         };
         let idx = replacements.len();
         replacements.push(rendered);
-        output.push_str(&format!(
-            "<mf-block data-mf-idx=\"{}\"></mf-block>",
-            idx
-        ));
+        output.push_str(&format!("<mf-block data-mf-idx=\"{}\"></mf-block>", idx));
     }
 
     Ok(JsxPreprocessResult {
@@ -361,7 +356,9 @@ fn render_markdown_with_inline_jsx(input: &str) -> Result<String, MarkflowError>
         restored = restored.replace(&token, original);
     }
 
-    Ok(normalize_steps_blocks(&strip_jsx_block_paragraphs(&restored)))
+    Ok(normalize_steps_blocks(&strip_jsx_block_paragraphs(
+        &restored,
+    )))
 }
 
 fn strip_placeholder_paragraphs(input: &str, placeholder_count: usize) -> String {
@@ -532,7 +529,9 @@ fn is_steps_ol(open_tag: &str) -> bool {
     let Some(class_value) = extract_attribute_value(open_tag, "class") else {
         return false;
     };
-    class_value.split_whitespace().any(|token| token == "sl-steps")
+    class_value
+        .split_whitespace()
+        .any(|token| token == "sl-steps")
 }
 
 fn extract_attribute_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
@@ -588,7 +587,10 @@ fn is_open_ol(bytes: &[u8], idx: usize) -> bool {
         return false;
     }
     let next = bytes.get(idx + 3).copied();
-    matches!(next, Some(b'>') | Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'\r'))
+    matches!(
+        next,
+        Some(b'>') | Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'\r')
+    )
 }
 
 fn is_close_ol(bytes: &[u8], idx: usize) -> bool {
@@ -596,7 +598,10 @@ fn is_close_ol(bytes: &[u8], idx: usize) -> bool {
         return false;
     }
     let next = bytes.get(idx + 4).copied();
-    matches!(next, Some(b'>') | Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'\r'))
+    matches!(
+        next,
+        Some(b'>') | Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'\r')
+    )
 }
 
 fn find_tag_end(input: &str, start: usize) -> Option<usize> {
@@ -709,7 +714,6 @@ fn is_jsx_block_paragraph(content: &str) -> bool {
         .map(|ch| ch.is_ascii_uppercase())
         .unwrap_or(false)
 }
-
 
 fn normalize_code_fence_line(line_text: &str) -> Option<String> {
     let trimmed = line_text.trim_start();

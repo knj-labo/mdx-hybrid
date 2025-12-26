@@ -7,16 +7,16 @@ use napi_derive::napi;
 use serde_json::Value as JsonValue;
 use std::path::Path;
 
-/// The stateful compiler and its configuration.
-pub mod compiler;
 /// Module code generation helpers.
 mod codegen;
+/// The stateful compiler and its configuration.
+pub mod compiler;
 /// Heading extraction helpers.
 mod headings;
-/// Utility helpers.
-mod utils;
 /// NAPI-exposed data structures.
 pub mod types;
+/// Utility helpers.
+mod utils;
 pub use types::*;
 
 /// Parses markdown string to HTML with default options
@@ -152,8 +152,6 @@ fn convert_error<E: Into<MarkflowError>>(err: E) -> Error {
 }
 
 pub(crate) use headings::collect_headings;
-
-
 
 #[cfg(test)]
 mod tests {
@@ -374,5 +372,5 @@ mod tests {
         );
     }
 }
-pub(crate) use utils::{build_import_list, dedupe_imports};
 use utils::empty_frontmatter;
+pub(crate) use utils::{build_import_list, dedupe_imports};

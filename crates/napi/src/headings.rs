@@ -2,7 +2,9 @@
 
 use crate::types::HeadingEntry;
 use crate::{FileType, convert_error};
-use markflow_core::event::{Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd};
+use markflow_core::event::{
+    Event as CoreEvent, HeadingLevel, Tag as CoreTag, TagEnd as CoreTagEnd,
+};
 use napi::bindgen_prelude::Result;
 
 pub(crate) struct HeadingCollector {

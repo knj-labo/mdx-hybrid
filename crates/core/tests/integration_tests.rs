@@ -22,7 +22,8 @@ fn jsx_renderer_preserves_raw_jsx() {
 
 #[test]
 fn jsx_steps_nested_tabs_stays_in_list_item() {
-    let input = "<Steps>\n1. First\n   <Tabs>\n     <Tab title=\"A\">A</Tab>\n   </Tabs>\n</Steps>\n";
+    let input =
+        "<Steps>\n1. First\n   <Tabs>\n     <Tab title=\"A\">A</Tab>\n   </Tabs>\n</Steps>\n";
     let output = render_to_jsx(input).expect("render_to_jsx succeeds");
     let li_start = output.find("<li").expect("li should exist");
     let li_close = output[li_start..]
