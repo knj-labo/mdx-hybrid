@@ -63,6 +63,8 @@ pub(crate) fn generate_module_code_from_ir(
         .map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(code, "}}").map_err(|err| Error::from_reason(err.to_string()))?;
 
+    writeln!(code, "// function MarkflowContent")
+        .map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(
         code,
         "const MarkflowContent = createComponent((result, props) => {{"

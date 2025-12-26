@@ -232,8 +232,28 @@ impl MarkdownParser {
                     .as_ref()
                     .and_then(|pos| self.slice_from_position(pos))
                     .unwrap_or_default();
+                if !element.children.is_empty() {
+                    let mut shadow = String::new();
+                    collect_text(&element.children, &mut shadow);
+                    if !shadow.is_empty() {
+                        self.pending_events
+                            .push_back(Event::Text(Cow::Owned(format!("\0{shadow}"))));
+                    }
+                }
+                let fallback = raw.is_empty().then(|| {
+                    if let Some(name) = element.name.as_deref() {
+                        format!("<{} />", name)
+                    } else {
+                        "<></>".to_string()
+                    }
+                });
+                let snippet = if raw.is_empty() {
+                    fallback.unwrap_or_default()
+                } else {
+                    raw
+                };
                 self.pending_events
-                    .push_back(Event::JsxFlow(Cow::Owned(raw)));
+                    .push_back(Event::JsxFlow(Cow::Owned(snippet)));
             }
             mdast::Node::MdxJsxTextElement(element) => {
                 let raw = element

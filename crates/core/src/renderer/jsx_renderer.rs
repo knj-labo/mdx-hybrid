@@ -81,8 +81,12 @@ fn render_to_jsx_body(input: &str, _preprocess_jsx_blocks: bool) -> Result<Strin
                 }
             }
             Event::Text(text) => {
-                output.push_str(&escape_text(text.as_ref()));
-                push_heading_text(&mut heading_stack, text.as_ref());
+                let text = text.as_ref();
+                if text.starts_with('\0') {
+                    continue;
+                }
+                output.push_str(&escape_text(text));
+                push_heading_text(&mut heading_stack, text);
             }
             Event::Code(text) => {
                 output.push_str("<code>");

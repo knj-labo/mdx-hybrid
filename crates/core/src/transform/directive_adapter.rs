@@ -95,7 +95,9 @@ where
                     let mut content = String::new();
                     for ev in paragraph_events.iter() {
                         match ev {
-                            Event::Text(t) => content.push_str(t.as_ref()),
+                            Event::Text(t) if !t.as_ref().starts_with('\0') => {
+                                content.push_str(t.as_ref());
+                            }
                             Event::SoftBreak => content.push('\n'),
                             _ => {}
                         }

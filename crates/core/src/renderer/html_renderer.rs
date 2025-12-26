@@ -63,7 +63,11 @@ impl<W: Write> HtmlRenderer<W> {
                     }
                 }
                 Event::Text(text) => {
-                    self.write_text(text.as_ref())?;
+                    let text = text.as_ref();
+                    if text.starts_with('\0') {
+                        continue;
+                    }
+                    self.write_text(text)?;
                 }
                 Event::Code(text) => {
                     self.writer.write_all(b"<code>")?;

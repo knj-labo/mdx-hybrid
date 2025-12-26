@@ -8,21 +8,8 @@ use std::path::Path;
 const ASTRO_DEFAULT_RUNTIME: &str = "astro/runtime/server/index.js";
 
 fn strip_leading_imports(input: &str) -> String {
-    let mut out = Vec::new();
-    let mut skipping = true;
-
-    for line in input.lines() {
-        if skipping {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("import ") || trimmed.is_empty() {
-                continue;
-            }
-            skipping = false;
-        }
-        out.push(line);
-    }
-
-    out.join("\n")
+    let (_hoisted, body) = markflow_core::code_fence::collect_root_imports(input);
+    body.join("\n")
 }
 
 #[derive(Debug, Clone)]
