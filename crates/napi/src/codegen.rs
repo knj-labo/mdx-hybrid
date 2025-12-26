@@ -18,8 +18,11 @@ pub(crate) fn generate_module_code_from_ir(
     .map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(code, "const _Fragment = Fragment;")
         .map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "const _jsx = (type, props, key) => __jsx(type, props ?? {{}}, key);")
-        .map_err(|err| Error::from_reason(err.to_string()))?;
+    writeln!(
+        code,
+        "const _jsx = (type, props, ...children) => {{\n  const resolved = props ?? {{}};\n  if (children.length > 0) {{\n    resolved.children = children.length === 1 ? children[0] : children;\n  }}\n  return __jsx(type, resolved, resolved.key);\n}};"
+    )
+    .map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(
         code,
         "import {{ createComponent, renderJSX }} from 'astro/runtime/server/index.js';"
@@ -62,14 +65,15 @@ pub(crate) fn generate_module_code_from_ir(
 
     writeln!(code, "const MarkflowContent = createComponent((result, props) => {{")
         .map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "  return (").map_err(|err| Error::from_reason(err.to_string()))?;
+    writeln!(code, "  return renderJSX(result, (")
+        .map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(code, "    <>").map_err(|err| Error::from_reason(err.to_string()))?;
     code.push_str(&ir.html);
     if !ir.html.ends_with('\n') {
         code.push('\n');
     }
     writeln!(code, "    </>").map_err(|err| Error::from_reason(err.to_string()))?;
-    writeln!(code, "  );").map_err(|err| Error::from_reason(err.to_string()))?;
+    writeln!(code, "  ));").map_err(|err| Error::from_reason(err.to_string()))?;
     writeln!(code, "}}, file);").map_err(|err| Error::from_reason(err.to_string()))?;
 
     writeln!(code, "export const Content = MarkflowContent;")
