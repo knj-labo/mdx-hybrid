@@ -261,12 +261,13 @@ fn render_block_list(blocks: &[Block<'_>]) -> Result<String, MarkflowError> {
                 children,
                 close,
             } => {
-                let rendered = render_block_list(children)?;
                 if name == "Steps" {
+                    let rendered = render_steps_children(children)?;
                     output.push_str(open);
-                    output.push_str(&normalize_steps_list_items(&rendered));
+                    output.push_str(&rendered);
                     output.push_str(close);
                 } else {
+                    let rendered = render_block_list(children)?;
                     output.push_str(open);
                     output.push_str(&rendered);
                     output.push_str(close);
