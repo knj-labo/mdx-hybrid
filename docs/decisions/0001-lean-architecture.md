@@ -147,3 +147,4 @@
 | 2025-12-26 16:05 | #178 | Steps 正規化の対象を `<ol class="sl-steps">` に切り替え、最終HTML上でタイトな `<li>` を `<p>` で包む。 | `<Steps>` タグが消えた後のHTMLにも適用して余白崩れを修正するため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-170-markdown-to-jsx.md |
 | 2025-12-26 16:20 | #179 | `preprocess_jsx_block_lines` で `<Steps>` ブロックの内側HTMLに `normalize_steps_list_items` を適用。 | ブロックJSX経由では Steps 正規化が走らず `<li>` が詰まるため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-170-markdown-to-jsx.md |
 | 2025-12-26 16:40 | #180 | `<Steps>` 内の JSX ブロック（`<Tabs>` 等）は直前の `<li>` に挿入する規則を追加し、`preprocess_jsx_block_lines` 経路にも適用。 | `<Steps>` 内の `<Tabs>` が `<li>` の外（兄弟）に出る問題を防ぐため | crates/core/src/renderer/jsx_renderer.rs, crates/core/tests/integration_tests.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-26 16:55 | #181 | clippy 警告の解消（挙動変更なし）。 | lint を無警告に保つため | crates/core/src/renderer/multipass.rs, crates/core/src/renderer/jsx_renderer.rs |

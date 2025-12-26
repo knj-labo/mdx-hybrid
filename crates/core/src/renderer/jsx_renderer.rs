@@ -54,14 +54,13 @@ fn render_to_jsx_body(input: &str, _preprocess_jsx_blocks: bool) -> Result<Strin
     for event in events {
         match event {
             Event::Start(tag) => {
-                if let Tag::Heading { level, id, .. } = &tag {
-                    if let Some(id) = id.as_ref() {
-                        output.push_str(&heading_wrapper_start(*level));
-                        heading_stack.push(HeadingContext {
-                            id: id.to_string(),
-                            text: String::new(),
-                        });
-                    }
+                if let Tag::Heading { level, id, .. } = &tag
+                    && let Some(_id) = id.as_ref()
+                {
+                    output.push_str(&heading_wrapper_start(*level));
+                    heading_stack.push(HeadingContext {
+                        text: String::new(),
+                    });
                 }
                 output.push_str(&start_tag(&tag));
                 stack.push(tag);
@@ -71,13 +70,13 @@ fn render_to_jsx_body(input: &str, _preprocess_jsx_blocks: bool) -> Result<Strin
                     && matches_end(&open, &end)
                 {
                     output.push_str(&end_tag(&end));
-                    if let Tag::Heading { id, .. } = &open {
-                        if let Some(id) = id.as_ref() {
-                            let heading_text =
-                                heading_stack.pop().map(|ctx| ctx.text).unwrap_or_default();
-                            output.push_str(&anchor_link(id.as_ref(), &heading_text));
-                            output.push_str("</div>");
-                        }
+                    if let Tag::Heading { id, .. } = &open
+                        && let Some(id) = id.as_ref()
+                    {
+                        let heading_text =
+                            heading_stack.pop().map(|ctx| ctx.text).unwrap_or_default();
+                        output.push_str(&anchor_link(id.as_ref(), &heading_text));
+                        output.push_str("</div>");
                     }
                 }
             }
@@ -201,16 +200,16 @@ fn preprocess_jsx_block_lines(input: &str) -> Result<JsxPreprocessResult, Markfl
             continue;
         }
 
-        if !in_code_fence {
-            if let Some(name) = parse_jsx_opening_line(trimmed) {
-                output.push_str(&line_text);
-                output.push_str(line_ending);
-                block = Some(JsxBlockState {
-                    name,
-                    buffer: String::new(),
-                });
-                continue;
-            }
+        if !in_code_fence
+            && let Some(name) = parse_jsx_opening_line(trimmed)
+        {
+            output.push_str(&line_text);
+            output.push_str(line_ending);
+            block = Some(JsxBlockState {
+                name,
+                buffer: String::new(),
+            });
+            continue;
         }
 
         output.push_str(&line_text);
@@ -988,7 +987,6 @@ fn matches_end(tag: &Tag<'_>, end: &TagEnd) -> bool {
 }
 
 struct HeadingContext {
-    id: String,
     text: String,
 }
 
@@ -1004,7 +1002,7 @@ fn anchor_link(id: &str, heading_text: &str) -> String {
     )
 }
 
-fn push_heading_text(heading_stack: &mut Vec<HeadingContext>, text: &str) {
+fn push_heading_text(heading_stack: &mut [HeadingContext], text: &str) {
     if let Some(current) = heading_stack.last_mut() {
         current.text.push_str(text);
     }

@@ -73,10 +73,10 @@ fn find_next_upper_tag(
             i = end;
             continue;
         }
-        if bytes[i] == b'<' && bytes[i + 1].is_ascii_uppercase() {
-            if is_line_start_within_indent(input, i, 3) {
-                return Some(i);
-            }
+        if bytes[i] == b'<' && bytes[i + 1].is_ascii_uppercase()
+            && is_line_start_within_indent(input, i, 3)
+        {
+            return Some(i);
         }
         i += 1;
     }
@@ -203,7 +203,7 @@ fn merge_ranges(a: &[(usize, usize)], b: &[(usize, usize)]) -> Vec<(usize, usize
     ranges.sort_by_key(|(start, _)| *start);
     let mut merged: Vec<(usize, usize)> = Vec::new();
     for (start, end) in ranges {
-        if let Some((last_start, last_end)) = merged.last_mut() {
+        if let Some((_last_start, last_end)) = merged.last_mut() {
             if start <= *last_end {
                 if end > *last_end {
                     *last_end = end;
@@ -305,7 +305,7 @@ mod tests {
         assert_eq!(blocks, vec![Block::Markdown(input)]);
     }
 }
-fn parse_open_tag<'a>(input: &'a str, open_start: usize) -> Option<(&'a str, usize)> {
+fn parse_open_tag(input: &str, open_start: usize) -> Option<(&str, usize)> {
     let bytes = input.as_bytes();
     let mut name_end = open_start + 1;
     while name_end < bytes.len() && is_name_char(bytes[name_end]) {
