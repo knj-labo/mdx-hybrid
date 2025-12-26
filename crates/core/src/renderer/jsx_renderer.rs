@@ -200,9 +200,7 @@ fn preprocess_jsx_block_lines(input: &str) -> Result<JsxPreprocessResult, Markfl
             continue;
         }
 
-        if !in_code_fence
-            && let Some(name) = parse_jsx_opening_line(trimmed)
-        {
+        if !in_code_fence && let Some(name) = parse_jsx_opening_line(trimmed) {
             output.push_str(&line_text);
             output.push_str(line_ending);
             block = Some(JsxBlockState {

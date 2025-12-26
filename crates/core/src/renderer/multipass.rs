@@ -73,7 +73,8 @@ fn find_next_upper_tag(
             i = end;
             continue;
         }
-        if bytes[i] == b'<' && bytes[i + 1].is_ascii_uppercase()
+        if bytes[i] == b'<'
+            && bytes[i + 1].is_ascii_uppercase()
             && is_line_start_within_indent(input, i, 3)
         {
             return Some(i);
