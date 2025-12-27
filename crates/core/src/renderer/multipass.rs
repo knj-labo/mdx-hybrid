@@ -1,284 +1,158 @@
+#![allow(missing_docs)]
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Block<'a> {
+pub enum Block<'a> {
     Markdown(&'a str),
+    Code(&'a str),
     JsxElement {
         name: &'a str,
-        open: &'a str,
+        attrs: &'a str,
         children: Vec<Block<'a>>,
-        close: &'a str,
-    },
-    JsxSelfClosing {
-        raw: &'a str,
+        is_self_closing: bool,
     },
 }
 
-pub(crate) fn scan_blocks(input: &str) -> Vec<Block<'_>> {
-    let mut blocks = Vec::new();
-    let mut cursor = 0;
-    let bytes = input.as_bytes();
-    let fence_ranges = code_fence_ranges(input);
-    let inline_code_ranges = inline_code_ranges(input);
-    let skip_ranges = merge_ranges(&fence_ranges, &inline_code_ranges);
-
-    while let Some(open_start) = find_next_upper_tag(bytes, cursor, &skip_ranges, input) {
-        if open_start > cursor {
-            blocks.push(Block::Markdown(&input[cursor..open_start]));
-        }
-
-        let Some((name, open_end)) = parse_open_tag(input, open_start) else {
-            blocks.push(Block::Markdown(&input[open_start..]));
-            return blocks;
-        };
-
-        let open = &input[open_start..open_end];
-        if is_self_closing(bytes, open_start, open_end) {
-            blocks.push(Block::JsxSelfClosing { raw: open });
-            cursor = open_end;
-            continue;
-        }
-
-        let Some((close_start, close_end)) = find_matching_close(input, name, open_end) else {
-            blocks.push(Block::Markdown(&input[open_start..]));
-            return blocks;
-        };
-
-        let inner = &input[open_end..close_start];
-        let children = scan_blocks(inner);
-
-        blocks.push(Block::JsxElement {
-            name,
-            open,
-            children,
-            close: &input[close_start..close_end],
-        });
-        cursor = close_end;
-    }
-
-    if cursor < input.len() {
-        blocks.push(Block::Markdown(&input[cursor..]));
-    }
-
+pub fn scan(input: &str) -> Vec<Block<'_>> {
+    let (blocks, _cursor, _closed) = scan_nodes(input, 0, None);
     blocks
 }
 
-fn find_next_upper_tag(
-    bytes: &[u8],
-    start: usize,
-    skip_ranges: &[(usize, usize)],
-    input: &str,
-) -> Option<usize> {
-    let mut i = start;
-    while i + 1 < bytes.len() {
-        if let Some(end) = fence_range_end(skip_ranges, i) {
-            i = end;
-            continue;
-        }
-        if bytes[i] == b'<'
-            && bytes[i + 1].is_ascii_uppercase()
-            && is_line_start_within_indent(input, i, 3)
-        {
-            return Some(i);
-        }
-        i += 1;
+fn push_markdown<'a>(blocks: &mut Vec<Block<'a>>, input: &'a str, start: usize, end: usize) {
+    if start < end {
+        blocks.push(Block::Markdown(&input[start..end]));
     }
-    None
 }
 
-fn is_line_start_within_indent(input: &str, pos: usize, max_indent: usize) -> bool {
+fn scan_nodes<'a>(
+    input: &'a str,
+    mut cursor: usize,
+    until: Option<&'a str>,
+) -> (Vec<Block<'a>>, usize, bool) {
+    let mut blocks = Vec::new();
     let bytes = input.as_bytes();
-    let mut idx = pos;
-    while idx > 0 {
-        let prev = bytes[idx - 1];
-        if prev == b'\n' || prev == b'\r' {
+
+    while cursor < bytes.len() {
+        let prev_cursor = cursor;
+        if let Some(tag_name) = until
+            && is_close_tag(bytes, cursor, tag_name.as_bytes())
+        {
+            if let Some(close_end) = find_tag_end(input, cursor + 2 + tag_name.len()) {
+                return (blocks, close_end.saturating_add(1), true);
+            }
+            return (blocks, cursor, false);
+        }
+        if let Some((marker, count)) = is_fence_start(bytes, cursor) {
+            if let Some(fence_end) = find_fence_end(bytes, cursor + 1, marker, count) {
+                let end_pos = find_byte(bytes, fence_end, b'\n')
+                    .map(|newline| newline + 1)
+                    .unwrap_or_else(|| input.len());
+                blocks.push(Block::Code(&input[cursor..end_pos]));
+                cursor = end_pos;
+                continue;
+            }
+            push_markdown(&mut blocks, input, cursor, cursor + 1);
+            cursor += 1;
+            if cursor < input.len() {
+                push_markdown(&mut blocks, input, cursor, input.len());
+            }
+            return (blocks, input.len(), false);
+        }
+        let next_lt = find_byte(bytes, cursor, b'<');
+        if next_lt.is_none() {
+            push_markdown(&mut blocks, input, cursor, input.len());
+            return (blocks, input.len(), false);
+        }
+        let pos = next_lt.unwrap();
+        if cursor < pos {
+            push_markdown(&mut blocks, input, cursor, pos);
+            cursor = pos;
+            continue;
+        }
+        if cursor < bytes.len() && bytes[cursor] == b'<' {
+            if let Some((name, attrs, open_end)) = parse_open_tag(input, cursor) {
+                let is_self_closing = is_self_closing(bytes, cursor, open_end);
+                if is_self_closing {
+                    blocks.push(Block::JsxElement {
+                        name,
+                        attrs,
+                        children: Vec::new(),
+                        is_self_closing: true,
+                    });
+                    cursor = open_end.saturating_add(1);
+                    continue;
+                }
+                let (children, new_cursor, closed) = scan_nodes(input, open_end + 1, Some(name));
+                if closed {
+                    blocks.push(Block::JsxElement {
+                        name,
+                        attrs,
+                        children,
+                        is_self_closing: false,
+                    });
+                    cursor = new_cursor;
+                    continue;
+                }
+                push_markdown(&mut blocks, input, cursor, cursor + 1);
+                cursor += 1;
+            } else {
+                push_markdown(&mut blocks, input, cursor, cursor + 1);
+                cursor += 1;
+            }
+        }
+        if cursor == prev_cursor {
             break;
         }
-        idx -= 1;
     }
-    let line = &input[idx..pos];
-    let mut count = 0;
-    for ch in line.chars() {
-        if ch == ' ' {
-            count += 1;
-            if count > max_indent {
-                return false;
-            }
-            continue;
-        }
-        if ch == '\t' {
-            return false;
-        }
+    (blocks, cursor, false)
+}
+
+fn find_byte(bytes: &[u8], start: usize, target: u8) -> Option<usize> {
+    bytes
+        .iter()
+        .skip(start)
+        .position(|&b| b == target)
+        .map(|idx| idx + start)
+}
+
+fn find_tag_end(input: &str, start: usize) -> Option<usize> {
+    find_byte(input.as_bytes(), start, b'>')
+}
+
+fn is_self_closing(bytes: &[u8], open_start: usize, open_end: usize) -> bool {
+    let _ = open_start;
+    if open_end == 0 {
         return false;
     }
-    true
+    bytes.get(open_end.saturating_sub(1)) == Some(&b'/')
 }
 
-fn fence_range_end(ranges: &[(usize, usize)], pos: usize) -> Option<usize> {
-    for (start, end) in ranges {
-        if pos >= *start && pos < *end {
-            return Some(*end);
-        }
-    }
-    None
+fn is_name_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b':' | b'_')
 }
 
-fn code_fence_ranges(input: &str) -> Vec<(usize, usize)> {
-    let mut ranges = Vec::new();
-    let mut in_fence = false;
-    let mut fence_marker = "";
-    let mut offset = 0;
-
-    for line in input.split_inclusive('\n') {
-        let trimmed = line.trim_start();
-        if let Some(marker) = code_fence_marker_line(trimmed) {
-            if in_fence {
-                if marker == fence_marker {
-                    ranges.push((offset, offset + line.len()));
-                    in_fence = false;
-                    fence_marker = "";
-                    offset += line.len();
-                    continue;
-                }
-            } else {
-                in_fence = true;
-                fence_marker = marker;
-                ranges.push((offset, offset + line.len()));
-                offset += line.len();
-                continue;
-            }
-        }
-
-        if in_fence {
-            ranges.push((offset, offset + line.len()));
-        }
-        offset += line.len();
-    }
-
-    ranges
+fn is_tag_terminator(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\n' | b'\t' | b'\r' | b'/' | b'>')
 }
 
-fn code_fence_marker_line(trimmed: &str) -> Option<&'static str> {
-    if trimmed.starts_with("```") {
-        Some("```")
-    } else if trimmed.starts_with("~~~") {
-        Some("~~~")
-    } else {
-        None
-    }
-}
-
-fn inline_code_ranges(input: &str) -> Vec<(usize, usize)> {
-    let mut ranges = Vec::new();
-    let mut open_tick: Option<(usize, usize)> = None;
-    let mut idx = 0;
+fn parse_open_tag(input: &str, open_start: usize) -> Option<(&str, &str, usize)> {
     let bytes = input.as_bytes();
+    let name_start = open_start + 1;
+    let mut name_end = name_start;
 
-    while idx < bytes.len() {
-        if bytes[idx] == b'`' {
-            let run_start = idx;
-            let mut run_len = 1;
-            while idx + run_len < bytes.len() && bytes[idx + run_len] == b'`' {
-                run_len += 1;
-            }
-            if let Some((open_pos, open_len)) = open_tick {
-                if open_len == run_len {
-                    let end = run_start + run_len;
-                    ranges.push((open_pos, end));
-                    open_tick = None;
-                    idx = end;
-                    continue;
-                }
-            } else {
-                open_tick = Some((run_start, run_len));
-                idx = run_start + run_len;
-                continue;
-            }
+    while name_end < bytes.len() && !is_tag_terminator(bytes[name_end]) {
+        if !is_name_char(bytes[name_end]) {
+            return None;
         }
-        idx += 1;
-    }
-
-    ranges
-}
-
-fn merge_ranges(a: &[(usize, usize)], b: &[(usize, usize)]) -> Vec<(usize, usize)> {
-    let mut ranges: Vec<(usize, usize)> = a.iter().chain(b.iter()).copied().collect();
-    ranges.sort_by_key(|(start, _)| *start);
-    let mut merged: Vec<(usize, usize)> = Vec::new();
-    for (start, end) in ranges {
-        if let Some((_last_start, last_end)) = merged.last_mut() {
-            if start <= *last_end {
-                if end > *last_end {
-                    *last_end = end;
-                }
-                continue;
-            }
-            if start <= *last_end + 1 {
-                if end > *last_end {
-                    *last_end = end;
-                }
-                continue;
-            }
-        }
-        merged.push((start, end));
-    }
-    merged
-}
-
-fn parse_open_tag(input: &str, open_start: usize) -> Option<(&str, usize)> {
-    let bytes = input.as_bytes();
-    let mut name_end = open_start + 1;
-    while name_end < bytes.len() && is_name_char(bytes[name_end]) {
         name_end += 1;
     }
-    if name_end == open_start + 1 {
+
+    if name_end == name_start {
         return None;
     }
-    let name = &input[open_start + 1..name_end];
+
     let open_end = find_tag_end(input, name_end)?;
-    Some((name, open_end))
-}
-
-fn find_matching_close(input: &str, name: &str, mut search: usize) -> Option<(usize, usize)> {
-    let bytes = input.as_bytes();
-    let mut depth = 1usize;
-    let name_bytes = name.as_bytes();
-
-    while let Some(lt) = find_byte(bytes, search, b'<') {
-        if is_close_tag(bytes, lt, name_bytes) {
-            let close_end = find_tag_end(input, lt + 2 + name_bytes.len())?;
-            depth -= 1;
-            if depth == 0 {
-                return Some((lt, close_end));
-            }
-            search = close_end;
-            continue;
-        }
-
-        if is_open_tag(bytes, lt, name_bytes) {
-            let open_end = find_tag_end(input, lt + 1 + name_bytes.len())?;
-            if !is_self_closing(bytes, lt, open_end) {
-                depth += 1;
-            }
-            search = open_end;
-            continue;
-        }
-
-        search = lt + 1;
-    }
-    None
-}
-
-fn is_open_tag(bytes: &[u8], pos: usize, name: &[u8]) -> bool {
-    if pos + 1 + name.len() > bytes.len() {
-        return false;
-    }
-    if bytes[pos] != b'<' {
-        return false;
-    }
-    if bytes[pos + 1..].starts_with(name) {
-        let next = pos + 1 + name.len();
-        return next < bytes.len() && is_tag_terminator(bytes[next]);
-    }
-    false
+    let attrs = input[name_end..open_end].trim();
+    Some((&input[name_start..name_end], attrs, open_end))
 }
 
 fn is_close_tag(bytes: &[u8], pos: usize, name: &[u8]) -> bool {
@@ -288,143 +162,235 @@ fn is_close_tag(bytes: &[u8], pos: usize, name: &[u8]) -> bool {
     if bytes[pos] != b'<' || bytes[pos + 1] != b'/' {
         return false;
     }
-    if bytes[pos + 2..].starts_with(name) {
-        let next = pos + 2 + name.len();
-        return next < bytes.len() && is_tag_terminator(bytes[next]);
-    }
-    false
-}
-
-fn is_tag_terminator(byte: u8) -> bool {
-    byte == b'>' || byte == b'/' || byte.is_ascii_whitespace()
-}
-
-fn is_name_char(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'
-}
-
-fn find_tag_end(input: &str, start: usize) -> Option<usize> {
-    let bytes = input.as_bytes();
-    let mut i = start;
-    let mut quote: Option<u8> = None;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if let Some(q) = quote {
-            if b == q {
-                quote = None;
-            }
-        } else if b == b'\'' || b == b'"' {
-            quote = Some(b);
-        } else if b == b'>' {
-            return Some(i + 1);
-        }
-        i += 1;
-    }
-    None
-}
-
-fn is_self_closing(bytes: &[u8], open_start: usize, open_end: usize) -> bool {
-    if open_end <= open_start + 1 {
+    if &bytes[pos + 2..pos + 2 + name.len()] != name {
         return false;
     }
-    let mut i = open_end - 2;
-    while i > open_start && bytes[i].is_ascii_whitespace() {
-        i -= 1;
-    }
-    bytes[i] == b'/'
+    let end = pos + 2 + name.len();
+    bytes.get(end).copied().is_some_and(is_tag_terminator)
 }
 
-fn find_byte(bytes: &[u8], start: usize, target: u8) -> Option<usize> {
-    let mut i = start;
-    while i < bytes.len() {
-        if bytes[i] == target {
-            return Some(i);
-        }
+fn is_line_start(bytes: &[u8], pos: usize) -> bool {
+    if pos == 0 {
+        return true;
+    }
+    matches!(bytes.get(pos - 1), Some(b'\n'))
+}
+
+fn is_fence_start(bytes: &[u8], pos: usize) -> Option<(u8, usize)> {
+    if !is_line_start(bytes, pos) {
+        return None;
+    }
+
+    let start_byte = *bytes.get(pos)?;
+    if !matches!(start_byte, b'`' | b'~') {
+        return None;
+    }
+
+    let mut count = 0usize;
+    let mut i = pos;
+    while i < bytes.len() && bytes[i] == start_byte {
+        count += 1;
         i += 1;
+    }
+
+    if count >= 3 {
+        Some((start_byte, count))
+    } else {
+        None
+    }
+}
+
+fn find_fence_end(bytes: &[u8], start: usize, marker: u8, count: usize) -> Option<usize> {
+    let mut pos = start;
+    while pos < bytes.len() {
+        if is_line_start(bytes, pos) && bytes.get(pos) == Some(&marker) {
+            let mut run = 0usize;
+            let mut i = pos;
+            while i < bytes.len() && bytes[i] == marker {
+                run += 1;
+                i += 1;
+            }
+            if run >= count {
+                return Some(pos);
+            }
+        }
+        pos += 1;
     }
     None
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, scan_blocks};
+    use super::{Block, find_fence_end, is_fence_start, scan};
 
     #[test]
-    fn scan_blocks_markdown_only() {
-        let input = "Just markdown\n\nSecond line.";
-        let blocks = scan_blocks(input);
+    fn scan_returns_single_markdown_block() {
+        let input = "hello";
+        let blocks = scan(input);
+
         assert_eq!(blocks, vec![Block::Markdown(input)]);
     }
 
     #[test]
-    fn scan_blocks_self_closing_jsx() {
-        let input = "<Tabs />\n";
-        let blocks = scan_blocks(input);
-        assert_eq!(
-            blocks,
-            vec![
-                Block::JsxSelfClosing { raw: "<Tabs />" },
-                Block::Markdown("\n"),
-            ]
-        );
+    fn scan_empty_returns_empty() {
+        let blocks = scan("");
+
+        assert!(blocks.is_empty());
     }
 
     #[test]
-    fn scan_blocks_nested_same_tag() {
-        let input = "<Steps>\n<Steps>Inner</Steps>\n</Steps>";
-        let blocks = scan_blocks(input);
+    fn scan_emits_self_closing_jsx_element() {
+        let blocks = scan("<Tabs />");
+
         assert_eq!(
             blocks,
             vec![Block::JsxElement {
-                name: "Steps",
-                open: "<Steps>",
-                children: vec![
-                    Block::Markdown("\n"),
-                    Block::JsxElement {
-                        name: "Steps",
-                        open: "<Steps>",
-                        children: vec![Block::Markdown("Inner")],
-                        close: "</Steps>",
-                    },
-                    Block::Markdown("\n"),
-                ],
-                close: "</Steps>",
+                name: "Tabs",
+                attrs: "/",
+                children: Vec::new(),
+                is_self_closing: true,
             }]
         );
     }
 
     #[test]
-    fn scan_blocks_ignores_fenced_jsx() {
-        let input = "```\n<Steps>\n```\n<Tabs />\n";
-        let blocks = scan_blocks(input);
+    fn scan_emits_jsx_element_with_children() {
+        let blocks = scan("<Steps>hello</Steps>");
+
+        assert_eq!(
+            blocks,
+            vec![Block::JsxElement {
+                name: "Steps",
+                attrs: "",
+                children: vec![Block::Markdown("hello")],
+                is_self_closing: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn scan_handles_nested_same_tag() {
+        let blocks = scan("<Steps><Steps>inner</Steps>outer</Steps>");
+
+        assert_eq!(
+            blocks,
+            vec![Block::JsxElement {
+                name: "Steps",
+                attrs: "",
+                children: vec![
+                    Block::JsxElement {
+                        name: "Steps",
+                        attrs: "",
+                        children: vec![Block::Markdown("inner")],
+                        is_self_closing: false,
+                    },
+                    Block::Markdown("outer"),
+                ],
+                is_self_closing: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn scan_ignores_self_closing_in_nested_match() {
+        let blocks = scan("<Steps><Steps />inner</Steps>");
+
+        assert_eq!(
+            blocks,
+            vec![Block::JsxElement {
+                name: "Steps",
+                attrs: "",
+                children: vec![
+                    Block::JsxElement {
+                        name: "Steps",
+                        attrs: "/",
+                        children: Vec::new(),
+                        is_self_closing: true,
+                    },
+                    Block::Markdown("inner"),
+                ],
+                is_self_closing: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn detects_fence_start_and_end() {
+        let input = "```\ncode\n```\n";
+        let bytes = input.as_bytes();
+
+        let (marker, count) = is_fence_start(bytes, 0).expect("fence start");
+        assert_eq!(marker, b'`');
+        assert_eq!(count, 3);
+
+        let end = find_fence_end(bytes, 1, marker, count).expect("fence end");
+        assert_eq!(end, 9);
+    }
+
+    #[test]
+    fn detects_tilde_fence_start() {
+        let input = "~~~\ncode\n~~~\n";
+        let bytes = input.as_bytes();
+
+        let (marker, count) = is_fence_start(bytes, 0).expect("fence start");
+        assert_eq!(marker, b'~');
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn scan_emits_code_block_for_fence() {
+        let input = "```\n<Steps>\n```";
+        let blocks = scan(input);
+
+        assert_eq!(blocks, vec![Block::Code(input)]);
+    }
+
+    #[test]
+    fn scan_does_not_parse_jsx_inside_fence() {
+        let input = "```\n<Tabs />\n```\n";
+        let blocks = scan(input);
+
+        assert_eq!(blocks, vec![Block::Code(input)]);
+    }
+
+    #[test]
+    fn scan_continues_after_fence() {
+        let input = "```\n<Steps>\n```\n<Tabs />";
+        let blocks = scan(input);
+
         assert_eq!(
             blocks,
             vec![
-                Block::Markdown("```\n<Steps>\n```\n"),
-                Block::JsxSelfClosing { raw: "<Tabs />" },
-                Block::Markdown("\n"),
+                Block::Code("```\n<Steps>\n```\n"),
+                Block::JsxElement {
+                    name: "Tabs",
+                    attrs: "/",
+                    children: Vec::new(),
+                    is_self_closing: true,
+                },
             ]
         );
     }
 
     #[test]
-    fn scan_blocks_ignores_inline_code_jsx() {
-        let input = "`<BUCKET_NAME>`\n<Tabs />\n";
-        let blocks = scan_blocks(input);
+    fn scan_falls_back_on_unclosed_fence() {
+        let input = "```\n<Steps>";
+        let blocks = scan(input);
+
         assert_eq!(
             blocks,
-            vec![
-                Block::Markdown("`<BUCKET_NAME>`\n"),
-                Block::JsxSelfClosing { raw: "<Tabs />" },
-                Block::Markdown("\n"),
-            ]
+            vec![Block::Markdown("`"), Block::Markdown("``\n<Steps>")]
         );
     }
 
     #[test]
-    fn scan_blocks_ignores_indented_jsx() {
-        let input = "1. item\n    <Tabs />\n";
-        let blocks = scan_blocks(input);
-        assert_eq!(blocks, vec![Block::Markdown(input)]);
+    fn scan_falls_back_on_missing_close_tag() {
+        let input = "<Steps>no close";
+        let blocks = scan(input);
+
+        assert_eq!(
+            blocks,
+            vec![Block::Markdown("<"), Block::Markdown("Steps>no close")]
+        );
     }
 }

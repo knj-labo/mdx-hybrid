@@ -30,6 +30,67 @@
 - /@id の markflow モジュール取得が 500 を返す場合は、該当 JSX に **生のコードフェンス行（```json など）が残っている**可能性があるため、エラー行付近の生成断片を確認して原因を切り分ける。
   - 例: aws.mdx の `Expected "}" but found ":"` は ` ```json` 行が JSX に残存しているケース。
 
+## Multipass Parsing (planned)
+- JSX scanning builds a recursive `Block::JsxElement { children: Vec<Block> }` tree (no raw `inner` string) so later passes can normalize sibling placement.
+- The multipass scanner lives in `crates/core/src/renderer/multipass.rs` and is exported from `renderer::mod`.
+- A `scan(input: &str) -> Vec<Block>` entrypoint is defined; initial stub returns a single Markdown block.
+- A minimal test locks the stub behavior until the recursive scan replaces it.
+- Next step: `scan` will build mixed `Markdown`/`Code`/`JsxElement` trees using recursive descent.
+- `Block::Markdown` groups contiguous non-JSX text, `Block::Code` stores code fences/indented code (no JSX scanning), and `Block::JsxElement` stores name/attrs/children/self-closing.
+- `scan` returns an empty Vec for empty input (no empty Markdown block).
+- `multipass.rs` keeps `#[cfg(test)] mod tests` at the end of the file to avoid items-after-test-module lint.
+- `scan` uses a helper to append non-empty Markdown slices so future splitting stays centralized.
+- `find_byte` (byte search helper) supports low-level tag scanning for multipass.
+- `find_tag_end` is a minimal helper that finds the next `>` (attribute quoting handled later).
+- `is_self_closing` is a minimal helper that checks for a trailing `/` before `>` (whitespace-aware handling comes later).
+- `is_name_char` only accepts ASCII alnum plus `-`, `:`, and `_` for tag names.
+- `is_tag_terminator` treats whitespace, `/`, and `>` as the end of a tag name.
+- `parse_open_tag` returns `(name, attrs, open_end_index)` where attrs is the trimmed slice up to `>`; invalid tag names fail.
+- `is_close_tag` checks for a matching `</name` followed by a tag terminator.
+- `scan` delegates to `scan_nodes(input, cursor, until_tag)` so recursive descent can reuse the same entrypoint.
+- `scan_nodes` is structured as a cursor-driven loop and returns when the matching closing tag is encountered.
+- If no `<` is found, `scan_nodes` emits the remaining slice as a single Markdown block.
+- When a `<` is found, the preceding slice is emitted as Markdown before inspecting the tag.
+- If `<` does not start a valid tag, it is emitted as Markdown and the cursor advances by 1.
+- When a valid open tag is found, the cursor advances to just after the `>` before emitting blocks.
+- Open tags are checked for self-closing (`/>`) during scanning (used when emitting JSX blocks).
+- Self-closing tags emit `Block::JsxElement` with empty children immediately.
+- Tests cover self-closing JSX element emission with trimmed attrs.
+- Non-self-closing tags that lack a matching close fallback to emitting `<` as Markdown.
+- Non-self-closing tags with a matching close emit `Block::JsxElement` with recursively scanned children.
+- Tests cover non-self-closing JSX elements with child Markdown.
+- After emitting a `JsxElement`, `scan_nodes` advances past the closing tag without emitting extra Markdown.
+- `attrs` are stored with leading/trailing whitespace trimmed.
+- Self-closing attrs tests assert the trimmed value (e.g., `/`).
+- Tests cover nested same-tag matching via recursion.
+- Tests cover nested self-closing tags alongside content.
+- `scan_nodes` begins scanning children immediately after the open tag (`open_end + 1`).
+- Tags without attributes store an empty string for `attrs`.
+- `scan_nodes` breaks if the cursor does not advance, preventing infinite loops on malformed input.
+- `scan_nodes` splits Markdown and JSX at `<` boundaries, emitting JSX as `Block::JsxElement`.
+- Adjacent Markdown segments may be emitted as separate blocks (no coalescing yet).
+- Fence detection helpers (`is_line_start`/`is_fence_start`) are added to avoid parsing JSX inside code fences.
+- Fence end detection helper (`find_fence_end`) is added to locate closing fences.
+- Tests cover basic fence start/end detection helpers.
+- `scan_nodes` emits `Block::Code` for fenced code blocks to avoid JSX scanning inside fences.
+- Unclosed fences emit the first marker as Markdown and then stop scanning, returning the rest as Markdown.
+- Tests cover emitting `Block::Code` for fenced blocks.
+- `Block::Code` spans from the opening fence through the end of the closing fence line (including newline).
+- Indented code blocks are not treated specially by multipass yet.
+- JSX scanning resumes after a fenced code block ends.
+- `<` inside fenced code blocks is never treated as JSX.
+- Tests cover unclosed fence fallback behavior.
+- `find_fence_end` returns the position of the closing fence line start.
+- Tests cover `~~~` fence detection.
+- Tests cover ignoring JSX inside fences.
+- Fence detection is restricted to true line starts (indented fences not handled yet).
+- `scan_nodes` checks for fences before JSX tags.
+- Missing close tags fall back to treating `<` as Markdown.
+- `scan_nodes` returns `(blocks, cursor, closed)` where `closed=true` indicates the until tag was found.
+- `scan_nodes` may return `cursor == input.len()` when it reaches the end of the input.
+- `scan_nodes` returns immediately when it encounters the `until_tag` close.
+- If a close tag is detected but `find_tag_end` fails, `scan_nodes` returns with `closed=false`.
+
 ## Open Questions
 - JSX escaping rules for text nodes (current minimal escape: `& < > { }`).
 - How to surface options (e.g., runtime imports, layout wrapping) while keeping a streaming interface.

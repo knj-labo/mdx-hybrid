@@ -148,3 +148,84 @@
 | 2025-12-26 16:20 | #179 | `preprocess_jsx_block_lines` で `<Steps>` ブロックの内側HTMLに `normalize_steps_list_items` を適用。 | ブロックJSX経由では Steps 正規化が走らず `<li>` が詰まるため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-170-markdown-to-jsx.md |
 | 2025-12-26 16:40 | #180 | `<Steps>` 内の JSX ブロック（`<Tabs>` 等）は直前の `<li>` に挿入する規則を追加し、`preprocess_jsx_block_lines` 経路にも適用。 | `<Steps>` 内の `<Tabs>` が `<li>` の外（兄弟）に出る問題を防ぐため | crates/core/src/renderer/jsx_renderer.rs, crates/core/tests/integration_tests.rs, docs/specs/mf-170-markdown-to-jsx.md |
 | 2025-12-26 16:55 | #181 | clippy 警告の解消（挙動変更なし）。 | lint を無警告に保つため | crates/core/src/renderer/multipass.rs, crates/core/src/renderer/jsx_renderer.rs |
+| 2025-12-27 00:00 | #132 | `crates/core/src/renderer/multipass.rs` に再帰構造の `Block::JsxElement { children }` を導入し、仕様に「multipass は children ベースのツリー」と明記 | multipass で JSX 子要素を再帰的に扱う基盤を先に確定するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #133 | multipass モジュールを `renderer::mod` から公開し、仕様に配置を明記 | multipass 実装を他のレンダラから参照可能にするため | crates/core/src/renderer/mod.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #134 | multipass に `scan(input) -> Vec<Block>` の入口関数を追加し、当面は Markdown 1ブロック返却の stub とすることを決定 | 実装を小さく積み上げるための足場が必要なため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #135 | multipass の `scan` stub を固定する最小テスト `scan_returns_single_markdown_block` を追加 | 後続の再帰実装に向けて現状仕様を明示するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #136 | multipass 仕様に「scan は次段階で Markdown/Code/JsxElement を混在させる再帰スキャンを実装する」旨を追記 | 実装前に方向性を合意・固定するため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #137 | multipass の `Block` 役割を確定（Markdown=非JSX連続テキスト、Code=フェンス/インデントコード、JsxElement=名前/属性/子/セルフクローズ） | スキャン実装の出力仕様を明確化するため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #138 | multipass `scan` は空入力で空Vecを返す（空Markdownは生成しない） | 空入力時の余計なブロック生成を避けるため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #139 | multipass の tests モジュールはファイル末尾配置とし、items-after-test-module lint を回避する運用を明記 | clippy 再発防止のため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #140 | multipass `scan` で Markdown スライスを追加する `push_markdown` ヘルパーを導入 | 断片追加の責務を集中させ、後続の分割ロジックを単純化するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #141 | multipass のタグ探索用に `find_byte` ヘルパーを追加 | 低レベルな文字探索を共通化するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #142 | multipass に `find_tag_end`（次の `>` を探す暫定実装）を追加 | 開始タグ終端探索の足場を先に用意するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #143 | multipass に `is_self_closing`（末尾`/`判定の暫定実装）を追加 | セルフクローズ判定の足場を用意するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #144 | multipass のタグ名解析用に `is_name_char`（ASCII英数字と `-:_` のみ許可）を追加 | タグ名トークン化の基礎を整えるため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #145 | multipass のタグ名終端判定に `is_tag_terminator`（空白/`/`/`>`）を追加 | `parse_open_tag` の下準備を揃えるため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #146 | multipass に `parse_open_tag` を追加し、`<Tag ...>` の名前と `>` 位置を抽出する最小実装を確定 | 再帰スキャンのベースとなる open tag 解析の導入のため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #147 | `parse_open_tag` の戻り値に attrs スライスを追加（name_end から `>` 直前までを生で保持） | JsxElement に属性文字列を保持するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #148 | multipass に `is_close_tag`（`</name` + 終端判定）を追加 | close tag 検出ロジックの基礎を用意するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #149 | multipass に `find_matching_close`（単純 `</name>` 探索）を追加 | 要素範囲を決定する最小ロジックを用意するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #150 | multipass に `is_open_tag`（`<name` + 終端判定、close除外）を追加 | ネスト対応のための open tag 判定を用意するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #151 | `find_matching_close` を同名タグのネストカウント方式に更新 | 再帰構造の正しい閉じ位置を得るため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #152 | `find_matching_close` の旧説明（ネスト未対応）を仕様から削除し、現行仕様に整合させた | 仕様の矛盾を解消するため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #164 | `find_matching_close` を `find_matching_close_tag` に改名 | close tag 探索であることを明示するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #153 | `scan` が `scan_range` を経由する構成に変更 | 再帰スキャンを共通入口で実装できるようにするため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #154 | `scan_range` を cursor ループ構成に変更 | JSX 分割ロジックを挿入するための制御骨格を用意するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #155 | `scan_range` に `<` 検出（`find_byte`）の準備を追加 | JSX 検出ロジックを差し込むための足場を作るため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #156 | `scan_range` が `<` を見つけられない場合は残りを Markdown として返す分岐を追加 | JSX が存在しないケースを早期終了するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #157 | `scan_range` が `<` を検出した場合、手前の Markdown を先に切り出す処理を追加 | JSX 前後を分離するための最初の分割を実現するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #158 | `<` が有効タグにならない場合は Markdown として 1 文字消費するフォールバックを追加 | 無効タグでの無限ループや誤解析を防ぐため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #159 | open tag を認識したら `>` の直後まで cursor を進める処理を追加 | JSX ブロック生成のためのスキャン制御を固めるため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #160 | open tag 解析時に `is_self_closing` を評価するフックを追加 | セルフクローズ要素の処理準備を進めるため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #161 | self-closing タグを `Block::JsxElement`（children 空）として出力する処理を追加 | セルフクローズ JSX を再帰構造に取り込むため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #162 | self-closing JSX の出力を固定するテストを追加 | セルフクローズ対応の回帰検知のため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #163 | non-self-closing tag の close が見つからない場合は `<` を Markdown として消費するフォールバックを追加 | 未閉鎖タグでの破綻を避けるため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #165 | non-self-closing tag で close が見つかる場合は children を再帰スキャンして `Block::JsxElement` を生成 | multipass の再帰構造化を実装するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #166 | non-self-closing JSX の children 生成を固定するテストを追加 | 再帰スキャンの回帰検知のため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #167 | `JsxElement` 生成後は close 末尾まで cursor を進め、余計な Markdown を出さないことを仕様化 | JSX 範囲の二重出力を防ぐため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #168 | `parse_open_tag` の attrs は前後空白を trim したスライスを保持するように変更 | attrs の余分な空白を統一するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #169 | self-closing attrs テストは trim 後の値（例: `/`）を期待することを仕様化 | attrs trim 仕様とテストの整合を取るため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #170 | 同名タグのネスト処理を検証するテストを追加 | depth カウント処理の回帰検知のため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #171 | `find_matching_close_tag` が self-closing をネストとして数えないように調整 | 同名 self-closing で close 探索がずれるのを防ぐため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #172 | self-closing を含むネストケースのテストを追加 | self-closing が depth に影響しないことを検証するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #173 | close 探索は `open_end + 1` から開始することを仕様化 | open tag 自身を誤ってネスト計上しないため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #174 | attrs が無いタグは空文字を保持することを仕様化 | attrs の既定表現を明確にするため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #175 | `scan_range` が cursor 非進行時に break する安全弁を追加 | 無限ループを回避するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #176 | multipass の tests がファイル末尾にあることを確認し維持 | items-after-test-module の再発を避けるため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #177 | `scan_range` が Markdown/JSX を `<` 境界で分離し JSX を `Block::JsxElement` として保持することを仕様化 | multipass スキャンの役割を明確化するため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #178 | 隣接 Markdown が分割されて複数ブロックになる可能性を仕様化 | 現段階のスキャン出力を明示するため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #179 | code fence 検出ヘルパー（`is_line_start`/`is_fence_start`）を追加 | フェンス内の JSX 誤認を防ぐ準備のため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #180 | code fence 終端探索ヘルパー `find_fence_end` を追加 | フェンス区間を `Block::Code` として保持する準備のため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #181 | fence 検出ヘルパーの最小テストを追加 | フェンス検出の回帰を防ぐため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #182 | `scan_range` が code fence を `Block::Code` として取り扱う処理を追加 | フェンス内の JSX 誤認を防ぐため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #183 | 未閉鎖 fence は先頭1文字を Markdown として出力し、その後は残りを Markdown として返すフォールバックに変更 | 不正入力での無限ループを防ぐため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #184 | fence を `Block::Code` として出力するテストを追加 | フェンス内の JSX 誤解析を防ぐ回帰検知のため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #185 | `Block::Code` の範囲は開始フェンスから終了フェンス行末まで保持することを仕様化 | フェンス範囲の境界を固定するため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #186 | indented code は現段階の multipass では特別扱いしないことを仕様化 | 対応範囲を明確にするため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #187 | fence 後に JSX スキャンが継続することを確認するテストを追加 | fence 処理で後続解析が止まらないことを保証するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #188 | fence 内の `<` は JSX 判定しないことを仕様化 | フェンス内の誤認識を防ぐため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #189 | 未閉鎖 fence のフォールバック挙動をテストで固定 | 不正入力時の期待結果を明確にするため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #190 | `find_fence_end` が終了フェンス行頭位置を返すことを仕様化 | fence 終端位置の意味を固定するため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #191 | `~~~` フェンス検出テストを追加 | tilde フェンスを見落とさないため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #192 | fence 内 JSX が解析されないことを検証するテストを追加 | fence 無視の回帰を防ぐため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #193 | fence 判定は行頭のみで、インデント付きフェンスは対象外とすることを仕様化 | 現段階のフェンス判定範囲を明確にするため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #194 | `find_matching_close_tag` を廃止し `scan_nodes` の単一パス再帰に切り替え（`Block` 命名は維持） | スキャンの単純化と計算量改善のため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #195 | 閉じタグ欠落時のフォールバック（`<` を Markdown 扱い）をテストで固定 | 単一パス移行後の挙動保証のため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #196 | `scan_nodes` の cursor 非進行ガードを末尾に維持することを確認 | 無限ループ防止の安全弁を保持するため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #197 | `scan_nodes` の戻り値 `(blocks, cursor, closed)` の意味を仕様化 | 再帰終了条件を明確にするため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #198 | 単一パス化に伴い `is_open_tag` ヘルパーが不要になったことを確認 | 仕様/実装の一致を保つため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #199 | spec から `scan_range` 言及が消えていることを確認 | 単一パス移行後の表記統一のため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #200 | 空入力で空Vecを返すテストが単一パス移行後も維持されていることを確認 | 最小挙動の回帰防止のため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #201 | `scan_nodes` の cursor が `input.len()` に達しうることを仕様化 | 返却値の範囲を明確にするため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #202 | multipass の tests で使用する import を最小限に維持することを確認 | clippy の unused-import を防ぐため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #203 | `scan_nodes` が fence 判定を JSX 判定より先に行うことを仕様化 | JSX 誤認防止の優先順位を明確にするため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #204 | `scan_nodes` が `until_tag` に一致する close を見つけたら即 return することを仕様化 | 再帰終了条件を明確にするため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #205 | close タグ検出後に `find_tag_end` が失敗した場合は `closed=false` で戻ることを仕様化 | 不正入力での安全動作を明確にするため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #206 | `parse_open_tag` の attrs trim 仕様が単一パス化後も維持されていることを確認 | 既存仕様の回帰を防ぐため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #209 | `scan_nodes` で `<` 到達後に一度ループを回し、close 判定を再実行するよう制御を追加 | close tag を誤って Markdown 扱いしないため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #210 | fence 終端の切り出し範囲を「閉じフェンス行末まで」に修正 | fence 内コードが欠けるのを防ぐため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #207 | JSX レンダラのイベント処理を `render_markdown_events` に切り出し、multipass 接続の足場を用意 | Markdown 断片レンダリングを可能にするため | crates/core/src/renderer/jsx_renderer.rs |
+| 2025-12-27 00:00 | #208 | `render_to_jsx` を multipass `scan` ベースに切り替え、Markdown/Code/JsxElement をブロックごとにレンダリング | Steps/Tabs 正規化の前提となる再帰レンダリングを導入するため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2025-12-27 00:00 | #211 | `<Steps>` 内の非 Markdown 兄弟を最後の `<li>` 直前へ挿入するレンダリングを追加 | Tabs などの兄弟要素をリスト内に収めるため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2025-12-27 00:00 | #212 | `Block::Code` をイベントレンダリング経由に戻し、フェンスを `<pre><code>` に変換することを明記 | fence 内 import/export を JSX に残す既存仕様を維持するため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
