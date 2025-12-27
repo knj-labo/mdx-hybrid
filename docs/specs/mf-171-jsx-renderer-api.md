@@ -33,7 +33,7 @@ Define the Rust/NAPI/WASM API surface and the escaping/serialization rules for t
 
 ## Multipass Integration (current)
 - `render_to_jsx` scans input with the multipass `Block` tree, renders `Block::Markdown` via the event pipeline, and emits `Block::JsxElement` directly.
-- `Block::Code` is currently emitted verbatim (no JSX scanning inside fenced code).
+- `Block::Code` is rendered through the event pipeline so fenced code becomes `<pre><code>`, while still skipping JSX scanning inside fences.
 - `<Steps>` renders Markdown children first, then injects non-Markdown siblings before the last `</li>` (or appends if no list item exists).
 
 ## Escaping Policy (current)

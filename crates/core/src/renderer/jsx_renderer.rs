@@ -142,7 +142,7 @@ fn render_blocks(blocks: &[Block<'_>]) -> Result<String, MarkflowError> {
 fn render_block(block: &Block<'_>) -> Result<String, MarkflowError> {
     match block {
         Block::Markdown(text) => render_markdown_events(text),
-        Block::Code(text) => Ok(text.to_string()),
+        Block::Code(text) => render_markdown_events(text),
         Block::JsxElement {
             name,
             attrs,

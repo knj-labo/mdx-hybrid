@@ -228,3 +228,4 @@
 | 2025-12-27 00:00 | #207 | JSX レンダラのイベント処理を `render_markdown_events` に切り出し、multipass 接続の足場を用意 | Markdown 断片レンダリングを可能にするため | crates/core/src/renderer/jsx_renderer.rs |
 | 2025-12-27 00:00 | #208 | `render_to_jsx` を multipass `scan` ベースに切り替え、Markdown/Code/JsxElement をブロックごとにレンダリング | Steps/Tabs 正規化の前提となる再帰レンダリングを導入するため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
 | 2025-12-27 00:00 | #211 | `<Steps>` 内の非 Markdown 兄弟を最後の `<li>` 直前へ挿入するレンダリングを追加 | Tabs などの兄弟要素をリスト内に収めるため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2025-12-27 00:00 | #212 | `Block::Code` をイベントレンダリング経由に戻し、フェンスを `<pre><code>` に変換することを明記 | fence 内 import/export を JSX に残す既存仕様を維持するため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
