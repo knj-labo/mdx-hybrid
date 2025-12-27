@@ -107,7 +107,11 @@ fn scan_nodes<'a>(
 }
 
 fn find_byte(bytes: &[u8], start: usize, target: u8) -> Option<usize> {
-    bytes.iter().skip(start).position(|&b| b == target).map(|idx| idx + start)
+    bytes
+        .iter()
+        .skip(start)
+        .position(|&b| b == target)
+        .map(|idx| idx + start)
 }
 
 fn find_tag_end(input: &str, start: usize) -> Option<usize> {
