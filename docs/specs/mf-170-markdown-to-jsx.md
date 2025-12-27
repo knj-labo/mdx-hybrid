@@ -47,12 +47,9 @@
 - `is_tag_terminator` treats whitespace, `/`, and `>` as the end of a tag name.
 - `parse_open_tag` returns `(name, attrs, open_end_index)` where attrs is the trimmed slice up to `>`; invalid tag names fail.
 - `is_close_tag` checks for a matching `</name` followed by a tag terminator.
-- `is_open_tag` checks for `<name` followed by a tag terminator, excluding close tags.
-- `find_matching_close_tag` now accounts for nested tags with the same name using a depth counter.
-- `scan` delegates to `scan_range` so recursive descent can reuse the same entrypoint.
-- `scan_range` is structured as a cursor-driven loop, even before JSX splitting is enabled.
-- `scan_range` already searches for the next `<` to prepare for JSX detection.
-- If no `<` is found, `scan_range` emits the remaining slice as a single Markdown block.
+- `scan` delegates to `scan_nodes(input, cursor, until_tag)` so recursive descent can reuse the same entrypoint.
+- `scan_nodes` is structured as a cursor-driven loop and returns when the matching closing tag is encountered.
+- If no `<` is found, `scan_nodes` emits the remaining slice as a single Markdown block.
 - When a `<` is found, the preceding slice is emitted as Markdown before inspecting the tag.
 - If `<` does not start a valid tag, it is emitted as Markdown and the cursor advances by 1.
 - When a valid open tag is found, the cursor advances to just after the `>` before emitting blocks.
@@ -62,15 +59,37 @@
 - Non-self-closing tags that lack a matching close fallback to emitting `<` as Markdown.
 - Non-self-closing tags with a matching close emit `Block::JsxElement` with recursively scanned children.
 - Tests cover non-self-closing JSX elements with child Markdown.
-- After emitting a `JsxElement`, `scan_range` advances past the closing tag without emitting extra Markdown.
+- After emitting a `JsxElement`, `scan_nodes` advances past the closing tag without emitting extra Markdown.
 - `attrs` are stored with leading/trailing whitespace trimmed.
 - Self-closing attrs tests assert the trimmed value (e.g., `/`).
-- Tests cover nested same-tag matching via depth counting.
-- Self-closing tags with the same name do not increment nesting depth.
+- Tests cover nested same-tag matching via recursion.
 - Tests cover nested self-closing tags alongside content.
-- `find_matching_close_tag` begins searching immediately after the open tag (`open_end + 1`).
+- `scan_nodes` begins scanning children immediately after the open tag (`open_end + 1`).
 - Tags without attributes store an empty string for `attrs`.
-- `scan_range` breaks if the cursor does not advance, preventing infinite loops on malformed input.
+- `scan_nodes` breaks if the cursor does not advance, preventing infinite loops on malformed input.
+- `scan_nodes` splits Markdown and JSX at `<` boundaries, emitting JSX as `Block::JsxElement`.
+- Adjacent Markdown segments may be emitted as separate blocks (no coalescing yet).
+- Fence detection helpers (`is_line_start`/`is_fence_start`) are added to avoid parsing JSX inside code fences.
+- Fence end detection helper (`find_fence_end`) is added to locate closing fences.
+- Tests cover basic fence start/end detection helpers.
+- `scan_nodes` emits `Block::Code` for fenced code blocks to avoid JSX scanning inside fences.
+- Unclosed fences emit the first marker as Markdown and then stop scanning, returning the rest as Markdown.
+- Tests cover emitting `Block::Code` for fenced blocks.
+- `Block::Code` spans from the opening fence through the end of the closing fence line (including newline).
+- Indented code blocks are not treated specially by multipass yet.
+- JSX scanning resumes after a fenced code block ends.
+- `<` inside fenced code blocks is never treated as JSX.
+- Tests cover unclosed fence fallback behavior.
+- `find_fence_end` returns the position of the closing fence line start.
+- Tests cover `~~~` fence detection.
+- Tests cover ignoring JSX inside fences.
+- Fence detection is restricted to true line starts (indented fences not handled yet).
+- `scan_nodes` checks for fences before JSX tags.
+- Missing close tags fall back to treating `<` as Markdown.
+- `scan_nodes` returns `(blocks, cursor, closed)` where `closed=true` indicates the until tag was found.
+- `scan_nodes` may return `cursor == input.len()` when it reaches the end of the input.
+- `scan_nodes` returns immediately when it encounters the `until_tag` close.
+- If a close tag is detected but `find_tag_end` fails, `scan_nodes` returns with `closed=false`.
 
 ## Open Questions
 - JSX escaping rules for text nodes (current minimal escape: `& < > { }`).
