@@ -38,6 +38,39 @@
 - Next step: `scan` will build mixed `Markdown`/`Code`/`JsxElement` trees using recursive descent.
 - `Block::Markdown` groups contiguous non-JSX text, `Block::Code` stores code fences/indented code (no JSX scanning), and `Block::JsxElement` stores name/attrs/children/self-closing.
 - `scan` returns an empty Vec for empty input (no empty Markdown block).
+- `multipass.rs` keeps `#[cfg(test)] mod tests` at the end of the file to avoid items-after-test-module lint.
+- `scan` uses a helper to append non-empty Markdown slices so future splitting stays centralized.
+- `find_byte` (byte search helper) supports low-level tag scanning for multipass.
+- `find_tag_end` is a minimal helper that finds the next `>` (attribute quoting handled later).
+- `is_self_closing` is a minimal helper that checks for a trailing `/` before `>` (whitespace-aware handling comes later).
+- `is_name_char` only accepts ASCII alnum plus `-`, `:`, and `_` for tag names.
+- `is_tag_terminator` treats whitespace, `/`, and `>` as the end of a tag name.
+- `parse_open_tag` returns `(name, attrs, open_end_index)` where attrs is the trimmed slice up to `>`; invalid tag names fail.
+- `is_close_tag` checks for a matching `</name` followed by a tag terminator.
+- `is_open_tag` checks for `<name` followed by a tag terminator, excluding close tags.
+- `find_matching_close_tag` now accounts for nested tags with the same name using a depth counter.
+- `scan` delegates to `scan_range` so recursive descent can reuse the same entrypoint.
+- `scan_range` is structured as a cursor-driven loop, even before JSX splitting is enabled.
+- `scan_range` already searches for the next `<` to prepare for JSX detection.
+- If no `<` is found, `scan_range` emits the remaining slice as a single Markdown block.
+- When a `<` is found, the preceding slice is emitted as Markdown before inspecting the tag.
+- If `<` does not start a valid tag, it is emitted as Markdown and the cursor advances by 1.
+- When a valid open tag is found, the cursor advances to just after the `>` before emitting blocks.
+- Open tags are checked for self-closing (`/>`) during scanning (used when emitting JSX blocks).
+- Self-closing tags emit `Block::JsxElement` with empty children immediately.
+- Tests cover self-closing JSX element emission with trimmed attrs.
+- Non-self-closing tags that lack a matching close fallback to emitting `<` as Markdown.
+- Non-self-closing tags with a matching close emit `Block::JsxElement` with recursively scanned children.
+- Tests cover non-self-closing JSX elements with child Markdown.
+- After emitting a `JsxElement`, `scan_range` advances past the closing tag without emitting extra Markdown.
+- `attrs` are stored with leading/trailing whitespace trimmed.
+- Self-closing attrs tests assert the trimmed value (e.g., `/`).
+- Tests cover nested same-tag matching via depth counting.
+- Self-closing tags with the same name do not increment nesting depth.
+- Tests cover nested self-closing tags alongside content.
+- `find_matching_close_tag` begins searching immediately after the open tag (`open_end + 1`).
+- Tags without attributes store an empty string for `attrs`.
+- `scan_range` breaks if the cursor does not advance, preventing infinite loops on malformed input.
 
 ## Open Questions
 - JSX escaping rules for text nodes (current minimal escape: `& < > { }`).
