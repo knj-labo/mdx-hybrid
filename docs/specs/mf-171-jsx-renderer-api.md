@@ -31,6 +31,10 @@ Define the Rust/NAPI/WASM API surface and the escaping/serialization rules for t
 | `TaskListMarker` | `<input type="checkbox" ... />` | — |
 \* Table cell alignment attributes are not yet emitted in JSX mode (future work).
 
+## Multipass Integration (current)
+- `render_to_jsx` scans input with the multipass `Block` tree, renders `Block::Markdown` via the event pipeline, and emits `Block::JsxElement` directly.
+- `Block::Code` is currently emitted verbatim (no JSX scanning inside fenced code).
+
 ## Escaping Policy (current)
 - Escape only text nodes: `& < > { }` → `&amp; &lt; &gt; &#123; &#125;`.
 - Do **not** escape JSX/HTML nodes (`JsxInline/JsxFlow/Html/InlineHtml`) — treated as trusted.
