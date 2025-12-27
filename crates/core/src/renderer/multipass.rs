@@ -33,13 +33,13 @@ fn scan_nodes<'a>(
 
     while cursor < bytes.len() {
         let prev_cursor = cursor;
-        if let Some(tag_name) = until {
-            if is_close_tag(bytes, cursor, tag_name.as_bytes()) {
-                if let Some(close_end) = find_tag_end(input, cursor + 2 + tag_name.len()) {
-                    return (blocks, close_end.saturating_add(1), true);
-                }
-                return (blocks, cursor, false);
+        if let Some(tag_name) = until
+            && is_close_tag(bytes, cursor, tag_name.as_bytes())
+        {
+            if let Some(close_end) = find_tag_end(input, cursor + 2 + tag_name.len()) {
+                return (blocks, close_end.saturating_add(1), true);
             }
+            return (blocks, cursor, false);
         }
         if let Some((marker, count)) = is_fence_start(bytes, cursor) {
             if let Some(fence_end) = find_fence_end(bytes, cursor + 1, marker, count) {
@@ -166,7 +166,7 @@ fn is_close_tag(bytes: &[u8], pos: usize, name: &[u8]) -> bool {
         return false;
     }
     let end = pos + 2 + name.len();
-    bytes.get(end).copied().map_or(false, is_tag_terminator)
+    bytes.get(end).copied().is_some_and(is_tag_terminator)
 }
 
 fn is_line_start(bytes: &[u8], pos: usize) -> bool {
