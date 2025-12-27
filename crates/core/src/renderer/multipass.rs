@@ -43,10 +43,9 @@ fn scan_nodes<'a>(
         }
         if let Some((marker, count)) = is_fence_start(bytes, cursor) {
             if let Some(fence_end) = find_fence_end(bytes, cursor + 1, marker, count) {
-                let mut end_pos = fence_end;
-                if let Some(newline) = find_byte(bytes, fence_end, b'\n') {
-                    end_pos = newline + 1;
-                }
+                let end_pos = find_byte(bytes, fence_end, b'\n')
+                    .map(|newline| newline + 1)
+                    .unwrap_or_else(|| input.len());
                 blocks.push(Block::Code(&input[cursor..end_pos]));
                 cursor = end_pos;
                 continue;
@@ -67,6 +66,7 @@ fn scan_nodes<'a>(
         if cursor < pos {
             push_markdown(&mut blocks, input, cursor, pos);
             cursor = pos;
+            continue;
         }
         if cursor < bytes.len() && bytes[cursor] == b'<' {
             if let Some((name, attrs, open_end)) = parse_open_tag(input, cursor) {

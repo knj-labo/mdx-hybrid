@@ -223,5 +223,8 @@
 | 2025-12-27 00:00 | #204 | `scan_nodes` が `until_tag` に一致する close を見つけたら即 return することを仕様化 | 再帰終了条件を明確にするため | docs/specs/mf-170-markdown-to-jsx.md |
 | 2025-12-27 00:00 | #205 | close タグ検出後に `find_tag_end` が失敗した場合は `closed=false` で戻ることを仕様化 | 不正入力での安全動作を明確にするため | docs/specs/mf-170-markdown-to-jsx.md |
 | 2025-12-27 00:00 | #206 | `parse_open_tag` の attrs trim 仕様が単一パス化後も維持されていることを確認 | 既存仕様の回帰を防ぐため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #209 | `scan_nodes` で `<` 到達後に一度ループを回し、close 判定を再実行するよう制御を追加 | close tag を誤って Markdown 扱いしないため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #210 | fence 終端の切り出し範囲を「閉じフェンス行末まで」に修正 | fence 内コードが欠けるのを防ぐため | crates/core/src/renderer/multipass.rs |
 | 2025-12-27 00:00 | #207 | JSX レンダラのイベント処理を `render_markdown_events` に切り出し、multipass 接続の足場を用意 | Markdown 断片レンダリングを可能にするため | crates/core/src/renderer/jsx_renderer.rs |
 | 2025-12-27 00:00 | #208 | `render_to_jsx` を multipass `scan` ベースに切り替え、Markdown/Code/JsxElement をブロックごとにレンダリング | Steps/Tabs 正規化の前提となる再帰レンダリングを導入するため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2025-12-27 00:00 | #211 | `<Steps>` 内の非 Markdown 兄弟を最後の `<li>` 直前へ挿入するレンダリングを追加 | Tabs などの兄弟要素をリスト内に収めるため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |

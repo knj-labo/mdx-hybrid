@@ -1,12 +1,12 @@
 #![allow(missing_docs)]
 use crate::event::{CodeBlockKind, Event, HeadingLevel, Tag, TagEnd};
+use crate::renderer::multipass::{Block, scan};
 use crate::{
     DirectiveAdapter, HoistAdapter, MarkflowError, ParseResult, RewriteOptions, get_event_iterator,
     parse,
 };
-use crate::renderer::multipass::{Block, scan};
-use std::collections::HashSet;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 /// Render Markdown input into a raw JSX-like string, preserving JSX nodes.
@@ -153,11 +153,37 @@ fn render_block(block: &Block<'_>) -> Result<String, MarkflowError> {
             if *is_self_closing {
                 Ok(format!("<{}{} />", name, rendered_attrs))
             } else {
-                let inner = render_blocks(children)?;
+                let inner = if *name == "Steps" {
+                    render_steps_children(children)?
+                } else {
+                    render_blocks(children)?
+                };
                 Ok(format!("<{}{}>{}</{}>", name, rendered_attrs, inner, name))
             }
         }
     }
+}
+
+fn render_steps_children(children: &[Block<'_>]) -> Result<String, MarkflowError> {
+    let mut markdown_output = String::new();
+    let mut sibling_output = String::new();
+
+    for child in children {
+        match child {
+            Block::Markdown(text) => markdown_output.push_str(&render_markdown_events(text)?),
+            _ => sibling_output.push_str(&render_block(child)?),
+        }
+    }
+
+    if !sibling_output.is_empty() {
+        if let Some(idx) = markdown_output.rfind("</li>") {
+            markdown_output.insert_str(idx, &sibling_output);
+        } else {
+            markdown_output.push_str(&sibling_output);
+        }
+    }
+
+    Ok(markdown_output)
 }
 
 fn render_attrs(attrs: &str, is_self_closing: bool) -> String {
