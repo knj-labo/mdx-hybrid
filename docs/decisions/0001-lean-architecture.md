@@ -148,3 +148,10 @@
 | 2025-12-26 16:20 | #179 | `preprocess_jsx_block_lines` で `<Steps>` ブロックの内側HTMLに `normalize_steps_list_items` を適用。 | ブロックJSX経由では Steps 正規化が走らず `<li>` が詰まるため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-170-markdown-to-jsx.md |
 | 2025-12-26 16:40 | #180 | `<Steps>` 内の JSX ブロック（`<Tabs>` 等）は直前の `<li>` に挿入する規則を追加し、`preprocess_jsx_block_lines` 経路にも適用。 | `<Steps>` 内の `<Tabs>` が `<li>` の外（兄弟）に出る問題を防ぐため | crates/core/src/renderer/jsx_renderer.rs, crates/core/tests/integration_tests.rs, docs/specs/mf-170-markdown-to-jsx.md |
 | 2025-12-26 16:55 | #181 | clippy 警告の解消（挙動変更なし）。 | lint を無警告に保つため | crates/core/src/renderer/multipass.rs, crates/core/src/renderer/jsx_renderer.rs |
+| 2025-12-27 00:00 | #132 | `crates/core/src/renderer/multipass.rs` に再帰構造の `Block::JsxElement { children }` を導入し、仕様に「multipass は children ベースのツリー」と明記 | multipass で JSX 子要素を再帰的に扱う基盤を先に確定するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #133 | multipass モジュールを `renderer::mod` から公開し、仕様に配置を明記 | multipass 実装を他のレンダラから参照可能にするため | crates/core/src/renderer/mod.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #134 | multipass に `scan(input) -> Vec<Block>` の入口関数を追加し、当面は Markdown 1ブロック返却の stub とすることを決定 | 実装を小さく積み上げるための足場が必要なため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #135 | multipass の `scan` stub を固定する最小テスト `scan_returns_single_markdown_block` を追加 | 後続の再帰実装に向けて現状仕様を明示するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #136 | multipass 仕様に「scan は次段階で Markdown/Code/JsxElement を混在させる再帰スキャンを実装する」旨を追記 | 実装前に方向性を合意・固定するため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #137 | multipass の `Block` 役割を確定（Markdown=非JSX連続テキスト、Code=フェンス/インデントコード、JsxElement=名前/属性/子/セルフクローズ） | スキャン実装の出力仕様を明確化するため | docs/specs/mf-170-markdown-to-jsx.md |
+| 2025-12-27 00:00 | #138 | multipass `scan` は空入力で空Vecを返す（空Markdownは生成しない） | 空入力時の余計なブロック生成を避けるため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |

@@ -30,6 +30,15 @@
 - /@id の markflow モジュール取得が 500 を返す場合は、該当 JSX に **生のコードフェンス行（```json など）が残っている**可能性があるため、エラー行付近の生成断片を確認して原因を切り分ける。
   - 例: aws.mdx の `Expected "}" but found ":"` は ` ```json` 行が JSX に残存しているケース。
 
+## Multipass Parsing (planned)
+- JSX scanning builds a recursive `Block::JsxElement { children: Vec<Block> }` tree (no raw `inner` string) so later passes can normalize sibling placement.
+- The multipass scanner lives in `crates/core/src/renderer/multipass.rs` and is exported from `renderer::mod`.
+- A `scan(input: &str) -> Vec<Block>` entrypoint is defined; initial stub returns a single Markdown block.
+- A minimal test locks the stub behavior until the recursive scan replaces it.
+- Next step: `scan` will build mixed `Markdown`/`Code`/`JsxElement` trees using recursive descent.
+- `Block::Markdown` groups contiguous non-JSX text, `Block::Code` stores code fences/indented code (no JSX scanning), and `Block::JsxElement` stores name/attrs/children/self-closing.
+- `scan` returns an empty Vec for empty input (no empty Markdown block).
+
 ## Open Questions
 - JSX escaping rules for text nodes (current minimal escape: `& < > { }`).
 - How to surface options (e.g., runtime imports, layout wrapping) while keeping a streaming interface.
