@@ -1,0 +1,16 @@
+/
+/en/getting-started/
+/en/basics/astro-components/
+/en/basics/project-structure/
+/en/guides/markdown-content/
+/en/guides/build-with-ai/
+/en/guides/routing/
+/en/guides/content-collections/
+/en/guides/syntax-highlighting/
+/en/reference/api-reference/
+/en/reference/astro-syntax/
+/en/reference/directives-reference/
+/en/recipes/
+/en/recipes/streaming-improve-page-performance/
+/ja/getting-started/
+/ja/guides/syntax-highlighting/

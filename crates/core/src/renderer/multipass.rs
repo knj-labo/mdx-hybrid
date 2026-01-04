@@ -33,6 +33,10 @@ fn scan_nodes<'a>(
 
     while cursor < bytes.len() {
         let prev_cursor = cursor;
+        let line_start = find_line_start(bytes, cursor);
+        if is_fence_start(bytes, line_start).is_some() && cursor != line_start {
+            cursor = line_start;
+        }
         if let Some(tag_name) = until
             && is_close_tag(bytes, cursor, tag_name.as_bytes())
         {
@@ -57,12 +61,38 @@ fn scan_nodes<'a>(
             }
             return (blocks, input.len(), false);
         }
-        let next_lt = find_byte(bytes, cursor, b'<');
-        if next_lt.is_none() {
+        if bytes.get(cursor) == Some(&b'`') {
+            if let Some(end) = find_inline_code_end(bytes, cursor) {
+                push_markdown(&mut blocks, input, cursor, end);
+                cursor = end;
+                continue;
+            }
+        }
+        let mut next_lt = find_byte(bytes, cursor, b'<');
+        while let Some(pos) = next_lt {
+            let line_start = find_line_start(bytes, pos);
+            if is_fence_start(bytes, line_start).is_some() {
+                next_lt = find_byte(bytes, pos + 1, b'<');
+                continue;
+            }
+            break;
+        }
+        let next_fence = find_fence_start(bytes, cursor);
+        let next_tick = find_byte(bytes, cursor, b'`');
+        let mut next_stop: Option<usize> = None;
+        for candidate in [next_lt, next_fence, next_tick] {
+            if let Some(pos) = candidate {
+                next_stop = Some(match next_stop {
+                    Some(current) => current.min(pos),
+                    None => pos,
+                });
+            }
+        }
+        if next_stop.is_none() {
             push_markdown(&mut blocks, input, cursor, input.len());
             return (blocks, input.len(), false);
         }
-        let pos = next_lt.unwrap();
+        let pos = next_stop.unwrap();
         if cursor < pos {
             push_markdown(&mut blocks, input, cursor, pos);
             cursor = pos;
@@ -112,6 +142,20 @@ fn find_byte(bytes: &[u8], start: usize, target: u8) -> Option<usize> {
         .skip(start)
         .position(|&b| b == target)
         .map(|idx| idx + start)
+}
+
+fn find_line_start(bytes: &[u8], pos: usize) -> usize {
+    if pos == 0 {
+        return 0;
+    }
+    let mut i = pos;
+    while i > 0 {
+        if bytes[i - 1] == b'\n' {
+            break;
+        }
+        i -= 1;
+    }
+    i
 }
 
 fn find_tag_end(input: &str, start: usize) -> Option<usize> {
@@ -177,17 +221,14 @@ fn is_line_start(bytes: &[u8], pos: usize) -> bool {
 }
 
 fn is_fence_start(bytes: &[u8], pos: usize) -> Option<(u8, usize)> {
-    if !is_line_start(bytes, pos) {
-        return None;
-    }
-
-    let start_byte = *bytes.get(pos)?;
+    let marker_pos = skip_fence_indent(bytes, pos)?;
+    let start_byte = *bytes.get(marker_pos)?;
     if !matches!(start_byte, b'`' | b'~') {
         return None;
     }
 
     let mut count = 0usize;
-    let mut i = pos;
+    let mut i = marker_pos;
     while i < bytes.len() && bytes[i] == start_byte {
         count += 1;
         i += 1;
@@ -200,23 +241,94 @@ fn is_fence_start(bytes: &[u8], pos: usize) -> Option<(u8, usize)> {
     }
 }
 
+fn find_fence_start(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut pos = start;
+    while pos < bytes.len() {
+        if is_fence_start(bytes, pos).is_some() {
+            return Some(pos);
+        }
+        pos += 1;
+    }
+    None
+}
+
 fn find_fence_end(bytes: &[u8], start: usize, marker: u8, count: usize) -> Option<usize> {
     let mut pos = start;
     while pos < bytes.len() {
-        if is_line_start(bytes, pos) && bytes.get(pos) == Some(&marker) {
-            let mut run = 0usize;
-            let mut i = pos;
-            while i < bytes.len() && bytes[i] == marker {
-                run += 1;
-                i += 1;
-            }
-            if run >= count {
-                return Some(pos);
+        if is_line_start(bytes, pos) {
+            if let Some(marker_pos) = skip_fence_indent(bytes, pos)
+                && bytes.get(marker_pos) == Some(&marker)
+            {
+                let mut run = 0usize;
+                let mut i = marker_pos;
+                while i < bytes.len() && bytes[i] == marker {
+                    run += 1;
+                    i += 1;
+                }
+                if run >= count {
+                    return Some(marker_pos);
+                }
             }
         }
         pos += 1;
     }
     None
+}
+
+fn find_inline_code_end(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start) != Some(&b'`') {
+        return None;
+    }
+
+    let mut count = 0usize;
+    let mut i = start;
+    while i < bytes.len() && bytes[i] == b'`' {
+        count += 1;
+        i += 1;
+    }
+
+    let mut pos = i;
+    while pos < bytes.len() {
+        if bytes[pos] != b'`' {
+            pos += 1;
+            continue;
+        }
+        let mut run = 0usize;
+        while pos + run < bytes.len() && bytes[pos + run] == b'`' {
+            run += 1;
+        }
+        if run == count {
+            return Some(pos + run);
+        }
+        pos += run;
+    }
+
+    None
+}
+
+fn skip_fence_indent(bytes: &[u8], pos: usize) -> Option<usize> {
+    if !is_line_start(bytes, pos) {
+        return None;
+    }
+
+    let mut i = pos;
+    let mut spaces = 0usize;
+
+    while i < bytes.len() {
+        match bytes[i] {
+            b' ' if spaces < 4 => {
+                spaces += 1;
+                i += 1;
+            }
+            b'\t' if spaces == 0 => {
+                i += 1;
+                break;
+            }
+            _ => break,
+        }
+    }
+
+    Some(i)
 }
 
 #[cfg(test)]

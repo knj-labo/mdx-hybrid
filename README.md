@@ -8,8 +8,8 @@
 3. Baseline build: `node scripts/run-astro-harness.mjs astro baseline`
 
 ### withastro/docs Starlight harness
-1. Fetch upstream repo: `./scripts/setup-withastro-docs.sh --reset`
-2. Install deps: `pnpm --dir fixtures/integration/withastro-docs/repo install`
-3. Markflow build: `node scripts/run-astro-harness.mjs withastro-docs markflow`
-4. Baseline build: `node scripts/run-astro-harness.mjs withastro-docs baseline`
-5. (Optional, local only) Build NAPI and run harness manually if you need perf numbers; CI no longer runs `compare-astro-harness`.
+See `fixtures/integration/withastro-docs/README.md` for setup notes.
+
+1. Install deps: `pnpm --dir fixtures/integration/withastro-docs/repo install`
+2. Semantic diff (HTML): `pnpm compare:withastro-docs -- --mode=semantic`
+3. Visual diff (screenshots): `pnpm visual:withastro-docs -- --build`

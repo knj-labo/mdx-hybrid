@@ -21,6 +21,8 @@
     "vite": ">=5.0.0"
   },
   "dependencies": {
-    "markflow-napi": "npm:markflow@file:../../crates/napi"
+    "markflow-napi": "npm:markflow@file:../../crates/napi",
+    "parse5": "^7.1.2",
+    "shiki": "^3.20.0"
   }
 }

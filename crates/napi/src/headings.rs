@@ -90,18 +90,32 @@ struct HeadingCapture {
 /// This function parses the input `raw_body` and extracts all headings,
 /// returning them as a vector of `HeadingEntry`. The `file_type`
 /// parameter can be used to configure the parser for Markdown or MDX.
-pub(crate) fn collect_headings(raw_body: &str, file_type: FileType) -> Result<Vec<HeadingEntry>> {
+pub(crate) fn collect_headings(
+    raw_body: &str,
+    file_type: FileType,
+    file_path: &str,
+) -> Result<Vec<HeadingEntry>> {
     let mut collector = HeadingCollector::new();
     let config = match file_type {
         FileType::Markdown => markflow_core::ParseConfig::markdown(),
         FileType::Mdx => markflow_core::ParseConfig::mdx(),
     };
     let event_iterator =
-        markflow_core::get_event_iterator_with_config(raw_body, config).map_err(convert_error)?;
+        markflow_core::get_event_iterator_with_config(raw_body, config)
+            .map_err(|err| convert_error(with_path(err.into(), file_path)))?;
 
     for event in event_iterator {
         collector.observe(&event);
     }
 
     Ok(collector.into_entries())
+}
+
+fn with_path(err: markflow_core::MarkflowError, file_path: &str) -> markflow_core::MarkflowError {
+    match err {
+        markflow_core::MarkflowError::MarkdownAdapter(msg) => {
+            markflow_core::MarkflowError::MarkdownAdapter(format!("{msg} ({file_path})"))
+        }
+        other => other,
+    }
 }

@@ -568,7 +568,7 @@ fn normalize_identifier(id: &str) -> String {
     id.trim().to_lowercase()
 }
 
-fn normalize_mdx_jsx_indentation(input: &str) -> String {
+pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
     let mut in_fence = false;
     let mut fence_marker: Option<char> = None;
@@ -680,7 +680,7 @@ fn jsx_close_tag(trimmed: &str) -> Option<String> {
     if name.is_empty() { None } else { Some(name) }
 }
 
-fn build_parse_options(config: ParseConfig) -> ParseOptions {
+pub(crate) fn build_parse_options(config: ParseConfig) -> ParseOptions {
     let mut options = ParseOptions::gfm();
     options.constructs.frontmatter = true;
     options.constructs.math_flow = true;
