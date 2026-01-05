@@ -220,6 +220,7 @@ impl<'a> Context<'a> {
 }
 
 /// Rendering options for the mdast v2 renderer.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Options {
     /// Whether to inject Starlight CSS when components are used.
     pub inject_starlight_css: bool,
