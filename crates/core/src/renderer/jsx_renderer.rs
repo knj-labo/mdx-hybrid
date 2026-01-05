@@ -354,21 +354,23 @@ fn extract_first_unordered_list(input: &str) -> String {
     let mut pos = start;
     while pos < bytes.len() {
         if let Some(open_pos) = find_ul_open(bytes, pos)
-            && open_pos == pos {
-                depth += 1;
-                pos += 3;
-                continue;
-            }
+            && open_pos == pos
+        {
+            depth += 1;
+            pos += 3;
+            continue;
+        }
         if let Some((close_pos, close_len)) = find_ul_close(bytes, pos)
-            && close_pos == pos {
-                depth = depth.saturating_sub(1);
-                pos += close_len;
-                if depth == 0 {
-                    let end = pos;
-                    return input[start..end].to_string();
-                }
-                continue;
+            && close_pos == pos
+        {
+            depth = depth.saturating_sub(1);
+            pos += close_len;
+            if depth == 0 {
+                let end = pos;
+                return input[start..end].to_string();
             }
+            continue;
+        }
         pos += 1;
     }
 

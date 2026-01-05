@@ -143,7 +143,7 @@ pub fn compile_ir(
             Ok(value) => value,
             Err(err) => {
                 let _ = err;
-                
+
                 render_to_jsx(&raw_body)
                     .map_err(|err| super::convert_error(with_path(err, &effective_path)))?
             }
@@ -151,7 +151,8 @@ pub fn compile_ir(
     };
     let (hoisted, jsx) = split_leading_imports(&jsx_full);
 
-    let headings = super::collect_headings(&raw_body, file_type, &effective_path).unwrap_or_default();
+    let headings =
+        super::collect_headings(&raw_body, file_type, &effective_path).unwrap_or_default();
     let layout_import: Option<String> = frontmatter
         .get("layout")
         .and_then(|value| value.as_str())

@@ -195,18 +195,18 @@ impl MdxProcessor {
                                 let _ = el.set_attribute("class", &class);
                                 let _ = el.set_attribute("role", "list");
                                 if let Some(start_value) = el.get_attribute("start")
-                                    && let Ok(start) = start_value.trim().parse::<i64>() {
-                                        let offset = start.saturating_sub(1);
-                                        let style = format!("--sl-steps-start: {}", offset);
-                                        let existing =
-                                            el.get_attribute("style").unwrap_or_default();
-                                        let next_style = if existing.trim().is_empty() {
-                                            style
-                                        } else {
-                                            format!("{};{}", existing, style)
-                                        };
-                                        let _ = el.set_attribute("style", &next_style);
-                                    }
+                                    && let Ok(start) = start_value.trim().parse::<i64>()
+                                {
+                                    let offset = start.saturating_sub(1);
+                                    let style = format!("--sl-steps-start: {}", offset);
+                                    let existing = el.get_attribute("style").unwrap_or_default();
+                                    let next_style = if existing.trim().is_empty() {
+                                        style
+                                    } else {
+                                        format!("{};{}", existing, style)
+                                    };
+                                    let _ = el.set_attribute("style", &next_style);
+                                }
                                 el.set_inner_content(&inner, ContentType::Html);
                             }
                             Ok(())
@@ -399,9 +399,10 @@ impl<'a> TagScanner<'a> {
     ) -> Option<(usize, usize)> {
         for (idx, (open, _)) in pairs.iter().enumerate() {
             if self.matches_tag_at(pos, open)
-                && let Some(end) = self.find_tag_end(pos) {
-                    return Some((idx, end));
-                }
+                && let Some(end) = self.find_tag_end(pos)
+            {
+                return Some((idx, end));
+            }
         }
         None
     }
@@ -414,9 +415,10 @@ impl<'a> TagScanner<'a> {
         while pos < self.bytes.len() {
             for close in closes {
                 if self.matches_tag_at(pos, close)
-                    && let Some(end) = self.find_tag_end(pos) {
-                        return Some((pos, end + 1));
-                    }
+                    && let Some(end) = self.find_tag_end(pos)
+                {
+                    return Some((pos, end + 1));
+                }
             }
             pos += 1;
         }
@@ -470,16 +472,17 @@ where
         }
         if let Some(idx) = active_idx
             && scanner.matches_tag_at(pos, &pairs[idx].1)
-                && let Some(close_end) = scanner.find_tag_end(pos) {
-                    depth = depth.saturating_sub(1);
-                    if depth == 0 && inner_start <= pos {
-                        let inner = &input[inner_start..pos];
-                        replacements.push(normalize(inner));
-                        active_idx = None;
-                    }
-                    pos = close_end + 1;
-                    continue;
-                }
+            && let Some(close_end) = scanner.find_tag_end(pos)
+        {
+            depth = depth.saturating_sub(1);
+            if depth == 0 && inner_start <= pos {
+                let inner = &input[inner_start..pos];
+                replacements.push(normalize(inner));
+                active_idx = None;
+            }
+            pos = close_end + 1;
+            continue;
+        }
         pos += 1;
     }
 
@@ -770,13 +773,14 @@ fn parse_directive_line(rest: &str) -> Option<(String, Option<String>, Option<St
     let mut title = None;
     let mut remaining = rest[end..].trim();
     if remaining.starts_with('[')
-        && let Some(close) = remaining.find(']') {
-            let inner = remaining[1..close].trim();
-            if !inner.is_empty() {
-                title = Some(inner.to_string());
-            }
-            remaining = remaining[close + 1..].trim();
+        && let Some(close) = remaining.find(']')
+    {
+        let inner = remaining[1..close].trim();
+        if !inner.is_empty() {
+            title = Some(inner.to_string());
         }
+        remaining = remaining[close + 1..].trim();
+    }
 
     let mut inline_body = None;
     if inline_close {
@@ -998,18 +1002,19 @@ fn collect_fragments(input: &str) -> Vec<(Option<String>, String)> {
 
     while pos < scanner.bytes.len() {
         if (scanner.matches_tag_at(pos, open_upper) || scanner.matches_tag_at(pos, open_lower))
-            && let Some(open_end) = scanner.find_tag_end(pos) {
-                let open_tag = &input[pos..=open_end];
-                let slot = AttributeReader::new(open_tag).value("slot");
-                if let Some((close_start, close_end)) =
-                    scanner.find_matching_close_multi(open_end + 1, &[close_upper, close_lower])
-                {
-                    let inner = &input[open_end + 1..close_start];
-                    fragments.push((slot, inner.to_string()));
-                    pos = close_end;
-                    continue;
-                }
+            && let Some(open_end) = scanner.find_tag_end(pos)
+        {
+            let open_tag = &input[pos..=open_end];
+            let slot = AttributeReader::new(open_tag).value("slot");
+            if let Some((close_start, close_end)) =
+                scanner.find_matching_close_multi(open_end + 1, &[close_upper, close_lower])
+            {
+                let inner = &input[open_end + 1..close_start];
+                fragments.push((slot, inner.to_string()));
+                pos = close_end;
+                continue;
             }
+        }
         pos += 1;
     }
 
@@ -1067,17 +1072,18 @@ where
         }
         if let Some(idx) = active_idx
             && scanner.matches_tag_at(pos, &pairs[idx].1)
-                && let Some(close_end) = scanner.find_tag_end(pos) {
-                    depth = depth.saturating_sub(1);
-                    if depth == 0 && inner_start <= pos {
-                        let inner = &input[inner_start..pos];
-                        replacements.push(normalize(&open_tag, inner));
-                        open_tag.clear();
-                        active_idx = None;
-                    }
-                    pos = close_end + 1;
-                    continue;
-                }
+            && let Some(close_end) = scanner.find_tag_end(pos)
+        {
+            depth = depth.saturating_sub(1);
+            if depth == 0 && inner_start <= pos {
+                let inner = &input[inner_start..pos];
+                replacements.push(normalize(&open_tag, inner));
+                open_tag.clear();
+                active_idx = None;
+            }
+            pos = close_end + 1;
+            continue;
+        }
         pos += 1;
     }
 
@@ -1329,9 +1335,8 @@ fn has_attribute(tag: &str, name: &str) -> bool {
         let before = rest[..idx].chars().last();
         let after = rest[idx + name.len()..].chars().next();
         let before_ok = before.is_none_or(|ch| ch.is_whitespace() || ch == '<');
-        let after_ok = after.is_none_or(|ch| {
-            ch.is_whitespace() || ch == '=' || ch == '>' || ch == '/'
-        });
+        let after_ok =
+            after.is_none_or(|ch| ch.is_whitespace() || ch == '=' || ch == '>' || ch == '/');
         if before_ok && after_ok {
             return true;
         }
@@ -1382,21 +1387,23 @@ fn find_matching_ol_close(input: &str, mut pos: usize) -> Option<(usize, usize)>
     let mut depth = 1usize;
     while pos < scanner.bytes.len() {
         if scanner.matches_tag_at(pos, b"<ol")
-            && let Some(end) = scanner.find_tag_end(pos) {
-                depth += 1;
-                pos = end + 1;
-                continue;
-            }
+            && let Some(end) = scanner.find_tag_end(pos)
+        {
+            depth += 1;
+            pos = end + 1;
+            continue;
+        }
         if scanner.matches_tag_at(pos, b"</ol")
-            && let Some(end) = scanner.find_tag_end(pos) {
-                depth -= 1;
-                let close_end = end + 1;
-                if depth == 0 {
-                    return Some((pos, close_end));
-                }
-                pos = close_end;
-                continue;
+            && let Some(end) = scanner.find_tag_end(pos)
+        {
+            depth -= 1;
+            let close_end = end + 1;
+            if depth == 0 {
+                return Some((pos, close_end));
             }
+            pos = close_end;
+            continue;
+        }
         pos += 1;
     }
     None
@@ -1428,21 +1435,23 @@ fn extract_first_unordered_list(input: &str) -> String {
     let mut pos = start;
     while pos < bytes.len() {
         if let Some(open_pos) = find_ul_open(bytes, pos)
-            && open_pos == pos {
-                depth += 1;
-                pos += 3;
-                continue;
-            }
+            && open_pos == pos
+        {
+            depth += 1;
+            pos += 3;
+            continue;
+        }
         if let Some((close_pos, close_len)) = find_ul_close(bytes, pos)
-            && close_pos == pos {
-                depth = depth.saturating_sub(1);
-                pos += close_len;
-                if depth == 0 {
-                    let end = pos;
-                    return input[start..end].to_string();
-                }
-                continue;
+            && close_pos == pos
+        {
+            depth = depth.saturating_sub(1);
+            pos += close_len;
+            if depth == 0 {
+                let end = pos;
+                return input[start..end].to_string();
             }
+            continue;
+        }
         pos += 1;
     }
 

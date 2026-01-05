@@ -62,11 +62,12 @@ fn scan_nodes<'a>(
             return (blocks, input.len(), false);
         }
         if bytes.get(cursor) == Some(&b'`')
-            && let Some(end) = find_inline_code_end(bytes, cursor) {
-                push_markdown(&mut blocks, input, cursor, end);
-                cursor = end;
-                continue;
-            }
+            && let Some(end) = find_inline_code_end(bytes, cursor)
+        {
+            push_markdown(&mut blocks, input, cursor, end);
+            cursor = end;
+            continue;
+        }
         let mut next_lt = find_byte(bytes, cursor, b'<');
         while let Some(pos) = next_lt {
             let line_start = find_line_start(bytes, pos);
@@ -254,18 +255,18 @@ fn find_fence_end(bytes: &[u8], start: usize, marker: u8, count: usize) -> Optio
     while pos < bytes.len() {
         if is_line_start(bytes, pos)
             && let Some(marker_pos) = skip_fence_indent(bytes, pos)
-                && bytes.get(marker_pos) == Some(&marker)
-            {
-                let mut run = 0usize;
-                let mut i = marker_pos;
-                while i < bytes.len() && bytes[i] == marker {
-                    run += 1;
-                    i += 1;
-                }
-                if run >= count {
-                    return Some(marker_pos);
-                }
+            && bytes.get(marker_pos) == Some(&marker)
+        {
+            let mut run = 0usize;
+            let mut i = marker_pos;
+            while i < bytes.len() && bytes[i] == marker {
+                run += 1;
+                i += 1;
             }
+            if run >= count {
+                return Some(marker_pos);
+            }
+        }
         pos += 1;
     }
     None
