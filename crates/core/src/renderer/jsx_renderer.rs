@@ -225,12 +225,10 @@ fn append_steps_fragment(output: &mut String, fragment: &str) {
         if !post.trim().is_empty() {
             insert_into_last_list_item(output, post);
         }
+    } else if fragment.contains("<li") && !fragment.contains("<ol") {
+        insert_before_list_close(output, fragment);
     } else {
-        if fragment.contains("<li") && !fragment.contains("<ol") {
-            insert_before_list_close(output, fragment);
-        } else {
-            insert_into_last_list_item(output, fragment);
-        }
+        insert_into_last_list_item(output, fragment);
     }
 }
 
@@ -355,18 +353,15 @@ fn extract_first_unordered_list(input: &str) -> String {
     let mut depth = 0usize;
     let mut pos = start;
     while pos < bytes.len() {
-        if let Some(open_pos) = find_ul_open(bytes, pos) {
-            if open_pos == pos {
+        if let Some(open_pos) = find_ul_open(bytes, pos)
+            && open_pos == pos {
                 depth += 1;
                 pos += 3;
                 continue;
             }
-        }
-        if let Some((close_pos, close_len)) = find_ul_close(bytes, pos) {
-            if close_pos == pos {
-                if depth > 0 {
-                    depth -= 1;
-                }
+        if let Some((close_pos, close_len)) = find_ul_close(bytes, pos)
+            && close_pos == pos {
+                depth = depth.saturating_sub(1);
                 pos += close_len;
                 if depth == 0 {
                     let end = pos;
@@ -374,7 +369,6 @@ fn extract_first_unordered_list(input: &str) -> String {
                 }
                 continue;
             }
-        }
         pos += 1;
     }
 

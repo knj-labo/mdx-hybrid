@@ -61,13 +61,12 @@ fn scan_nodes<'a>(
             }
             return (blocks, input.len(), false);
         }
-        if bytes.get(cursor) == Some(&b'`') {
-            if let Some(end) = find_inline_code_end(bytes, cursor) {
+        if bytes.get(cursor) == Some(&b'`')
+            && let Some(end) = find_inline_code_end(bytes, cursor) {
                 push_markdown(&mut blocks, input, cursor, end);
                 cursor = end;
                 continue;
             }
-        }
         let mut next_lt = find_byte(bytes, cursor, b'<');
         while let Some(pos) = next_lt {
             let line_start = find_line_start(bytes, pos);
@@ -80,13 +79,11 @@ fn scan_nodes<'a>(
         let next_fence = find_fence_start(bytes, cursor);
         let next_tick = find_byte(bytes, cursor, b'`');
         let mut next_stop: Option<usize> = None;
-        for candidate in [next_lt, next_fence, next_tick] {
-            if let Some(pos) = candidate {
-                next_stop = Some(match next_stop {
-                    Some(current) => current.min(pos),
-                    None => pos,
-                });
-            }
+        for pos in [next_lt, next_fence, next_tick].into_iter().flatten() {
+            next_stop = Some(match next_stop {
+                Some(current) => current.min(pos),
+                None => pos,
+            });
         }
         if next_stop.is_none() {
             push_markdown(&mut blocks, input, cursor, input.len());
@@ -255,8 +252,8 @@ fn find_fence_start(bytes: &[u8], start: usize) -> Option<usize> {
 fn find_fence_end(bytes: &[u8], start: usize, marker: u8, count: usize) -> Option<usize> {
     let mut pos = start;
     while pos < bytes.len() {
-        if is_line_start(bytes, pos) {
-            if let Some(marker_pos) = skip_fence_indent(bytes, pos)
+        if is_line_start(bytes, pos)
+            && let Some(marker_pos) = skip_fence_indent(bytes, pos)
                 && bytes.get(marker_pos) == Some(&marker)
             {
                 let mut run = 0usize;
@@ -269,7 +266,6 @@ fn find_fence_end(bytes: &[u8], start: usize, marker: u8, count: usize) -> Optio
                     return Some(marker_pos);
                 }
             }
-        }
         pos += 1;
     }
     None

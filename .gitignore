@@ -183,3 +183,7 @@ tmp/
 
 # Astro dev artifacts
 .astro/
+
+# Debug files (visual diff and semantic diff outputs)
+raw_*.html
+diff_*.html

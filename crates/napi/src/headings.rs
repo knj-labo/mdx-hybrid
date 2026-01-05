@@ -101,7 +101,7 @@ pub(crate) fn collect_headings(
         FileType::Mdx => markflow_core::ParseConfig::mdx(),
     };
     let event_iterator = markflow_core::get_event_iterator_with_config(raw_body, config)
-        .map_err(|err| convert_error(with_path(err.into(), file_path)))?;
+        .map_err(|err| convert_error(with_path(err, file_path)))?;
 
     for event in event_iterator {
         collector.observe(&event);

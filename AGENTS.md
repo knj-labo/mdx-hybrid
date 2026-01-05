@@ -19,6 +19,9 @@
 - `node scripts/run-astro-harness.mjs markflow`: run the Astro harness once (use `baseline`; add `--skip-install` to reuse deps).
 - `node scripts/compare-astro-harness.mjs --mode=semantic`: baseline vs Markflow build + structure diff (use `--mode=time` for perf-only).
 - `node scripts/ast-compare/run.mjs --dir fixtures/integration/astro-harness/content/docs`: compare AST output for a directory.
+- `pnpm compare:withastro-docs -- --mode=semantic`: baseline vs Markflow semantic HTML diff using withastro/docs (default routes from `semantic-routes.txt`; use `--all` for all routes).
+- `pnpm visual:withastro-docs -- --build`: screenshot regression testing with Playwright + pixelmatch (use `--max N` to limit routes; results in `fixtures/integration/withastro-docs/visual-diff/`).
+- `node scripts/clean-all.mjs`: cleanup build artifacts for fresh harness run.
 - `cargo build`: build the Rust workspace crates.
 
 ## Coding Style & Naming Conventions

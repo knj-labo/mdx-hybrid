@@ -194,8 +194,8 @@ impl MdxProcessor {
                                 let class = append_class(&class, "sl-steps");
                                 let _ = el.set_attribute("class", &class);
                                 let _ = el.set_attribute("role", "list");
-                                if let Some(start_value) = el.get_attribute("start") {
-                                    if let Ok(start) = start_value.trim().parse::<i64>() {
+                                if let Some(start_value) = el.get_attribute("start")
+                                    && let Ok(start) = start_value.trim().parse::<i64>() {
                                         let offset = start.saturating_sub(1);
                                         let style = format!("--sl-steps-start: {}", offset);
                                         let existing =
@@ -207,7 +207,6 @@ impl MdxProcessor {
                                         };
                                         let _ = el.set_attribute("style", &next_style);
                                     }
-                                }
                                 el.set_inner_content(&inner, ContentType::Html);
                             }
                             Ok(())
@@ -243,12 +242,12 @@ impl MdxProcessor {
                             if let Some(next) = tabs_queue.borrow_mut().pop_front() {
                                 let _ = el.set_tag_name("starlight-tabs");
                                 let _ = el.set_attribute("class", "starlight-tabs");
-                                let _ = el.remove_attribute("syncKey");
-                                let _ = el.remove_attribute("sync-key");
+                                el.remove_attribute("syncKey");
+                                el.remove_attribute("sync-key");
                                 if let Some(sync_key) = &next.sync_key {
                                     let _ = el.set_attribute("data-sync-key", sync_key);
                                 } else {
-                                    let _ = el.remove_attribute("data-sync-key");
+                                    el.remove_attribute("data-sync-key");
                                 }
                                 el.set_inner_content(&next.inner_html, ContentType::Html);
                             }
@@ -261,12 +260,12 @@ impl MdxProcessor {
                             if let Some(next) = astro_jsx_tabs_queue.borrow_mut().pop_front() {
                                 let _ = el.set_tag_name("starlight-tabs");
                                 let _ = el.set_attribute("class", "starlight-tabs");
-                                let _ = el.remove_attribute("syncKey");
-                                let _ = el.remove_attribute("sync-key");
+                                el.remove_attribute("syncKey");
+                                el.remove_attribute("sync-key");
                                 if let Some(sync_key) = &next.sync_key {
                                     let _ = el.set_attribute("data-sync-key", sync_key);
                                 } else {
-                                    let _ = el.remove_attribute("data-sync-key");
+                                    el.remove_attribute("data-sync-key");
                                 }
                                 el.set_inner_content(&next.inner_html, ContentType::Html);
                             }
@@ -279,12 +278,12 @@ impl MdxProcessor {
                             if let Some(next) = package_tabs_queue.borrow_mut().pop_front() {
                                 let _ = el.set_tag_name("starlight-tabs");
                                 let _ = el.set_attribute("class", "starlight-tabs");
-                                let _ = el.remove_attribute("syncKey");
-                                let _ = el.remove_attribute("sync-key");
+                                el.remove_attribute("syncKey");
+                                el.remove_attribute("sync-key");
                                 if let Some(sync_key) = &next.sync_key {
                                     let _ = el.set_attribute("data-sync-key", sync_key);
                                 } else {
-                                    let _ = el.remove_attribute("data-sync-key");
+                                    el.remove_attribute("data-sync-key");
                                 }
                                 el.set_inner_content(&next.inner_html, ContentType::Html);
                             }
@@ -399,11 +398,10 @@ impl<'a> TagScanner<'a> {
         pairs: &[(Vec<u8>, Vec<u8>)],
     ) -> Option<(usize, usize)> {
         for (idx, (open, _)) in pairs.iter().enumerate() {
-            if self.matches_tag_at(pos, open) {
-                if let Some(end) = self.find_tag_end(pos) {
+            if self.matches_tag_at(pos, open)
+                && let Some(end) = self.find_tag_end(pos) {
                     return Some((idx, end));
                 }
-            }
         }
         None
     }
@@ -415,11 +413,10 @@ impl<'a> TagScanner<'a> {
     ) -> Option<(usize, usize)> {
         while pos < self.bytes.len() {
             for close in closes {
-                if self.matches_tag_at(pos, close) {
-                    if let Some(end) = self.find_tag_end(pos) {
+                if self.matches_tag_at(pos, close)
+                    && let Some(end) = self.find_tag_end(pos) {
                         return Some((pos, end + 1));
                     }
-                }
             }
             pos += 1;
         }
@@ -471,12 +468,10 @@ where
             pos = open_end + 1;
             continue;
         }
-        if let Some(idx) = active_idx {
-            if scanner.matches_tag_at(pos, &pairs[idx].1) {
-                if let Some(close_end) = scanner.find_tag_end(pos) {
-                    if depth > 0 {
-                        depth -= 1;
-                    }
+        if let Some(idx) = active_idx
+            && scanner.matches_tag_at(pos, &pairs[idx].1)
+                && let Some(close_end) = scanner.find_tag_end(pos) {
+                    depth = depth.saturating_sub(1);
                     if depth == 0 && inner_start <= pos {
                         let inner = &input[inner_start..pos];
                         replacements.push(normalize(inner));
@@ -485,8 +480,6 @@ where
                     pos = close_end + 1;
                     continue;
                 }
-            }
-        }
         pos += 1;
     }
 
@@ -747,9 +740,9 @@ fn parse_directive_line(rest: &str) -> Option<(String, Option<String>, Option<St
 
     let mut inline_close = false;
     let trimmed = rest.trim_end();
-    if trimmed.ends_with(":::") {
+    if let Some(stripped) = trimmed.strip_suffix(":::") {
         inline_close = true;
-        rest = trimmed[..trimmed.len() - 3].trim_end();
+        rest = stripped.trim_end();
     } else {
         rest = trimmed;
     }
@@ -776,15 +769,14 @@ fn parse_directive_line(rest: &str) -> Option<(String, Option<String>, Option<St
 
     let mut title = None;
     let mut remaining = rest[end..].trim();
-    if remaining.starts_with('[') {
-        if let Some(close) = remaining.find(']') {
+    if remaining.starts_with('[')
+        && let Some(close) = remaining.find(']') {
             let inner = remaining[1..close].trim();
             if !inner.is_empty() {
                 title = Some(inner.to_string());
             }
             remaining = remaining[close + 1..].trim();
         }
-    }
 
     let mut inline_body = None;
     if inline_close {
@@ -923,7 +915,7 @@ fn normalize_tabs_html(open_tag: &str, inner: &str) -> TabsReplacement {
         if idx != 0 {
             output.push_str(" hidden");
         }
-        output.push_str(">");
+        output.push('>');
         output.push_str(&render_fragment_markdown(&fragment));
         output.push_str("</div>");
     }
@@ -1005,8 +997,8 @@ fn collect_fragments(input: &str) -> Vec<(Option<String>, String)> {
     let mut pos = 0usize;
 
     while pos < scanner.bytes.len() {
-        if scanner.matches_tag_at(pos, open_upper) || scanner.matches_tag_at(pos, open_lower) {
-            if let Some(open_end) = scanner.find_tag_end(pos) {
+        if (scanner.matches_tag_at(pos, open_upper) || scanner.matches_tag_at(pos, open_lower))
+            && let Some(open_end) = scanner.find_tag_end(pos) {
                 let open_tag = &input[pos..=open_end];
                 let slot = AttributeReader::new(open_tag).value("slot");
                 if let Some((close_start, close_end)) =
@@ -1018,7 +1010,6 @@ fn collect_fragments(input: &str) -> Vec<(Option<String>, String)> {
                     continue;
                 }
             }
-        }
         pos += 1;
     }
 
@@ -1074,12 +1065,10 @@ where
             pos = open_end + 1;
             continue;
         }
-        if let Some(idx) = active_idx {
-            if scanner.matches_tag_at(pos, &pairs[idx].1) {
-                if let Some(close_end) = scanner.find_tag_end(pos) {
-                    if depth > 0 {
-                        depth -= 1;
-                    }
+        if let Some(idx) = active_idx
+            && scanner.matches_tag_at(pos, &pairs[idx].1)
+                && let Some(close_end) = scanner.find_tag_end(pos) {
+                    depth = depth.saturating_sub(1);
                     if depth == 0 && inner_start <= pos {
                         let inner = &input[inner_start..pos];
                         replacements.push(normalize(&open_tag, inner));
@@ -1089,8 +1078,6 @@ where
                     pos = close_end + 1;
                     continue;
                 }
-            }
-        }
         pos += 1;
     }
 
@@ -1217,12 +1204,12 @@ fn rewrite_tabs_only(input: &str) -> Result<String, MarkflowError> {
                         if let Some(next) = tabs_queue.borrow_mut().pop_front() {
                             let _ = el.set_tag_name("starlight-tabs");
                             let _ = el.set_attribute("class", "starlight-tabs");
-                            let _ = el.remove_attribute("syncKey");
-                            let _ = el.remove_attribute("sync-key");
+                            el.remove_attribute("syncKey");
+                            el.remove_attribute("sync-key");
                             if let Some(sync_key) = &next.sync_key {
                                 let _ = el.set_attribute("data-sync-key", sync_key);
                             } else {
-                                let _ = el.remove_attribute("data-sync-key");
+                                el.remove_attribute("data-sync-key");
                             }
                             el.set_inner_content(&next.inner_html, ContentType::Html);
                         }
@@ -1235,12 +1222,12 @@ fn rewrite_tabs_only(input: &str) -> Result<String, MarkflowError> {
                         if let Some(next) = astro_jsx_tabs_queue.borrow_mut().pop_front() {
                             let _ = el.set_tag_name("starlight-tabs");
                             let _ = el.set_attribute("class", "starlight-tabs");
-                            let _ = el.remove_attribute("syncKey");
-                            let _ = el.remove_attribute("sync-key");
+                            el.remove_attribute("syncKey");
+                            el.remove_attribute("sync-key");
                             if let Some(sync_key) = &next.sync_key {
                                 let _ = el.set_attribute("data-sync-key", sync_key);
                             } else {
-                                let _ = el.remove_attribute("data-sync-key");
+                                el.remove_attribute("data-sync-key");
                             }
                             el.set_inner_content(&next.inner_html, ContentType::Html);
                         }
@@ -1253,12 +1240,12 @@ fn rewrite_tabs_only(input: &str) -> Result<String, MarkflowError> {
                         if let Some(next) = package_tabs_queue.borrow_mut().pop_front() {
                             let _ = el.set_tag_name("starlight-tabs");
                             let _ = el.set_attribute("class", "starlight-tabs");
-                            let _ = el.remove_attribute("syncKey");
-                            let _ = el.remove_attribute("sync-key");
+                            el.remove_attribute("syncKey");
+                            el.remove_attribute("sync-key");
                             if let Some(sync_key) = &next.sync_key {
                                 let _ = el.set_attribute("data-sync-key", sync_key);
                             } else {
-                                let _ = el.remove_attribute("data-sync-key");
+                                el.remove_attribute("data-sync-key");
                             }
                             el.set_inner_content(&next.inner_html, ContentType::Html);
                         }
@@ -1341,8 +1328,8 @@ fn has_attribute(tag: &str, name: &str) -> bool {
     while let Some(idx) = rest.find(name) {
         let before = rest[..idx].chars().last();
         let after = rest[idx + name.len()..].chars().next();
-        let before_ok = before.map_or(true, |ch| ch.is_whitespace() || ch == '<');
-        let after_ok = after.map_or(true, |ch| {
+        let before_ok = before.is_none_or(|ch| ch.is_whitespace() || ch == '<');
+        let after_ok = after.is_none_or(|ch| {
             ch.is_whitespace() || ch == '=' || ch == '>' || ch == '/'
         });
         if before_ok && after_ok {
@@ -1394,15 +1381,14 @@ fn find_matching_ol_close(input: &str, mut pos: usize) -> Option<(usize, usize)>
     let scanner = TagScanner::new(input);
     let mut depth = 1usize;
     while pos < scanner.bytes.len() {
-        if scanner.matches_tag_at(pos, b"<ol") {
-            if let Some(end) = scanner.find_tag_end(pos) {
+        if scanner.matches_tag_at(pos, b"<ol")
+            && let Some(end) = scanner.find_tag_end(pos) {
                 depth += 1;
                 pos = end + 1;
                 continue;
             }
-        }
-        if scanner.matches_tag_at(pos, b"</ol") {
-            if let Some(end) = scanner.find_tag_end(pos) {
+        if scanner.matches_tag_at(pos, b"</ol")
+            && let Some(end) = scanner.find_tag_end(pos) {
                 depth -= 1;
                 let close_end = end + 1;
                 if depth == 0 {
@@ -1411,7 +1397,6 @@ fn find_matching_ol_close(input: &str, mut pos: usize) -> Option<(usize, usize)>
                 pos = close_end;
                 continue;
             }
-        }
         pos += 1;
     }
     None
@@ -1442,18 +1427,15 @@ fn extract_first_unordered_list(input: &str) -> String {
     let mut depth = 0usize;
     let mut pos = start;
     while pos < bytes.len() {
-        if let Some(open_pos) = find_ul_open(bytes, pos) {
-            if open_pos == pos {
+        if let Some(open_pos) = find_ul_open(bytes, pos)
+            && open_pos == pos {
                 depth += 1;
                 pos += 3;
                 continue;
             }
-        }
-        if let Some((close_pos, close_len)) = find_ul_close(bytes, pos) {
-            if close_pos == pos {
-                if depth > 0 {
-                    depth -= 1;
-                }
+        if let Some((close_pos, close_len)) = find_ul_close(bytes, pos)
+            && close_pos == pos {
+                depth = depth.saturating_sub(1);
                 pos += close_len;
                 if depth == 0 {
                     let end = pos;
@@ -1461,7 +1443,6 @@ fn extract_first_unordered_list(input: &str) -> String {
                 }
                 continue;
             }
-        }
         pos += 1;
     }
 
@@ -1475,7 +1456,7 @@ fn extract_ordered_list_inner(input: &str) -> Option<String> {
 
 fn append_class(existing: &str, class_name: &str) -> String {
     let mut classes: Vec<&str> = existing.split_whitespace().collect();
-    if !classes.iter().any(|name| *name == class_name) {
+    if !classes.contains(&class_name) {
         classes.push(class_name);
     }
     classes.join(" ")
@@ -1544,7 +1525,7 @@ fn ensure_tag_class(tag: &str, class_name: &str) -> String {
         out.push_str(&tag[..idx]);
         out.push_str(" class=\"");
         out.push_str(class_name);
-        out.push_str("\"");
+        out.push('"');
         out.push_str(&tag[idx..]);
         return out;
     }

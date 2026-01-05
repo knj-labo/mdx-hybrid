@@ -143,18 +143,15 @@ pub fn compile_ir(
             Ok(value) => value,
             Err(err) => {
                 let _ = err;
-                let fallback = render_to_jsx(&raw_body)
-                    .map_err(|err| super::convert_error(with_path(err, &effective_path)))?;
-                fallback
+                
+                render_to_jsx(&raw_body)
+                    .map_err(|err| super::convert_error(with_path(err, &effective_path)))?
             }
         },
     };
     let (hoisted, jsx) = split_leading_imports(&jsx_full);
 
-    let headings = match super::collect_headings(&raw_body, file_type, &effective_path) {
-        Ok(value) => value,
-        Err(_) => Vec::new(),
-    };
+    let headings = super::collect_headings(&raw_body, file_type, &effective_path).unwrap_or_default();
     let layout_import: Option<String> = frontmatter
         .get("layout")
         .and_then(|value| value.as_str())
