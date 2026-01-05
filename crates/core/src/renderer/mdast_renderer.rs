@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use lol_html::html_content::ContentType;
-use lol_html::{element, rewrite_str, RewriteStrSettings};
+use lol_html::{RewriteStrSettings, element, rewrite_str};
 use markdown::{CompileOptions, Options, ParseOptions, to_html_with_options};
 use serde_json::to_string;
 
@@ -96,15 +96,19 @@ struct MdxProcessor {
 impl MdxProcessor {
     fn new(input: &str) -> Self {
         let normalized = unescape_target_tags(input);
-        let steps = collect_tag_replacements_multi(&normalized, &["Steps", "steps"], normalize_steps_html);
+        let steps =
+            collect_tag_replacements_multi(&normalized, &["Steps", "steps"], normalize_steps_html);
         let file_trees = collect_tag_replacements_multi(
             &normalized,
             &["FileTree", "filetree"],
             normalize_file_tree_html,
         );
         let asides = collect_aside_replacements(&normalized);
-        let tabs =
-            collect_tag_replacements_with_open_multi(&normalized, &["Tabs", "tabs"], normalize_tabs_html);
+        let tabs = collect_tag_replacements_with_open_multi(
+            &normalized,
+            &["Tabs", "tabs"],
+            normalize_tabs_html,
+        );
         let astro_jsx_tabs = collect_tag_replacements_with_open_multi(
             &normalized,
             &["AstroJSXTabs", "astrojsxtabs"],
@@ -116,12 +120,21 @@ impl MdxProcessor {
             normalize_tabs_html,
         );
         let checklists = collect_checklist_replacements(&normalized);
-        let read_mores =
-            collect_tag_replacements_multi(&normalized, &["ReadMore", "readmore"], normalize_read_more_html);
-        let card_grids =
-            collect_tag_replacements_with_open_multi(&normalized, &["CardGrid", "cardgrid"], normalize_card_grid_html);
-        let link_cards =
-            collect_tag_replacements_with_open_multi(&normalized, &["LinkCard", "linkcard"], normalize_link_card_html);
+        let read_mores = collect_tag_replacements_multi(
+            &normalized,
+            &["ReadMore", "readmore"],
+            normalize_read_more_html,
+        );
+        let card_grids = collect_tag_replacements_with_open_multi(
+            &normalized,
+            &["CardGrid", "cardgrid"],
+            normalize_card_grid_html,
+        );
+        let link_cards = collect_tag_replacements_with_open_multi(
+            &normalized,
+            &["LinkCard", "linkcard"],
+            normalize_link_card_html,
+        );
         let has_pre = normalized.contains("<pre");
 
         Self {
@@ -185,7 +198,8 @@ impl MdxProcessor {
                                     if let Ok(start) = start_value.trim().parse::<i64>() {
                                         let offset = start.saturating_sub(1);
                                         let style = format!("--sl-steps-start: {}", offset);
-                                        let existing = el.get_attribute("style").unwrap_or_default();
+                                        let existing =
+                                            el.get_attribute("style").unwrap_or_default();
                                         let next_style = if existing.trim().is_empty() {
                                             style
                                         } else {
@@ -435,7 +449,12 @@ where
     let scanner = TagScanner::new(input);
     let pairs: Vec<(Vec<u8>, Vec<u8>)> = tags
         .iter()
-        .map(|tag| (format!("<{}", tag).into_bytes(), format!("</{}", tag).into_bytes()))
+        .map(|tag| {
+            (
+                format!("<{}", tag).into_bytes(),
+                format!("</{}", tag).into_bytes(),
+            )
+        })
         .collect();
     let mut pos = 0;
     let mut depth = 0usize;
@@ -748,7 +767,10 @@ fn parse_directive_line(rest: &str) -> Option<(String, Option<String>, Option<St
     }
     let kind = rest[..end].trim();
     let kind = kind.to_ascii_lowercase();
-    if !matches!(kind.as_str(), "tip" | "note" | "caution" | "danger" | "info") {
+    if !matches!(
+        kind.as_str(),
+        "tip" | "note" | "caution" | "danger" | "info"
+    ) {
         return None;
     }
 
@@ -818,7 +840,11 @@ fn collect_aside_replacements(input: &str) -> Vec<AsideReplacement> {
 }
 
 fn collect_checklist_replacements(input: &str) -> Vec<ChecklistReplacement> {
-    collect_tag_replacements_with_open_multi(input, &["Checklist", "checklist"], normalize_checklist_html)
+    collect_tag_replacements_with_open_multi(
+        input,
+        &["Checklist", "checklist"],
+        normalize_checklist_html,
+    )
 }
 
 fn normalize_checklist_html(open_tag: &str, inner: &str) -> ChecklistReplacement {
@@ -833,9 +859,7 @@ fn normalize_checklist_html(open_tag: &str, inner: &str) -> ChecklistReplacement
 
 fn normalize_aside_html(open_tag: &str, inner: &str) -> AsideReplacement {
     let attrs = AttributeReader::new(open_tag);
-    let aside_type = attrs
-        .value("type")
-        .unwrap_or_else(|| "note".to_string());
+    let aside_type = attrs.value("type").unwrap_or_else(|| "note".to_string());
     let title = attrs
         .value("title")
         .unwrap_or_else(|| capitalize_word(&aside_type));
@@ -874,7 +898,8 @@ fn normalize_tabs_html(open_tag: &str, inner: &str) -> TabsReplacement {
     for (idx, (slot, _)) in fragments.iter().enumerate() {
         let tab_id = base + idx;
         let label = tab_label(slot.as_deref(), idx);
-        output.push_str("<li role=\"presentation\" class=\"tab\"><a role=\"tab\" href=\"#tab-panel-");
+        output
+            .push_str("<li role=\"presentation\" class=\"tab\"><a role=\"tab\" href=\"#tab-panel-");
         output.push_str(&tab_id.to_string());
         output.push_str("\" id=\"tab-");
         output.push_str(&tab_id.to_string());
@@ -1007,7 +1032,6 @@ fn tab_label(slot: Option<&str>, index: usize) -> String {
     }
 }
 
-
 fn collect_tag_replacements_with_open_multi<T, F>(
     input: &str,
     tags: &[&str],
@@ -1020,7 +1044,12 @@ where
     let scanner = TagScanner::new(input);
     let pairs: Vec<(Vec<u8>, Vec<u8>)> = tags
         .iter()
-        .map(|tag| (format!("<{}", tag).into_bytes(), format!("</{}", tag).into_bytes()))
+        .map(|tag| {
+            (
+                format!("<{}", tag).into_bytes(),
+                format!("</{}", tag).into_bytes(),
+            )
+        })
         .collect();
     let mut pos = 0usize;
     let mut depth = 0usize;
@@ -1157,7 +1186,8 @@ fn dedent_one_level(input: &str) -> String {
 }
 
 fn rewrite_tabs_only(input: &str) -> Result<String, MarkflowError> {
-    let tabs = collect_tag_replacements_with_open_multi(input, &["Tabs", "tabs"], normalize_tabs_html);
+    let tabs =
+        collect_tag_replacements_with_open_multi(input, &["Tabs", "tabs"], normalize_tabs_html);
     let astro_jsx_tabs = collect_tag_replacements_with_open_multi(
         input,
         &["AstroJSXTabs", "astrojsxtabs"],
@@ -1312,7 +1342,9 @@ fn has_attribute(tag: &str, name: &str) -> bool {
         let before = rest[..idx].chars().last();
         let after = rest[idx + name.len()..].chars().next();
         let before_ok = before.map_or(true, |ch| ch.is_whitespace() || ch == '<');
-        let after_ok = after.map_or(true, |ch| ch.is_whitespace() || ch == '=' || ch == '>' || ch == '/');
+        let after_ok = after.map_or(true, |ch| {
+            ch.is_whitespace() || ch == '=' || ch == '>' || ch == '/'
+        });
         if before_ok && after_ok {
             return true;
         }
@@ -1537,7 +1569,11 @@ fn find_ul_open(bytes: &[u8], start: usize) -> Option<usize> {
 fn find_ul_close(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
     let mut pos = start;
     while pos + 3 < bytes.len() {
-        if bytes[pos] == b'<' && bytes[pos + 1] == b'/' && bytes[pos + 2] == b'u' && bytes[pos + 3] == b'l' {
+        if bytes[pos] == b'<'
+            && bytes[pos + 1] == b'/'
+            && bytes[pos + 2] == b'u'
+            && bytes[pos + 3] == b'l'
+        {
             let mut end = pos + 4;
             while end < bytes.len() {
                 match bytes[end] {

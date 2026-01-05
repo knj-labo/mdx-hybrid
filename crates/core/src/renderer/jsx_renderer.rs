@@ -1,8 +1,8 @@
 #![allow(missing_docs)]
 use crate::event::{CodeBlockKind, Event, HeadingLevel, Tag, TagEnd};
 use crate::renderer::multipass::{Block, scan};
-use crate::{DirectiveAdapter, HoistAdapter, MarkflowError, RewriteOptions, get_event_iterator};
 use crate::transform::code_fence::collect_root_imports;
+use crate::{DirectiveAdapter, HoistAdapter, MarkflowError, RewriteOptions, get_event_iterator};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -153,7 +153,10 @@ fn render_blocks(
     Ok(output)
 }
 
-fn render_block(block: &Block<'_>, rewrite_options: &RewriteOptions) -> Result<String, MarkflowError> {
+fn render_block(
+    block: &Block<'_>,
+    rewrite_options: &RewriteOptions,
+) -> Result<String, MarkflowError> {
     match block {
         Block::Markdown(text) => render_markdown_events(text, rewrite_options),
         Block::Code(text) => render_markdown_events(text, rewrite_options),
@@ -281,10 +284,7 @@ fn render_file_tree_children(
             }
             _ => {
                 if !markdown_buffer.is_empty() {
-                    output.push_str(&render_markdown_events(
-                        &markdown_buffer,
-                        rewrite_options,
-                    )?);
+                    output.push_str(&render_markdown_events(&markdown_buffer, rewrite_options)?);
                     markdown_buffer.clear();
                 }
                 output.push_str(&render_block(child, rewrite_options)?);
@@ -398,7 +398,11 @@ fn find_ul_open(bytes: &[u8], start: usize) -> Option<usize> {
 fn find_ul_close(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
     let mut pos = start;
     while pos + 3 < bytes.len() {
-        if bytes[pos] == b'<' && bytes[pos + 1] == b'/' && bytes[pos + 2] == b'u' && bytes[pos + 3] == b'l' {
+        if bytes[pos] == b'<'
+            && bytes[pos + 1] == b'/'
+            && bytes[pos + 2] == b'u'
+            && bytes[pos + 3] == b'l'
+        {
             let mut end = pos + 4;
             while end < bytes.len() {
                 match bytes[end] {
