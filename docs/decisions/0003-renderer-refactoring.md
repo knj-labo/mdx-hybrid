@@ -60,13 +60,13 @@
 ### 設計方針
 
 1. **TagScanner の完全削除**: 二重パースを排除
-2. **Ctx 構造体の導入**: プッシュダウン・オートマトンで状態管理
+2. **Context 構造体の導入**: プッシュダウン・オートマトンで状態管理
 3. **AST直接トラバース**: `markdown-rs` の mdast を直接走査
 4. **段階的移行**: 既存コードを壊さず、並行実装してから切り替え
 
 ## Future Implementation Plan (実装の詳細設計)
 
-### 1. 新しい状態管理構造体 `Ctx` の導入
+### 1. 新しい状態管理構造体 `Context` の導入
 
 グローバルな状態や `Rc/RefCell` を排除し、レンダリング中のコンテキストを単一の構造体で管理する。
 
@@ -74,7 +74,7 @@
 use std::fmt::Write; // 文字列への書き込み用
 
 /// レンダリング中の「現在の状態」を管理する構造体
-pub struct Ctx<'a> {
+pub struct Context<'a> {
     /// 出力バッファ（ここにHTMLを書き込んでいく）
     pub buf: String,
 
@@ -83,7 +83,10 @@ pub struct Ctx<'a> {
     pub stack: Vec<NodeKind>,
 
     /// 設定やメタデータ（必要に応じて）
-    pub options: &'a RenderOptions,
+    pub options: &'a Options,
+
+    /// このページで Starlight コンポーネントが使用されたかを追跡
+    pub needs_starlight_css: bool,
 }
 
 /// スタックに積む「現在の居場所」の種類
@@ -111,12 +114,13 @@ pub struct CardMeta {
     pub icon: Option<String>,
 }
 
-impl<'a> Ctx<'a> {
-    pub fn new(options: &'a RenderOptions) -> Self {
+impl<'a> Context<'a> {
+    pub fn new(options: &'a Options) -> Self {
         Self {
             buf: String::with_capacity(1024 * 16),
             stack: vec![NodeKind::Root], // 最初はRootにいる
             options,
+            needs_starlight_css: false,
         }
     }
 
@@ -139,9 +143,14 @@ impl<'a> Ctx<'a> {
     pub fn exit(&mut self) -> Option<NodeKind> {
         self.stack.pop()
     }
+
+    /// Starlight コンポーネントが使用されたことをマーク
+    pub fn mark_starlight_used(&mut self) {
+        self.needs_starlight_css = true;
+    }
 }
 
-pub struct RenderOptions {
+pub struct Options {
     pub inject_starlight_css: bool,
     pub enable_directives: bool,
     // 必要な設定を追加
@@ -154,13 +163,15 @@ MarkdownのAST（またはイベントストリーム）を受け取り、再帰
 
 ```rust
 /// ASTノードを受け取り、状態を遷移させながらHTMLを書き込む
-fn render_node(node: &Node, ctx: &mut Ctx) {
+fn render_node(node: &Node, ctx: &mut Context) {
     match node {
         // コンテナディレクティブ (::: note ...) に相当するノードが来た場合
         Node::ContainerDirective(directive) => {
             // 1. Enter: <aside>タグを開く処理
             let kind = directive.name.clone();
             let title = directive.attributes.get("title").cloned();
+
+            ctx.mark_starlight_used(); // CSS注入が必要
 
             ctx.push_str(&format!(r#"<aside class="starlight-aside starlight-aside--{}">"#, kind));
             if let Some(t) = &title {
@@ -227,18 +238,41 @@ fn escape_attr(s: &str) -> String {
 }
 ```
 
-### 3. 段階的移行ステップ（推奨実装順序）
+### 3. エントリーポイント `to_html`
+
+```rust
+pub fn to_html(input: &str, options: &Options) -> Result<String, MarkflowError> {
+    // 1. Parse to MDAST
+    let mdast_options = build_mdast_options();
+    let tree = markdown::to_mdast(input, &mdast_options)
+        .map_err(|e| MarkflowError::MarkdownAdapter(e.to_string()))?;
+
+    // 2. Traversal
+    let mut ctx = Context::new(options);
+    render_node(&tree, &mut ctx);
+
+    // 3. Post-process: CSS injection if needed
+    if ctx.needs_starlight_css {
+        let css = include_str!("starlight_components.css");
+        ctx.buf = format!("<style is:global>{}</style>\n{}", css, ctx.buf);
+    }
+
+    Ok(ctx.buf)
+}
+```
+
+### 4. 段階的移行ステップ（推奨実装順序）
 
 #### Phase 1: 基盤構築 (1-2日)
-1. **新しいモジュール作成**: `crates/core/src/renderer/mdast_v2.rs`
-2. **Ctx 構造体の実装**: 上記のコードをそのまま実装
+1. **新しいモジュール作成**: `crates/core/src/renderer/mdast.rs`
+2. **Context 構造体の実装**: 上記のコードをそのまま実装
 3. **最小限のテスト**: Text ノードだけをレンダリングするテストを書く
 
 ```rust
 #[test]
 fn test_render_text_only() {
     let node = Node::Text(Text { value: "Hello".to_string() });
-    let mut ctx = Ctx::new(&RenderOptions::default());
+    let mut ctx = Context::new(&Options::default());
     render_node(&node, &mut ctx);
     assert_eq!(ctx.buf, "Hello");
 }
@@ -264,7 +298,7 @@ fn test_render_text_only() {
 2. 古い `TagScanner` と `MdxProcessor` を削除
 3. 最終的な統合テスト
 
-### 4. テスト戦略
+### 5. テスト戦略
 
 **ユニットテスト（必須）:**
 ```rust
@@ -277,7 +311,7 @@ This is a **note** with [link](/path).
 :::
 </Card>
     "#;
-    let result = render_v2(input);
+    let result = to_html(input, &Options::default());
     assert!(result.contains("<aside"));
     assert!(result.contains("<strong>note</strong>"));
     assert!(result.contains(r#"<a href="/path">link</a>"#));
@@ -298,6 +332,7 @@ This is a **note** with [link](/path).
 - ✅ **UTF-8対応**: バイト単位の操作を排除し、マルチバイト文字に完全対応
 - ✅ **エラーメッセージ改善**: ソースマップを保持できるようになる
 - ✅ **拡張性**: 新しいコンポーネント追加が簡単
+- ✅ **CSS注入の安定性**: ページごとの Context で管理し、グローバル状態を排除
 
 ### Negative (トレードオフ)
 - ❌ **初期投資の大きさ**: 2-3週間の実装期間が必要
@@ -321,9 +356,10 @@ This is a **note** with [link](/path).
 1. デフォルトパイプラインは Multipass（env: `MARKFLOW_PIPELINE=mdast` で切り替え可能）
 2. `render_jsx_inner_markdown` の UTF-8 バグにより、アラビア語ページでパニック
 3. 正規表現アプローチは限界に達している
+4. **グローバル状態（`AtomicBool`）による CSS 注入は複数ページで競合のリスク**
 
 **次のアクション:**
 - [ ] このADRを承認する
-- [ ] `mdast_v2.rs` モジュールを作成
-- [ ] Ctx 構造体を実装
+- [ ] `mdast.rs` モジュールを作成
+- [ ] Context 構造体を実装
 - [ ] 最初のテスト（Text ノードのみ）を書く
