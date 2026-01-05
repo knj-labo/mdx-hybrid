@@ -406,6 +406,109 @@ fn render_node(node: &Node, ctx: &mut Context) {
             ctx.push_raw("</code>");
         }
 
+        // Heading node - render as <h1> to <h6>
+        Node::Heading(heading) => {
+            let tag = format!("h{}", heading.depth);
+            ctx.push_raw(&format!("<{}>", tag));
+            for child in &heading.children {
+                render_node(child, ctx);
+            }
+            ctx.push_raw(&format!("</{}>", tag));
+        }
+
+        // List node - render as <ul> or <ol>
+        Node::List(list) => {
+            let tag = if list.ordered { "ol" } else { "ul" };
+            ctx.push_raw(&format!("<{}>", tag));
+            ctx.enter(Scope::List);
+
+            for child in &list.children {
+                render_node(child, ctx);
+            }
+
+            ctx.exit();
+            ctx.push_raw(&format!("</{}>", tag));
+        }
+
+        // ListItem node - render as <li>
+        Node::ListItem(item) => {
+            // Task list support (GFM)
+            let class_attr = if item.checked.is_some() {
+                " class=\"task-list-item\""
+            } else {
+                ""
+            };
+            ctx.push_raw(&format!("<li{}>", class_attr));
+
+            // Checkbox rendering for task lists
+            if let Some(checked) = item.checked {
+                let checked_str = if checked { " checked" } else { "" };
+                ctx.push_raw(&format!(
+                    "<input type=\"checkbox\" disabled{}/> ",
+                    checked_str
+                ));
+            }
+
+            // Render children
+            for child in &item.children {
+                render_node(child, ctx);
+            }
+
+            ctx.push_raw("</li>");
+        }
+
+        // Code block node - render as <pre><code>
+        Node::Code(code) => {
+            ctx.push_raw("<pre>");
+
+            // Language class for syntax highlighting
+            if let Some(lang) = &code.lang {
+                ctx.push_raw(r#"<code class="language-"#);
+                ctx.push_attr_value(lang);
+                ctx.push_raw(r#"">"#);
+            } else {
+                ctx.push_raw("<code>");
+            }
+
+            ctx.push_text(&code.value);
+            ctx.push_raw("</code></pre>");
+        }
+
+        // Blockquote node - render as <blockquote>
+        Node::Blockquote(quote) => {
+            ctx.push_raw("<blockquote>");
+            for child in &quote.children {
+                render_node(child, ctx);
+            }
+            ctx.push_raw("</blockquote>");
+        }
+
+        // Image node - render as <img>
+        Node::Image(img) => {
+            ctx.push_raw(r#"<img src=""#);
+            ctx.push_attr_value(&img.url);
+            ctx.push_raw(r#"""#);
+
+            // Alt text
+            ctx.push_raw(r#" alt=""#);
+            ctx.push_attr_value(&img.alt);
+            ctx.push_raw(r#"""#);
+
+            // Optional title attribute
+            if let Some(title) = &img.title {
+                ctx.push_raw(r#" title=""#);
+                ctx.push_attr_value(title);
+                ctx.push_raw(r#"""#);
+            }
+
+            ctx.push_raw(" />");
+        }
+
+        // ThematicBreak node - render as <hr>
+        Node::ThematicBreak(_) => {
+            ctx.push_raw("<hr />");
+        }
+
         // HTML node - check for directive placeholders
         Node::Html(html) => {
             let html_str = html.value.as_ref();
@@ -633,6 +736,101 @@ mod tests {
                 assert!(content.contains(":::note"));
             }
             _ => panic!("Expected HTML block when directives disabled"),
+        }
+    }
+
+    /// Tests standard markdown elements rendering.
+    #[test]
+    fn test_standard_markdown_elements() {
+        let input = r#"# Heading 1
+## Heading 2
+
+- List Item 1
+- List Item 2
+
+> Blockquote
+
+```rust
+fn main() {}
+```
+
+![Alt text](image.png "Title")
+
+---
+"#;
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: true,
+        };
+        let blocks = to_blocks(input, &options).unwrap();
+
+        // Should produce 1 HTML block (no directives, so all content is HTML)
+        assert_eq!(blocks.len(), 1);
+
+        if let RenderBlock::Html { content } = &blocks[0] {
+            assert!(content.contains("<h1>Heading 1</h1>"), "Missing h1");
+            assert!(content.contains("<h2>Heading 2</h2>"), "Missing h2");
+            assert!(content.contains("<ul>"), "Missing ul");
+            assert!(content.contains("<li>"), "Missing li");
+            assert!(content.contains("List Item 1"), "Missing list item text");
+            assert!(content.contains("<blockquote>"), "Missing blockquote");
+            assert!(
+                content.contains(r#"<code class="language-rust">"#),
+                "Missing code block with language"
+            );
+            assert!(content.contains("fn main() {}"), "Missing code content");
+            assert!(
+                content.contains(r#"<img src="image.png""#),
+                "Missing img src"
+            );
+            assert!(content.contains(r#"alt="Alt text""#), "Missing alt");
+            assert!(content.contains(r#"title="Title""#), "Missing title");
+            assert!(content.contains("<hr />"), "Missing hr");
+        } else {
+            panic!("Expected HTML block, got {:?}", blocks[0]);
+        }
+    }
+
+    /// Tests task list rendering (GFM feature).
+    #[test]
+    fn test_task_list() {
+        let input = "- [ ] Unchecked task\n- [x] Checked task\n";
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: true,
+        };
+        let blocks = to_blocks(input, &options).unwrap();
+
+        assert_eq!(blocks.len(), 1);
+        if let RenderBlock::Html { content } = &blocks[0] {
+            assert!(content.contains(r#"class="task-list-item""#), "Missing task-list-item class");
+            assert!(content.contains(r#"type="checkbox""#), "Missing checkbox");
+            assert!(content.contains("Unchecked task"), "Missing unchecked text");
+            assert!(content.contains("Checked task"), "Missing checked text");
+        } else {
+            panic!("Expected HTML block");
+        }
+    }
+
+    /// Tests ordered list rendering.
+    #[test]
+    fn test_ordered_list() {
+        let input = "1. First\n2. Second\n3. Third\n";
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: true,
+        };
+        let blocks = to_blocks(input, &options).unwrap();
+
+        assert_eq!(blocks.len(), 1);
+        if let RenderBlock::Html { content } = &blocks[0] {
+            assert!(content.contains("<ol>"));
+            assert!(content.contains("<li>"), "Missing <li>");
+            assert!(content.contains("First"), "Missing 'First'");
+            assert!(content.contains("Second"), "Missing 'Second'");
+            assert!(content.contains("</ol>"));
+        } else {
+            panic!("Expected HTML block");
         }
     }
 
