@@ -2,6 +2,8 @@ use markdown::mdast::Node;
 use serde::Serialize;
 use std::collections::HashMap;
 
+use crate::transform::directives::{parse_opening_directive, is_directive_closer};
+
 /// Represents a rendering block to be passed to Astro.
 ///
 /// Each block is either plain HTML content or a component invocation
@@ -41,6 +43,18 @@ pub struct Context<'a> {
     stack: Vec<Scope>,
     #[allow(dead_code)]
     options: &'a Options,
+
+    /// Stack of active directive metadata (for nested directives).
+    directive_stack: Vec<DirectiveMeta>,
+}
+
+/// Metadata extracted from a directive placeholder tag.
+#[derive(Debug, Clone)]
+struct DirectiveMeta {
+    name: String,
+    title: Option<String>,
+    #[allow(dead_code)]
+    attrs: Option<String>,
 }
 
 /// Represents the type of scope currently being rendered.
@@ -90,6 +104,7 @@ impl<'a> Context<'a> {
             current_html: String::with_capacity(4096),
             stack: vec![Scope::Root],
             options,
+            directive_stack: Vec::new(),
         }
     }
 
@@ -208,8 +223,121 @@ impl<'a> Context<'a> {
 pub struct Options {
     /// Whether to inject Starlight CSS when components are used.
     pub inject_starlight_css: bool,
-    /// Whether directive processing is enabled (for future use).
+    /// Whether directive processing is enabled.
     pub enable_directives: bool,
+}
+
+/// Preprocesses input markdown to convert directive syntax into placeholder HTML comments.
+///
+/// This allows markdown-rs to preserve directive structure even though it doesn't
+/// natively support `::: note` syntax. Using HTML comments ensures markdown between
+/// the markers is still parsed correctly.
+///
+/// # Examples
+///
+/// ```
+/// Input:  ":::note[Title]\nContent\n:::"
+/// Output: "<!--mf-directive-start data-name=\"note\" data-title=\"Title\"-->\nContent\n<!--mf-directive-end-->"
+/// ```
+fn preprocess_directives(input: &str) -> String {
+    use crate::transform::code_fence::{FenceState, advance_fence_state};
+    use std::fmt::Write;
+
+    let mut fence_state = FenceState::default();
+    let mut output = String::with_capacity(input.len());
+    let mut directive_stack: Vec<String> = Vec::new(); // Track directive names for proper closing
+
+    for line in input.lines() {
+        let fence_outcome = advance_fence_state(line, fence_state);
+        fence_state = fence_outcome.next_state;
+
+        // Inside code fence - passthrough without processing
+        if fence_outcome.skip_imports {
+            writeln!(output, "{}", line).ok();
+            continue;
+        }
+
+        // Check for directive opening
+        if let Some(opening) = parse_opening_directive(line) {
+            directive_stack.push(opening.name.clone());
+
+            // Convert to HTML comment placeholder
+            write!(output, "<!--mf-directive-start data-name=\"{}\"", opening.name).ok();
+
+            if let Some(title) = &opening.bracket_title {
+                // Escape quotes in title
+                let escaped_title = title.replace('"', "&quot;");
+                write!(output, " data-title=\"{}\"", escaped_title).ok();
+            }
+
+            if !opening.raw_attrs.is_empty() {
+                write!(output, " data-attrs=\"{}\"", opening.raw_attrs.replace('"', "&quot;")).ok();
+            }
+
+            writeln!(output, "-->").ok();
+            continue;
+        }
+
+        // Check for directive closer
+        if is_directive_closer(line) && !directive_stack.is_empty() {
+            directive_stack.pop();
+            writeln!(output, "<!--mf-directive-end-->").ok();
+            continue;
+        }
+
+        // Regular line - passthrough
+        writeln!(output, "{}", line).ok();
+    }
+
+    // Close any unclosed directives
+    while directive_stack.pop().is_some() {
+        writeln!(output, "<!--mf-directive-end-->").ok();
+    }
+
+    output
+}
+
+/// Parses a directive placeholder HTML comment to extract metadata.
+///
+/// Returns Some(DirectiveMeta) if the HTML is an opening <!--mf-directive-start--> comment,
+/// or None if it's a closing comment or not a directive placeholder.
+fn parse_directive_placeholder(html: &str) -> Option<DirectiveMeta> {
+    let trimmed = html.trim();
+
+    // Check for closing comment
+    if trimmed == "<!--mf-directive-end-->" {
+        return None;
+    }
+
+    // Check for opening comment
+    if !trimmed.starts_with("<!--mf-directive-start ") {
+        return None;
+    }
+
+    // Extract data-name attribute
+    let name = extract_attr(trimmed, "data-name")?;
+
+    // Extract optional data-title attribute
+    let title = extract_attr(trimmed, "data-title");
+
+    // Extract optional data-attrs attribute
+    let attrs = extract_attr(trimmed, "data-attrs");
+
+    Some(DirectiveMeta { name, title, attrs })
+}
+
+/// Helper to extract an attribute value from an HTML tag string.
+fn extract_attr(html: &str, attr_name: &str) -> Option<String> {
+    let pattern = format!("{}=\"", attr_name);
+    let start = html.find(&pattern)? + pattern.len();
+    let rest = &html[start..];
+    let end = rest.find('"')?;
+    let value = &rest[..end];
+
+    // Unescape HTML entities
+    let unescaped = value.replace("&quot;", "\"");
+
+    Some(unescaped)
 }
 
 /// Recursively renders an AST node to HTML, updating the context state.
@@ -253,6 +381,66 @@ fn render_node(node: &Node, ctx: &mut Context) {
             ctx.push_raw("</a>");
         }
 
+        // Strong node - render as <strong>
+        Node::Strong(strong) => {
+            ctx.push_raw("<strong>");
+            for child in &strong.children {
+                render_node(child, ctx);
+            }
+            ctx.push_raw("</strong>");
+        }
+
+        // Emphasis node - render as <em>
+        Node::Emphasis(emphasis) => {
+            ctx.push_raw("<em>");
+            for child in &emphasis.children {
+                render_node(child, ctx);
+            }
+            ctx.push_raw("</em>");
+        }
+
+        // InlineCode node - render as <code>
+        Node::InlineCode(code) => {
+            ctx.push_raw("<code>");
+            ctx.push_text(&code.value);
+            ctx.push_raw("</code>");
+        }
+
+        // HTML node - check for directive placeholders
+        Node::Html(html) => {
+            let html_str = html.value.as_ref();
+
+            // Check if this is a directive placeholder
+            if let Some(meta) = parse_directive_placeholder(html_str) {
+                // Opening directive comment - push to stack
+                ctx.directive_stack.push(meta);
+                return; // Don't output the placeholder comment
+            }
+
+            // Check for closing directive comment
+            if html_str.trim() == "<!--mf-directive-end-->" {
+                // Pop directive metadata from stack
+                if let Some(meta) = ctx.directive_stack.pop() {
+                    // Extract slot HTML from current buffer
+                    let slot_html = std::mem::take(&mut ctx.current_html);
+
+                    // Build props from directive metadata
+                    let mut props = HashMap::new();
+                    if let Some(title) = meta.title {
+                        props.insert("title".to_string(), title);
+                    }
+                    // TODO: Parse attrs string if needed
+
+                    // Emit Component block
+                    ctx.push_component(&meta.name, props, slot_html);
+                }
+                return; // Don't output the placeholder comment
+            }
+
+            // Regular HTML - pass through
+            ctx.push_raw(html_str);
+        }
+
         // Unhandled node types - log warning
         _ => {
             eprintln!("Warning: Unhandled node type: {:?}", node);
@@ -285,11 +473,18 @@ fn render_node(node: &Node, ctx: &mut Context) {
 /// let blocks = to_blocks(input, &options).unwrap();
 /// ```
 pub fn to_blocks(input: &str, options: &Options) -> Result<Vec<RenderBlock>, String> {
-    // 1. Parse markdown to MDAST with enhanced options
+    // 1. Preprocess directives if enabled
+    let preprocessed = if options.enable_directives {
+        preprocess_directives(input)
+    } else {
+        input.to_string()
+    };
+
+    // 2. Parse markdown to MDAST with enhanced options
     let parse_options = markdown::ParseOptions {
         constructs: markdown::Constructs {
-            // NOTE: Directive syntax (:::note, etc.) will be handled by DirectiveAdapter
-            // in a future integration phase. Currently disabled to focus on Block Architecture.
+            // NOTE: Directive syntax (:::note, etc.) is preprocessed into <mf-directive> tags
+            // before parsing, then detected as Node::Html during rendering.
             // Enable frontmatter (--- ... ---)
             frontmatter: true,
             // GitHub Flavored Markdown features
@@ -302,7 +497,7 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<Vec<RenderBlock>, Str
         ..markdown::ParseOptions::default()
     };
 
-    let tree = markdown::to_mdast(input, &parse_options)
+    let tree = markdown::to_mdast(&preprocessed, &parse_options)
         .map_err(|e| format!("Markdown parse error: {}", e))?;
 
     // 2. Traverse the AST and render to blocks
@@ -375,6 +570,72 @@ mod tests {
         }
     }
 
+    /// Tests directive syntax conversion to Component blocks.
+    #[test]
+    fn test_directive_to_component() {
+        let input = ":::note[My Title]\nThis is **important** content.\n:::";
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: true,
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+
+        // Should produce exactly 1 Component block
+        assert_eq!(blocks.len(), 1, "Expected 1 block, got {}", blocks.len());
+
+        match &blocks[0] {
+            RenderBlock::Component { name, props, slot_html } => {
+                assert_eq!(name, "note");
+                assert_eq!(props.get("title"), Some(&"My Title".to_string()));
+                assert!(slot_html.contains("<p>This is <strong>important</strong> content.</p>"));
+            }
+            _ => panic!("Expected Component block, got {:?}", blocks[0]),
+        }
+    }
+
+    /// Tests directive without title.
+    #[test]
+    fn test_directive_without_title() {
+        let input = ":::tip\nHelpful advice here.\n:::";
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: true,
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+        assert_eq!(blocks.len(), 1);
+
+        match &blocks[0] {
+            RenderBlock::Component { name, props, slot_html } => {
+                assert_eq!(name, "tip");
+                assert!(props.get("title").is_none());
+                assert!(slot_html.contains("Helpful advice"));
+            }
+            _ => panic!("Expected Component block"),
+        }
+    }
+
+    /// Tests that directives are disabled when enable_directives is false.
+    #[test]
+    fn test_directive_disabled() {
+        let input = ":::note\nContent\n:::";
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: false,
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+
+        // Should parse as regular paragraph text
+        match &blocks[0] {
+            RenderBlock::Html { content } => {
+                assert!(content.contains(":::note"));
+            }
+            _ => panic!("Expected HTML block when directives disabled"),
+        }
+    }
+
     /// Debug test to inspect how directive syntax is parsed.
     ///
     /// Note: markdown-rs does not natively support directives,
@@ -384,14 +645,32 @@ mod tests {
     fn debug_directive_ast() {
         let input = ":::note[My Title]\nContent\n:::";
 
-        // Use default parse options (directives not natively supported)
-        let parse_options = markdown::ParseOptions::default();
+        // Use GFM parse options (same as to_blocks)
+        let parse_options = markdown::ParseOptions {
+            constructs: markdown::Constructs {
+                frontmatter: true,
+                gfm_autolink_literal: true,
+                gfm_strikethrough: true,
+                gfm_table: true,
+                gfm_task_list_item: true,
+                ..markdown::Constructs::default()
+            },
+            ..markdown::ParseOptions::default()
+        };
 
         // Parse and dump AST structure
         let tree = markdown::to_mdast(input, &parse_options).unwrap();
 
-        println!("=== AST DEBUG START ===");
+        println!("\n=== AST DEBUG START ===");
         println!("{:#?}", tree);
-        println!("=== AST DEBUG END ===");
+        println!("=== AST DEBUG END ===\n");
+
+        // Also test multi-paragraph directive
+        let input2 = ":::note\nFirst paragraph.\n\nSecond paragraph.\n:::";
+        let tree2 = markdown::to_mdast(input2, &parse_options).unwrap();
+
+        println!("\n=== MULTI-PARAGRAPH AST DEBUG START ===");
+        println!("{:#?}", tree2);
+        println!("=== MULTI-PARAGRAPH AST DEBUG END ===\n");
     }
 }
