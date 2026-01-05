@@ -1,6 +1,10 @@
 use markdown::mdast::Node;
 
-/// レンダリング中の「現在の状態」を管理する構造体
+/// Manages the current rendering state with encapsulated buffer and stack.
+///
+/// This struct tracks the rendering context as we traverse the markdown AST,
+/// maintaining an output buffer and a pushdown automaton stack to handle
+/// nested element scoping correctly.
 pub struct Context<'a> {
     buf: String,
     stack: Vec<Scope>,
@@ -9,27 +13,43 @@ pub struct Context<'a> {
     needs_starlight_css: bool,
 }
 
-/// スタックに積む「現在のスコープ」の種類
+/// Represents the type of scope currently being rendered.
+///
+/// Used in the Context stack to track which HTML element we are currently
+/// inside of (e.g., inside a paragraph, inside a list, inside an Aside component).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Scope {
+    /// Document root - not inside any specific block element.
     Root,
+    /// Inside a paragraph element (`<p>`).
     Paragraph,
+    /// Inside a list element (`<ul>` or `<ol>`).
     List,
+    /// Inside an Aside component with associated metadata.
     Aside(AsideMeta),
+    /// Inside a Card component with associated metadata.
     Card(CardMeta),
 }
 
-/// Aside固有の情報
+/// Metadata for Aside components.
+///
+/// Stores the type of aside (e.g., "note", "warning", "tip") and an optional title.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AsideMeta {
+    /// The kind of aside (e.g., "note", "warning", "caution").
     pub kind: String,
+    /// Optional title to display in the aside header.
     pub title: Option<String>,
 }
 
-/// Card固有の情報
+/// Metadata for Card components.
+///
+/// Stores the card's title and an optional icon identifier.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CardMeta {
+    /// The title to display in the card header.
     pub title: String,
+    /// Optional icon identifier for the card.
     pub icon: Option<String>,
 }
 
@@ -43,18 +63,19 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// バッファに文字列をそのまま書き込む（タグなど安全な文字列用）
+    /// Writes a raw string to the buffer without escaping (for safe HTML tags).
     pub fn push_raw(&mut self, s: &str) {
         self.buf.push_str(s);
     }
 
-    /// HTMLエスケープしながらバッファに書き込む（public API）
+    /// Writes text content to the buffer with HTML escaping (public API).
     pub fn push_text(&mut self, s: &str) {
         self.push_escaped(s);
     }
 
-    /// 【内部用】HTMLエスケープしながらバッファに書き込む
-    /// テキストノード用（<, >, & のみエスケープ）
+    /// Writes HTML-escaped text to the buffer (internal use).
+    ///
+    /// Escapes `<`, `>`, and `&` characters for safe text node rendering.
     fn push_escaped(&mut self, s: &str) {
         for c in s.chars() {
             match c {
@@ -66,7 +87,9 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// 【内部用】属性値用にエスケープして書き込む
+    /// Writes HTML-escaped attribute value to the buffer (internal use).
+    ///
+    /// Escapes `<`, `>`, `&`, and `"` for safe attribute rendering.
     fn push_attr_value(&mut self, s: &str) {
         for c in s.chars() {
             match c {
@@ -79,55 +102,56 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// 現在のスコープを取得
+    /// Returns a reference to the current scope at the top of the stack.
     pub fn current_scope(&self) -> &Scope {
         self.stack.last().unwrap_or(&Scope::Root)
     }
 
-    /// スコープに入る
+    /// Enters a new scope by pushing it onto the stack.
     pub fn enter(&mut self, scope: Scope) {
         self.stack.push(scope);
     }
 
-    /// スコープから出る
+    /// Exits the current scope by popping from the stack.
     pub fn exit(&mut self) -> Option<Scope> {
         self.stack.pop()
     }
 
-    /// Starlight コンポーネントが使用されたことをマーク
+    /// Marks that a Starlight component has been used (requires CSS injection).
     pub fn mark_starlight_used(&mut self) {
         self.needs_starlight_css = true;
     }
 
-    /// 処理完了後に結果を取り出す
+    /// Consumes the context and returns the final HTML string.
     pub fn finish(self) -> String {
         self.buf
     }
 }
 
-/// 設定（ユーザーがいじるので pub でOK）
+/// Rendering options for the mdast v2 renderer.
 pub struct Options {
+    /// Whether to inject Starlight CSS when components are used.
     pub inject_starlight_css: bool,
+    /// Whether directive processing is enabled (for future use).
     pub enable_directives: bool,
 }
 
-/// ASTノードを受け取り、状態を遷移させながらHTMLを書き込む
+/// Recursively renders an AST node to HTML, updating the context state.
 fn render_node(node: &Node, ctx: &mut Context) {
     match node {
-        // ルートノード
+        // Root node - transparent container, just process children
         Node::Root(root) => {
-            // ルートノードは何もタグを出力せず、子要素を処理するだけ
             for child in &root.children {
                 render_node(child, ctx);
             }
         }
 
-        // テキストノード
+        // Text node - escape and write to buffer
         Node::Text(text) => {
             ctx.push_text(&text.value);
         }
 
-        // 通常のパラグラフ
+        // Paragraph node - wrap children in <p> tags
         Node::Paragraph(para) => {
             ctx.push_raw("<p>");
             ctx.enter(Scope::Paragraph);
@@ -140,7 +164,7 @@ fn render_node(node: &Node, ctx: &mut Context) {
             ctx.push_raw("</p>");
         }
 
-        // リンク
+        // Link node - render as <a> with escaped href
         Node::Link(link) => {
             ctx.push_raw(r#"<a href=""#);
             ctx.push_attr_value(&link.url);
@@ -153,22 +177,44 @@ fn render_node(node: &Node, ctx: &mut Context) {
             ctx.push_raw("</a>");
         }
 
-        // その他の要素（未実装）
+        // Unhandled node types - log warning
         _ => {
             eprintln!("Warning: Unhandled node type: {:?}", node);
         }
     }
 }
 
-/// Markdownを受け取り、HTMLに変換する（エントリーポイント）
+/// Converts Markdown input to HTML (entry point).
+///
+/// # Arguments
+///
+/// * `input` - The markdown text to convert
+/// * `options` - Rendering options (CSS injection, directives, etc.)
+///
+/// # Returns
+///
+/// * `Ok(String)` - The generated HTML string
+/// * `Err(String)` - Error message if parsing fails
+///
+/// # Examples
+///
+/// ```
+/// use markflow_core::renderer::mdast::{to_html, Options};
+///
+/// let input = "Hello, **world**!";
+/// let options = Options {
+///     inject_starlight_css: false,
+///     enable_directives: false,
+/// };
+/// let html = to_html(input, &options).unwrap();
+/// ```
 pub fn to_html(input: &str, options: &Options) -> Result<String, String> {
-    // 1. Parse to MDAST (設定を強化)
-    // ディレクティブやフロントマターを有効にする設定
+    // 1. Parse markdown to MDAST with enhanced options
     let parse_options = markdown::ParseOptions {
         constructs: markdown::Constructs {
-            // フロントマター (--- ... ---) を認識させる
+            // Enable frontmatter (--- ... ---)
             frontmatter: true,
-            // GitHub Flavored Markdownの機能を有効化
+            // Enable GitHub Flavored Markdown features
             gfm_autolink_literal: true,
             gfm_strikethrough: true,
             gfm_table: true,
@@ -181,19 +227,17 @@ pub fn to_html(input: &str, options: &Options) -> Result<String, String> {
     let tree = markdown::to_mdast(input, &parse_options)
         .map_err(|e| format!("Markdown parse error: {}", e))?;
 
-    // 2. Traversal
+    // 2. Traverse the AST and render to HTML
     let mut ctx = Context::new(options);
     render_node(&tree, &mut ctx);
 
-    // 3. Check CSS flag before consuming ctx
-    // ここでフラグを退避させるのが正解です
+    // 3. Check CSS flag before consuming context
     let needs_css = ctx.needs_starlight_css;
     let mut result = ctx.finish();
 
-    // 4. Post-process: CSS injection if needed
+    // 4. Post-process: inject CSS if needed
     if needs_css && options.inject_starlight_css {
-        // 将来的に assets/starlight.css を読み込む形にする
-        // 現時点ではプレースホルダーでOK
+        // TODO: Load actual starlight.css file
         let style_tag = "<style is:global>/* Starlight CSS will be injected here */</style>\n";
         result = format!("{}{}", style_tag, result);
     }
@@ -205,7 +249,7 @@ pub fn to_html(input: &str, options: &Options) -> Result<String, String> {
 mod tests {
     use super::*;
 
-    // --- 基本的なテスト (Step #15) ---
+    /// Tests basic text rendering without any markdown formatting.
     #[test]
     fn test_simple_text() {
         let input = "Hello, world!";
@@ -218,6 +262,7 @@ mod tests {
         assert!(result.contains("Hello, world!"));
     }
 
+    /// Tests paragraph rendering with proper `<p>` tags.
     #[test]
     fn test_paragraph() {
         let input = "This is a paragraph.";
@@ -232,6 +277,7 @@ mod tests {
         assert!(result.contains("This is a paragraph."));
     }
 
+    /// Tests link rendering with proper `<a>` tags and attribute escaping.
     #[test]
     fn test_link() {
         let input = "[Rust](https://www.rust-lang.org/)";
@@ -245,21 +291,21 @@ mod tests {
         assert!(result.contains("Rust</a>"));
     }
 
-    // --- 【重要】AST構造を確認するためのデバッグ用テスト ---
-    // これを実行すると、ターミナルにASTのツリー構造が表示されます
+    /// Debug test to inspect how directive syntax is parsed.
+    ///
+    /// Note: markdown-rs does not natively support directives,
+    /// so this will show the raw AST structure for investigation.
+    /// Run with `cargo test -- --nocapture` to see output.
     #[test]
     fn debug_directive_ast() {
         let input = ":::note[My Title]\nContent\n:::";
 
-        // パース設定 (本番と同じにする)
-        // 注: markdown-rs クレートはディレクティブをネイティブサポートしていない
-        // このテストは生のAST構造を確認するためのもの
+        // Use default parse options (directives not natively supported)
         let parse_options = markdown::ParseOptions::default();
 
-        // パース実行
+        // Parse and dump AST structure
         let tree = markdown::to_mdast(input, &parse_options).unwrap();
 
-        // ここでAST構造を標準出力にダンプ！
         println!("=== AST DEBUG START ===");
         println!("{:#?}", tree);
         println!("=== AST DEBUG END ===");
