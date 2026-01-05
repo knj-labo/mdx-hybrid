@@ -79,11 +79,12 @@
 - Indented code blocks are not treated specially by multipass yet.
 - JSX scanning resumes after a fenced code block ends.
 - `<` inside fenced code blocks is never treated as JSX.
+- Inline code spans (backtick-delimited) are not scanned for JSX.
 - Tests cover unclosed fence fallback behavior.
-- `find_fence_end` returns the position of the closing fence line start.
+- `find_fence_end` returns the position of the closing fence marker (after optional indent).
 - Tests cover `~~~` fence detection.
 - Tests cover ignoring JSX inside fences.
-- Fence detection is restricted to true line starts (indented fences not handled yet).
+- Fence detection allows up to 4 leading spaces or a single tab before the fence marker.
 - `scan_nodes` checks for fences before JSX tags.
 - Missing close tags fall back to treating `<` as Markdown.
 - `scan_nodes` returns `(blocks, cursor, closed)` where `closed=true` indicates the until tag was found.

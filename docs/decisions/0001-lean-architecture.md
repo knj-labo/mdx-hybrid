@@ -228,4 +228,43 @@
 | 2025-12-27 00:00 | #207 | JSX レンダラのイベント処理を `render_markdown_events` に切り出し、multipass 接続の足場を用意 | Markdown 断片レンダリングを可能にするため | crates/core/src/renderer/jsx_renderer.rs |
 | 2025-12-27 00:00 | #208 | `render_to_jsx` を multipass `scan` ベースに切り替え、Markdown/Code/JsxElement をブロックごとにレンダリング | Steps/Tabs 正規化の前提となる再帰レンダリングを導入するため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
 | 2025-12-27 00:00 | #211 | `<Steps>` 内の非 Markdown 兄弟を最後の `<li>` 直前へ挿入するレンダリングを追加 | Tabs などの兄弟要素をリスト内に収めるため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2025-12-27 00:00 | #212 | `render_to_jsx` の import 抽出を `collect_root_imports` に切り替え、`parse` 依存を除去 | markdown-rs の MDX 解析エラーを回避するため | crates/core/src/renderer/jsx_renderer.rs |
+| 2025-12-27 00:00 | #213 | `compile_ir` の import 抽出を `collect_root_imports` に切り替え、`parse_with_options` 依存を除去 | prefetch 時の markdown-rs MDX エラーを回避するため | crates/napi/src/compiler.rs |
+| 2025-12-27 00:00 | #214 | `render_to_jsx` が directive 必須 import を収集し、`compile_ir` は JSX 出力から hoisted import を回収する | `Aside` などの directive コンポーネント未定義を防ぐため | crates/core/src/renderer/jsx_renderer.rs, crates/napi/src/compiler.rs |
+| 2025-12-27 00:00 | #215 | multipass で次の fence 開始位置を優先判定し、code fence 内の `<` を JSX と誤認しないようにした | サンプル内 JSX が実行され `MyReactComponent` などの未定義が出るのを防ぐため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #216 | fence 開始行の info string 内にある `<` を JSX 境界として扱わないようにした | `MySiteLayout` などが code fence から漏れるのを防ぐため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #217 | fence 開始行の途中に居た場合は行頭へ巻き戻して再処理するようにした | fence info string の `<` で JSX 解析が始まるのを防ぐため | crates/core/src/renderer/multipass.rs |
+| 2025-12-27 00:00 | #218 | `compile_ir` は JSX 出力の先頭 import/export のみを回収する | code fence 内の import が hoist されて Avatar 等の解決エラーになるのを防ぐため | crates/napi/src/compiler.rs |
 | 2025-12-27 00:00 | #212 | `Block::Code` をイベントレンダリング経由に戻し、フェンスを `<pre><code>` に変換することを明記 | fence 内 import/export を JSX に残す既存仕様を維持するため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2026-01-03 00:00 | #219 | `MARKFLOW_DEBUG_BINDING=1` 時にバインディング起点と `NAPI_RS_NATIVE_LIBRARY_PATH` をログ出力する | 使用中の NAPI バイナリを即時判別できるようにするため | packages/vite-plugin-markflow/src/index.js, docs/specs/mf-171-jsx-renderer-api.md |
+| 2026-01-03 00:00 | #220 | `split_leading_imports` は先頭連続 import/export のみを hoist し、空行/コメント行は許可する | code fence 内 import を誤って hoist しないため | crates/napi/src/compiler.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2026-01-03 00:00 | #221 | `<FileTree>` の Markdown 子は1段デント除去してからレンダリングする | `<FileTree>` 内のリストが `<pre>` に落ちるのを防ぐため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2026-01-03 00:00 | #222 | `<Steps>` の複数 `<ol>` を1つに統合し、非リストHTMLは直近 `<li>` 内に差し込む | `<Steps>` が単一 `<ol>` であることを保証するため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2026-01-03 00:00 | #223 | fence 判定で先頭最大4スペース/1タブのインデントを許可する | リスト内 code fence を正しく認識するため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2026-01-03 00:00 | #224 | `<Steps>` の Markdown 子を1段デント除去してからレンダリングする | フェンスが indented code にならないようにするため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2026-01-03 00:00 | #225 | inline code のバッククォート範囲は JSX スキャン対象外とする | `<Head />` などの inline code が未定義 JSX になるのを防ぐため | crates/core/src/renderer/multipass.rs, docs/specs/mf-170-markdown-to-jsx.md |
+| 2026-01-03 00:00 | #226 | `next_stop` の型を `Option<usize>` として明示する | 型推論エラーでビルドが失敗するのを防ぐため | crates/core/src/renderer/multipass.rs |
+| 2026-01-03 00:00 | #227 | `<FileTree>` の Markdown を1つのバッファに結合し、最初の `<ul>` だけを採用する | 余計な `<p>` などのルート要素を排除し契約を満たすため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2026-01-03 00:00 | #228 | `<FileTree>` の抽出 `<ul>` が閉じタグ `</ul>` の `>` まで含むようにする | JSX 構文破壊を防ぐため | crates/core/src/renderer/jsx_renderer.rs, docs/specs/mf-171-jsx-renderer-api.md |
+| 2026-01-03 00:00 | #229 | mdast 生成 + lol-html 書き換えの新パイプラインを導入する方針を確定 | 既存 multipass の保守性限界を回避し、移行を段階的に進めるため | docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #230 | `CompilerConfig.pipeline` と `MARKFLOW_PIPELINE` でパイプライン選択を可能にする | multipass と mdast の併用切替を実現するため | crates/napi/src/types.rs, crates/napi/src/compiler.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #231 | mdast パイプラインの最小実装として `render_to_html_mdast` を導入する | multipass から段階的に移行するための足場を作るため | crates/core/src/renderer/mdast_renderer.rs, crates/core/src/parser/markdown_adapter.rs, crates/core/src/lib.rs, crates/napi/src/compiler.rs |
+| 2026-01-03 00:00 | #232 | mdast HTML は JSX として解釈されないよう `<Fragment>` で包みエスケープして返す | `&` などで esbuild が失敗するのを防ぐため | crates/core/src/renderer/mdast_renderer.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #233 | mdast HTML を lol-html で `<Steps>`/`<FileTree>` 正規化し、`set:html` で差し込む | mdast 出力の JSX 安全性と最小整形を両立するため | crates/core/src/renderer/mdast_renderer.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #234 | Markdown パーサエラーにファイルパスを付与する | mdast 移行中のエラー原因特定を容易にするため | crates/napi/src/compiler.rs, crates/napi/src/headings.rs |
+| 2026-01-03 00:00 | #235 | mdast パイプラインでも MDX JSX インデント正規化を適用する | JSX 内のコードフェンスが mdast で誤解析されるのを防ぐため | crates/core/src/renderer/mdast_renderer.rs, crates/core/src/parser/markdown_adapter.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #236 | mdast パイプラインでは MDX expression を無効化する | `{` の未閉鎖で mdast が落ちるのを回避するため | crates/core/src/renderer/mdast_renderer.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #237 | mdast が失敗した場合は multipass にフォールバックし、headings は空配列で継続する | 移行中も docs を止めないため | crates/napi/src/compiler.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #238 | mdast の lol-html 書き換えに `<Aside>` と `<Tabs>` 系の最小互換変換を追加 | 主要コンポーネントの見た目崩れを抑えるため | crates/core/src/renderer/mdast_renderer.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #239 | mdast パイプラインで hover prefetch を確認（`/en/guides/migrate-to-astro/`, `/en/guides/migrate-to-astro/from-create-react-app/`） | mdast 移行後の実運用安定性を確認するため | docs/decisions/0001-lean-architecture.md |
+| 2026-01-03 00:00 | #240 | mdast + lol-html への移行は性能面で問題なし（Rust の AST + ストリーム書き換えで JS パイプラインより高速見込み） | 性能懸念で移行判断がブレないよう明文化するため | docs/decisions/0001-lean-architecture.md |
+| 2026-01-03 00:00 | #241 | mdast_renderer のタグ境界検出は TagScanner に統一する | タグ境界判定の重複実装を避け、ビルドエラーを防ぐため | crates/core/src/renderer/mdast_renderer.rs |
+| 2026-01-03 00:00 | #242 | mdast パイプラインで markdown directive を `<Aside>` に前処理する | `:::tip` 等が素のテキストとして表示される問題を防ぐため | crates/core/src/renderer/mdast_renderer.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #243 | `<Checklist>` を `check-list` HTML に正規化して CSS を付与する | チェックリストが素の Markdown として表示される問題を防ぐため | crates/core/src/renderer/mdast_renderer.rs, crates/core/src/renderer/starlight_components.css, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #244 | Shiki 導入前は `.astro-code` にフォールバックCSSを適用する | mdast 出力でコード色が無い問題を最短で緩和するため | crates/core/src/renderer/starlight_components.css, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #245 | `.astro-code` を含むページでも CSS を注入する | コードブロックのみのページでもフォールバックCSSを適用するため | crates/core/src/renderer/mdast_renderer.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #246 | `<ReadMore>` を `<div class="read-more">` に正規化して最低限の見た目を付与する | ReadMore が素のテキストとして表示されるのを防ぐため | crates/core/src/renderer/mdast_renderer.rs, crates/core/src/renderer/starlight_components.css, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #247 | `<CardGrid>`/`<LinkCard>` を HTML に正規化してカード表示を復元する | カード系コンポーネントの崩れを最小修正で直すため | crates/core/src/renderer/mdast_renderer.rs, crates/core/src/renderer/starlight_components.css, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-03 00:00 | #241 | mdast_renderer のタグ境界検出は TagScanner に統一する | タグ境界判定の重複実装を避け、ビルドエラーを防ぐため | crates/core/src/renderer/mdast_renderer.rs |
+| 2026-01-04 00:00 | #248 | Tabs 系コンポーネントを Starlight の tablist/tabpanel 構造に揃えて出力する | Tabs が「羅列」に見える問題を解消し、Starlight の CSS/JS 互換を維持するため | crates/core/src/renderer/mdast_renderer.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-04 00:00 | #249 | mdast の注入 CSS を Starlight/Docs の公式コンポーネント CSS に置換する | 独自CSSで見た目がズレる問題を避け、Docs 本来のスタイルに合わせるため | crates/core/src/renderer/starlight_components.css, crates/core/src/renderer/mdast_renderer.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |

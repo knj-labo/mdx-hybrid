@@ -1,20 +1,47 @@
 //! The stateful compiler and its configuration.
 
 use crate::types::*;
-use markflow_core::{MarkflowError, RewriteOptions, render_to_jsx};
+use markflow_core::{MarkflowError, render_to_html_mdast, render_to_jsx};
 use napi_derive::napi;
 use std::path::Path;
 
 const ASTRO_DEFAULT_RUNTIME: &str = "astro/runtime/server/index.js";
 
-fn strip_leading_imports(input: &str) -> String {
-    let (_hoisted, body) = markflow_core::code_fence::collect_root_imports(input);
-    body.join("\n")
+fn split_leading_imports(input: &str) -> (Vec<String>, String) {
+    let mut hoisted = Vec::new();
+    let mut lines = Vec::new();
+    let mut collecting = true;
+
+    for line in input.lines() {
+        if collecting {
+            let trimmed = line.trim_start();
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                lines.push(line);
+                continue;
+            }
+            if trimmed.starts_with("import ") || trimmed.starts_with("export ") {
+                hoisted.push(line.to_string());
+                continue;
+            }
+            collecting = false;
+        }
+        lines.push(line);
+    }
+
+    let body = lines.join("\n");
+    (hoisted, body)
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct InternalCompilerConfig {
     pub(crate) jsx_import_source: String,
+    pub(crate) pipeline: Pipeline,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Pipeline {
+    Multipass,
+    Mdast,
 }
 
 impl InternalCompilerConfig {
@@ -23,8 +50,19 @@ impl InternalCompilerConfig {
         let jsx_import_source = cfg
             .jsx_import_source
             .unwrap_or_else(|| ASTRO_DEFAULT_RUNTIME.to_string());
+        let pipeline = match std::env::var("MARKFLOW_PIPELINE").ok().as_deref() {
+            Some("mdast") => Pipeline::Mdast,
+            Some("multipass") => Pipeline::Multipass,
+            _ => match cfg.pipeline.as_deref() {
+                Some("mdast") => Pipeline::Mdast,
+                _ => Pipeline::Multipass,
+            },
+        };
 
-        Self { jsx_import_source }
+        Self {
+            jsx_import_source,
+            pipeline,
+        }
     }
 }
 
@@ -98,12 +136,23 @@ pub fn compile_ir(
     let frontmatter = frontmatter_extraction.value;
     let raw_body = source[frontmatter_extraction.body_start..].to_string();
 
-    let parse_result = markflow_core::parse_with_options(&raw_body, RewriteOptions::default())
-        .map_err(super::convert_error)?;
-    let jsx = render_to_jsx(&raw_body).map_err(super::convert_error)?;
-    let jsx = strip_leading_imports(&jsx);
+    let jsx_full = match internal.pipeline {
+        Pipeline::Multipass => render_to_jsx(&raw_body)
+            .map_err(|err| super::convert_error(with_path(err, &effective_path)))?,
+        Pipeline::Mdast => match render_to_html_mdast(&raw_body) {
+            Ok(value) => value,
+            Err(err) => {
+                let _ = err;
 
-    let headings = super::collect_headings(&raw_body, file_type)?;
+                render_to_jsx(&raw_body)
+                    .map_err(|err| super::convert_error(with_path(err, &effective_path)))?
+            }
+        },
+    };
+    let (hoisted, jsx) = split_leading_imports(&jsx_full);
+
+    let headings =
+        super::collect_headings(&raw_body, file_type, &effective_path).unwrap_or_default();
     let layout_import: Option<String> = frontmatter
         .get("layout")
         .and_then(|value| value.as_str())
@@ -113,15 +162,11 @@ pub fn compile_ir(
 
     Ok(CompileIrResult {
         html: jsx,
-        hoisted_imports: parse_result
-            .imports
+        hoisted_imports: hoisted
             .into_iter()
-            .map(|spec| ImportSpec {
-                source: spec.source,
-                kind: match spec.kind {
-                    markflow_core::ImportKind::Hoisted => ImportKind::Hoisted,
-                    markflow_core::ImportKind::Transform => ImportKind::Transform,
-                },
+            .map(|source| ImportSpec {
+                source,
+                kind: ImportKind::Hoisted,
             })
             .collect(),
         frontmatter_json,
@@ -131,6 +176,15 @@ pub fn compile_ir(
         layout_import,
         runtime_import: internal.jsx_import_source,
     })
+}
+
+fn with_path(err: MarkflowError, path: &str) -> MarkflowError {
+    match err {
+        MarkflowError::MarkdownAdapter(msg) => {
+            MarkflowError::MarkdownAdapter(format!("{msg} ({path})"))
+        }
+        other => other,
+    }
 }
 
 pub(crate) fn compile_document_from_ir(ir: CompileIrResult) -> napi::Result<CompileResult> {

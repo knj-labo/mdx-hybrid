@@ -24,6 +24,8 @@ Plan how to wire the updated NAPI/WASM JSX renderer into the Astro plugin, and v
 - `escapeHtml` (boolean, default: true) — text escaping flag passed through.
 - `useWasm` (boolean, default: false) — switch between NAPI and WASM backend.
 - `trace` (boolean, default: false) — emit timing/logs for harness comparisons.
+- `starlightComponents` (boolean or object, default: false) — auto-import Starlight components when their tags appear.
+  - `{ module?: string, components?: string[] }` to override module path or component list.
 - Vite JSX handling:
   - Virtual module IDs use a `.markflow.jsx` suffix to ensure JSX parsing.
   - The `load` hook sets `meta: { vite: { jsx: true } }` on compiled modules.

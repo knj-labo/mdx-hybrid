@@ -2,6 +2,7 @@ repo/
 node_modules/
 .astro/
 dist/
+visual-diff/
 !.gitignore
 !README.md
 !harness-summary.json

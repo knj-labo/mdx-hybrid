@@ -11,6 +11,10 @@ on:
         description: "Run astro harness comparison (baseline vs markflow)"
         required: false
         default: "false"
+      withastro_docs:
+        description: "Run withastro/docs semantic diff (baseline vs markflow)"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -114,3 +118,52 @@ jobs:
 
       - name: Run harness comparison (time-only)
         run: node scripts/compare-astro-harness.mjs --mode=time --summary fixtures/integration/astro-harness/harness-summary.json
+
+  withastro-docs-harness:
+    name: withastro/docs semantic diff (opt-in)
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: >
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.withastro_docs == 'true' || github.event.inputs.withastro_docs == '1')) ||
+      (github.event_name == 'pull_request' && contains(toJson(github.event.pull_request.labels.*.name), 'perf'))
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+          cache-dependency-path: |
+            crates/napi/pnpm-lock.yaml
+            fixtures/integration/withastro-docs/repo/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+
+      - name: Install NAPI deps
+        working-directory: crates/napi
+        run: pnpm install --frozen-lockfile
+
+      - name: Build NAPI binding
+        working-directory: crates/napi
+        run: pnpm run build:napi
+
+      - name: Install withastro/docs deps
+        working-directory: fixtures/integration/withastro-docs/repo
+        run: pnpm install --frozen-lockfile
+
+      - name: Run withastro/docs semantic diff
+        run: pnpm compare:withastro-docs -- --mode=semantic --skip-install
