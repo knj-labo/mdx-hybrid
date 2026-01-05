@@ -2,7 +2,7 @@ use markdown::mdast::Node;
 use serde::Serialize;
 use std::collections::HashMap;
 
-use crate::transform::directives::{parse_opening_directive, is_directive_closer};
+use crate::transform::directives::{is_directive_closer, parse_opening_directive};
 
 /// Represents a rendering block to be passed to Astro.
 ///
@@ -176,7 +176,12 @@ impl<'a> Context<'a> {
     /// Adds a component block to the rendering output.
     ///
     /// This first flushes any pending HTML, then adds a Component block.
-    pub fn push_component(&mut self, name: &str, props: HashMap<String, String>, slot_html: String) {
+    pub fn push_component(
+        &mut self,
+        name: &str,
+        props: HashMap<String, String>,
+        slot_html: String,
+    ) {
         self.flush_html();
         self.blocks.push(RenderBlock::Component {
             name: name.to_string(),
@@ -202,10 +207,16 @@ impl<'a> Context<'a> {
         for block in child_ctx.blocks {
             match block {
                 RenderBlock::Html { content } => result.push_str(&content),
-                RenderBlock::Component { name, slot_html, .. } => {
+                RenderBlock::Component {
+                    name, slot_html, ..
+                } => {
                     // Nested components are rendered as custom elements (fallback)
                     use std::fmt::Write;
-                    let _ = write!(result, r#"<starlight-{} data-component>{}</starlight-{}>"#, name, slot_html, name);
+                    let _ = write!(
+                        result,
+                        r#"<starlight-{} data-component>{}</starlight-{}>"#,
+                        name, slot_html, name
+                    );
                 }
             }
         }
@@ -263,7 +274,12 @@ fn preprocess_directives(input: &str) -> String {
             directive_stack.push(opening.name.clone());
 
             // Convert to HTML comment placeholder
-            write!(output, "<!--mf-directive-start data-name=\"{}\"", opening.name).ok();
+            write!(
+                output,
+                "<!--mf-directive-start data-name=\"{}\"",
+                opening.name
+            )
+            .ok();
 
             if let Some(title) = &opening.bracket_title {
                 // Escape quotes in title
@@ -272,7 +288,12 @@ fn preprocess_directives(input: &str) -> String {
             }
 
             if !opening.raw_attrs.is_empty() {
-                write!(output, " data-attrs=\"{}\"", opening.raw_attrs.replace('"', "&quot;")).ok();
+                write!(
+                    output,
+                    " data-attrs=\"{}\"",
+                    opening.raw_attrs.replace('"', "&quot;")
+                )
+                .ok();
             }
 
             writeln!(output, "-->").ok();
@@ -689,7 +710,11 @@ mod tests {
         assert_eq!(blocks.len(), 1, "Expected 1 block, got {}", blocks.len());
 
         match &blocks[0] {
-            RenderBlock::Component { name, props, slot_html } => {
+            RenderBlock::Component {
+                name,
+                props,
+                slot_html,
+            } => {
                 assert_eq!(name, "note");
                 assert_eq!(props.get("title"), Some(&"My Title".to_string()));
                 assert!(slot_html.contains("<p>This is <strong>important</strong> content.</p>"));
@@ -711,7 +736,11 @@ mod tests {
         assert_eq!(blocks.len(), 1);
 
         match &blocks[0] {
-            RenderBlock::Component { name, props, slot_html } => {
+            RenderBlock::Component {
+                name,
+                props,
+                slot_html,
+            } => {
                 assert_eq!(name, "tip");
                 assert!(props.get("title").is_none());
                 assert!(slot_html.contains("Helpful advice"));
@@ -804,7 +833,10 @@ fn main() {}
 
         assert_eq!(blocks.len(), 1);
         if let RenderBlock::Html { content } = &blocks[0] {
-            assert!(content.contains(r#"class="task-list-item""#), "Missing task-list-item class");
+            assert!(
+                content.contains(r#"class="task-list-item""#),
+                "Missing task-list-item class"
+            );
             assert!(content.contains(r#"type="checkbox""#), "Missing checkbox");
             assert!(content.contains("Unchecked task"), "Missing unchecked text");
             assert!(content.contains("Checked task"), "Missing checked text");

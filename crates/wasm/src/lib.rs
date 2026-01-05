@@ -211,7 +211,7 @@ fn js_callback_error(err: JsValue) -> io::Error {
 /// ```
 #[wasm_bindgen(js_name = parse_blocks)]
 pub fn parse_blocks(input: &str, opts: JsValue) -> Result<JsValue, JsError> {
-    use markflow_core::renderer::mdast::{to_blocks, Options};
+    use markflow_core::renderer::mdast::{Options, to_blocks};
 
     // Parse options from JavaScript
     let options: Options = if opts.is_undefined() || opts.is_null() {
@@ -225,8 +225,7 @@ pub fn parse_blocks(input: &str, opts: JsValue) -> Result<JsValue, JsError> {
     };
 
     // Parse markdown to blocks
-    let blocks = to_blocks(input, &options)
-        .map_err(|e| JsError::new(&e))?;
+    let blocks = to_blocks(input, &options).map_err(|e| JsError::new(&e))?;
 
     // Convert to JavaScript value using zero-copy serialization
     serde_wasm_bindgen::to_value(&blocks)
