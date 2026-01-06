@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 pub mod html_renderer;
 pub mod jsx_renderer;
+pub mod mdast; // V2 renderer (new)
 pub mod mdast_renderer;
 pub mod multipass;
 pub mod streaming_rewriter;

@@ -171,6 +171,67 @@ fn js_callback_error(err: JsValue) -> io::Error {
     io::Error::other(message)
 }
 
+/// Parses markdown into structured RenderBlock objects using the mdast v2 renderer.
+///
+/// This function uses the Block Architecture to return a structured representation
+/// of the markdown content, allowing JavaScript to dynamically map component names
+/// to actual Astro components without hardcoding in Rust.
+///
+/// # Arguments
+///
+/// * `input` - The markdown text to parse
+/// * `opts` - Optional JavaScript object with options:
+///   - `inject_starlight_css`: boolean (default: false)
+///   - `enable_directives`: boolean (default: true)
+///
+/// # Returns
+///
+/// Returns a JavaScript array of RenderBlock objects. Each block is either:
+/// - `{type: "html", content: "<p>...</p>"}` - Plain HTML content
+/// - `{type: "component", name: "note", props: {title: "..."}, slot_html: "..."}` - Component block
+///
+/// # Example (JavaScript)
+///
+/// ```javascript
+/// import { parse_blocks } from './markflow_wasm';
+///
+/// const input = `:::note[Important]
+/// This is **bold** text.
+/// :::`;
+///
+/// const blocks = parse_blocks(input, { enable_directives: true });
+/// // blocks = [
+/// //   {
+/// //     type: "component",
+/// //     name: "note",
+/// //     props: { title: "Important" },
+/// //     slot_html: "<p>This is <strong>bold</strong> text.</p>"
+/// //   }
+/// // ]
+/// ```
+#[wasm_bindgen(js_name = parse_blocks)]
+pub fn parse_blocks(input: &str, opts: JsValue) -> Result<JsValue, JsError> {
+    use markflow_core::renderer::mdast::{Options, to_blocks};
+
+    // Parse options from JavaScript
+    let options: Options = if opts.is_undefined() || opts.is_null() {
+        Options {
+            inject_starlight_css: false,
+            enable_directives: true,
+        }
+    } else {
+        serde_wasm_bindgen::from_value(opts)
+            .map_err(|e| JsError::new(&format!("Invalid options: {}", e)))?
+    };
+
+    // Parse markdown to blocks
+    let blocks = to_blocks(input, &options).map_err(|e| JsError::new(&e))?;
+
+    // Convert to JavaScript value using zero-copy serialization
+    serde_wasm_bindgen::to_value(&blocks)
+        .map_err(|e| JsError::new(&format!("Serialization error: {}", e)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,4 +265,7 @@ mod tests {
             "import should remain when hoist is disabled"
         );
     }
+
+    // Note: WASM-specific tests are in tests/ directory using wasm-bindgen-test
+    // Regular cargo test cannot run wasm-bindgen functions
 }
