@@ -134,7 +134,7 @@ impl<'a> Context<'a> {
 
     /// Writes HTML-escaped attribute value to the current HTML buffer (internal use).
     ///
-    /// Escapes `<`, `>`, `&`, and `"` for safe attribute rendering.
+    /// Escapes `<`, `>`, `&`, `"`, and `'` for safe attribute rendering.
     fn push_attr_value(&mut self, s: &str) {
         for c in s.chars() {
             match c {
@@ -142,6 +142,7 @@ impl<'a> Context<'a> {
                 '>' => self.current_html.push_str("&gt;"),
                 '&' => self.current_html.push_str("&amp;"),
                 '"' => self.current_html.push_str("&quot;"),
+                '\'' => self.current_html.push_str("&#39;"),
                 _ => self.current_html.push(c),
             }
         }
@@ -247,9 +248,18 @@ pub struct Options {
 ///
 /// # Examples
 ///
+/// Input:
+/// ```text
+/// :::note[Title]
+/// Content
+/// :::
 /// ```
-/// Input:  ":::note[Title]\nContent\n:::"
-/// Output: "<!--mf-directive-start data-name=\"note\" data-title=\"Title\"-->\nContent\n<!--mf-directive-end-->"
+///
+/// Output:
+/// ```text
+/// <!--mf-directive-start data-name="note" data-title="Title"-->
+/// Content
+/// <!--mf-directive-end-->
 /// ```
 fn preprocess_directives(input: &str) -> String {
     use crate::transform::code_fence::{FenceState, advance_fence_state};
@@ -394,7 +404,16 @@ fn render_node(node: &Node, ctx: &mut Context) {
         Node::Link(link) => {
             ctx.push_raw(r#"<a href=""#);
             ctx.push_attr_value(&link.url);
-            ctx.push_raw(r#"">"#);
+            ctx.push_raw(r#"""#);
+
+            // Add optional title attribute
+            if let Some(title) = &link.title {
+                ctx.push_raw(r#" title=""#);
+                ctx.push_attr_value(title);
+                ctx.push_raw(r#"""#);
+            }
+
+            ctx.push_raw(">");
 
             for child in &link.children {
                 render_node(child, ctx);
@@ -562,13 +581,18 @@ fn render_node(node: &Node, ctx: &mut Context) {
                 return; // Don't output the placeholder comment
             }
 
-            // Regular HTML - pass through
-            ctx.push_raw(html_str);
+            // For security: Escape any user-provided HTML to prevent XSS
+            // Only our directive placeholders are allowed through unescaped
+            log::warn!(
+                "Raw HTML in markdown will be escaped for security: {}",
+                html_str
+            );
+            ctx.push_text(html_str);
         }
 
         // Unhandled node types - log warning
         _ => {
-            eprintln!("Warning: Unhandled node type: {:?}", node);
+            log::warn!("Unhandled markdown node type: {:?}", node);
         }
     }
 }
@@ -610,6 +634,10 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<Vec<RenderBlock>, Str
         constructs: markdown::Constructs {
             // NOTE: Directive syntax (:::note, etc.) is preprocessed into <mf-directive> tags
             // before parsing, then detected as Node::Html during rendering.
+            // HTML flow and text are ENABLED to support our directive placeholders
+            // Any user-provided HTML will be escaped during rendering
+            html_flow: true,
+            html_text: true,
             // Enable frontmatter (--- ... ---)
             frontmatter: true,
             // GitHub Flavored Markdown features
@@ -862,6 +890,85 @@ fn main() {}
             assert!(content.contains("First"), "Missing 'First'");
             assert!(content.contains("Second"), "Missing 'Second'");
             assert!(content.contains("</ol>"));
+        } else {
+            panic!("Expected HTML block");
+        }
+    }
+
+    /// Tests HTML escaping in text content to prevent XSS.
+    #[test]
+    fn test_xss_text_escaping() {
+        let input = "Text with <script>alert('xss')</script> and & symbols.";
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: false,
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+        assert_eq!(blocks.len(), 1);
+
+        if let RenderBlock::Html { content } = &blocks[0] {
+            println!("XSS text content:\n{}\n", content);
+            // Script tags should be escaped
+            assert!(
+                content.contains("&lt;script&gt;"),
+                "Missing escaped script tag"
+            );
+            assert!(content.contains("&amp;"), "Ampersand not escaped");
+        } else {
+            panic!("Expected HTML block");
+        }
+    }
+
+    /// Tests HTML escaping in link title attributes to prevent XSS.
+    #[test]
+    fn test_xss_attribute_escaping() {
+        let input = r#"[Link](http://example.com "Title with <script> and & and ' quotes")"#;
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: false,
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+        assert_eq!(blocks.len(), 1);
+
+        if let RenderBlock::Html { content } = &blocks[0] {
+            println!("Attribute escaping:\n{}\n", content);
+            // Special characters in title attribute should be escaped
+            assert!(
+                content.contains("&lt;script&gt;"),
+                "Script tags in title not escaped"
+            );
+            assert!(content.contains("&amp;"), "Ampersand in title not escaped");
+            assert!(
+                content.contains("&#39;"),
+                "Single quotes in title not escaped"
+            );
+        } else {
+            panic!("Expected HTML block");
+        }
+    }
+
+    /// Tests that image alt and title attributes are properly escaped.
+    #[test]
+    fn test_xss_image_attributes() {
+        let input = r#"![Alt with <b>tags</b>](image.png "Title with & and "")"#;
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: false,
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+        assert_eq!(blocks.len(), 1);
+
+        if let RenderBlock::Html { content } = &blocks[0] {
+            println!("Image attributes:\n{}\n", content);
+            // Alt and title should be escaped
+            assert!(
+                content.contains("&lt;b&gt;") || content.contains("Alt with &lt;b&gt;"),
+                "Tags in alt not escaped"
+            );
+            assert!(content.contains("&amp;"), "Ampersand in title not escaped");
         } else {
             panic!("Expected HTML block");
         }
