@@ -590,11 +590,101 @@ fn render_node(node: &Node, ctx: &mut Context) {
             ctx.push_text(html_str);
         }
 
+        // GFM: Strikethrough (~~text~~)
+        Node::Delete(delete) => {
+            ctx.push_raw("<del>");
+            for child in &delete.children {
+                render_node(child, ctx);
+            }
+            ctx.push_raw("</del>");
+        }
+
+        // GFM: Table
+        Node::Table(table) => {
+            ctx.push_raw("<table>");
+
+            // 1. Header row (thead)
+            ctx.push_raw("<thead>");
+            if let Some(first_row) = table.children.first() {
+                if let Node::TableRow(row) = first_row {
+                    // true = is_header
+                    render_table_row(row, ctx, true, &table.align);
+                }
+            }
+            ctx.push_raw("</thead>");
+
+            // 2. Data rows (tbody)
+            if table.children.len() > 1 {
+                ctx.push_raw("<tbody>");
+                // Process rows from second onwards
+                for row in table.children.iter().skip(1) {
+                    if let Node::TableRow(r) = row {
+                        // false = not header
+                        render_table_row(r, ctx, false, &table.align);
+                    }
+                }
+                ctx.push_raw("</tbody>");
+            }
+
+            ctx.push_raw("</table>");
+        }
+
+        // TableRow/TableCell are processed by render_table_row helper
+        // If they appear here directly, ignore them
+        Node::TableRow(_) => {}
+        Node::TableCell(_) => {}
+
         // Unhandled node types - log warning
         _ => {
             log::warn!("Unhandled markdown node type: {:?}", node);
         }
     }
+}
+
+/// Helper function to render a table row with proper alignment.
+///
+/// # Arguments
+///
+/// * `row` - The TableRow node to render
+/// * `ctx` - The rendering context
+/// * `is_header` - Whether this is a header row (uses `<th>` instead of `<td>`)
+/// * `aligns` - Column alignment specifications
+fn render_table_row(
+    row: &markdown::mdast::TableRow,
+    ctx: &mut Context,
+    is_header: bool,
+    aligns: &[markdown::mdast::AlignKind],
+) {
+    ctx.push_raw("<tr>");
+
+    for (i, cell) in row.children.iter().enumerate() {
+        if let Node::TableCell(c) = cell {
+            let tag = if is_header { "th" } else { "td" };
+
+            // Alignment attribute (align="center" etc.)
+            // Guard against more cells than alignment specs
+            let align_attr = if i < aligns.len() {
+                match aligns[i] {
+                    markdown::mdast::AlignKind::Left => " align=\"left\"",
+                    markdown::mdast::AlignKind::Right => " align=\"right\"",
+                    markdown::mdast::AlignKind::Center => " align=\"center\"",
+                    markdown::mdast::AlignKind::None => "",
+                }
+            } else {
+                ""
+            };
+
+            ctx.push_raw(&format!("<{}{}>", tag, align_attr));
+
+            for child in &c.children {
+                render_node(child, ctx);
+            }
+
+            ctx.push_raw(&format!("</{}>", tag));
+        }
+    }
+
+    ctx.push_raw("</tr>");
 }
 
 /// Converts Markdown input to rendering blocks (entry point).
@@ -1010,5 +1100,113 @@ fn main() {}
         println!("\n=== MULTI-PARAGRAPH AST DEBUG START ===");
         println!("{:#?}", tree2);
         println!("=== MULTI-PARAGRAPH AST DEBUG END ===\n");
+    }
+
+    /// Tests GFM strikethrough (~~text~~) rendering.
+    #[test]
+    fn test_strikethrough() {
+        let input = "This is ~~deleted~~ text.";
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: false,
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+        assert_eq!(blocks.len(), 1);
+
+        if let RenderBlock::Html { content } = &blocks[0] {
+            assert!(
+                content.contains("<del>deleted</del>"),
+                "Strikethrough not rendered"
+            );
+            assert!(content.contains("<p>"), "Missing paragraph tag");
+        } else {
+            panic!("Expected HTML block");
+        }
+    }
+
+    /// Tests GFM table rendering with alignment.
+    #[test]
+    fn test_table() {
+        let input = r#"| Name | Age | City |
+| :--- | :---: | ---: |
+| Alice | 30 | Tokyo |
+| Bob | 25 | NYC |"#;
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: false,
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+        assert_eq!(blocks.len(), 1);
+
+        if let RenderBlock::Html { content } = &blocks[0] {
+            println!("Table HTML:\n{}\n", content);
+
+            // Check table structure
+            assert!(content.contains("<table>"), "Missing <table>");
+            assert!(content.contains("<thead>"), "Missing <thead>");
+            assert!(content.contains("<tbody>"), "Missing <tbody>");
+            assert!(content.contains("</table>"), "Missing </table>");
+
+            // Check header cells
+            assert!(content.contains("<th"), "Missing <th> tags");
+            assert!(content.contains("Name"), "Missing 'Name' header");
+            assert!(content.contains("Age"), "Missing 'Age' header");
+            assert!(content.contains("City"), "Missing 'City' header");
+
+            // Check data cells
+            assert!(content.contains("<td"), "Missing <td> tags");
+            assert!(content.contains("Alice"), "Missing 'Alice' data");
+            assert!(content.contains("Bob"), "Missing 'Bob' data");
+
+            // Check alignment attributes
+            assert!(content.contains("align=\"left\""), "Missing left alignment");
+            assert!(
+                content.contains("align=\"center\""),
+                "Missing center alignment"
+            );
+            assert!(
+                content.contains("align=\"right\""),
+                "Missing right alignment"
+            );
+        } else {
+            panic!("Expected HTML block");
+        }
+    }
+
+    /// Tests table with complex content (links, emphasis, etc.).
+    #[test]
+    fn test_table_with_formatting() {
+        let input = r#"| Feature | Status |
+| --- | --- |
+| **Bold** | ✓ |
+| [Link](https://example.com) | ✓ |
+| `code` | ✓ |"#;
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: false,
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+        assert_eq!(blocks.len(), 1);
+
+        if let RenderBlock::Html { content } = &blocks[0] {
+            // Check that formatting is preserved inside table cells
+            assert!(
+                content.contains("<strong>Bold</strong>"),
+                "Missing bold in table"
+            );
+            assert!(
+                content.contains(r#"<a href="https://example.com">"#),
+                "Missing link in table"
+            );
+            assert!(
+                content.contains("<code>code</code>"),
+                "Missing code in table"
+            );
+        } else {
+            panic!("Expected HTML block");
+        }
     }
 }
