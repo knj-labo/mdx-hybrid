@@ -4,7 +4,7 @@ import { parseBlocks } from './crates/napi/index.js';
 console.log('=== Testing Vite Plugin mdast Integration ===\n');
 
 // Simulate what the Vite plugin will do
-function blocksToJsx(blocks, frontmatter = {}) {
+function blocksToJsx(blocks, frontmatter = {}, headings = []) {
   const fragments = [];
   const componentImports = new Set();
 
@@ -33,11 +33,12 @@ function blocksToJsx(blocks, frontmatter = {}) {
     .join("\n");
 
   const frontmatterJson = JSON.stringify(frontmatter);
+  const headingsJson = JSON.stringify(headings);
   const jsxContent = fragments.join("\n");
 
   return `${componentImportLines}
 export const frontmatter = ${frontmatterJson};
-export function getHeadings() { return []; }
+export function getHeadings() { return ${headingsJson}; }
 export default function MarkflowContent() {
   return (
     <>
@@ -72,7 +73,7 @@ console.log('Test input:');
 console.log(testInput);
 console.log('\n' + '='.repeat(60) + '\n');
 
-const blocks = parseBlocks(testInput, {
+const { blocks, headings } = parseBlocks(testInput, {
   inject_starlight_css: false,
   enable_directives: true,
 });
@@ -81,10 +82,14 @@ console.log('Parsed blocks:');
 console.log(JSON.stringify(blocks, null, 2));
 console.log('\n' + '='.repeat(60) + '\n');
 
+console.log('Extracted headings:');
+console.log(JSON.stringify(headings, null, 2));
+console.log('\n' + '='.repeat(60) + '\n');
+
 const jsxOutput = blocksToJsx(blocks, {
   title: 'Test Page',
   description: 'Testing mdast pipeline',
-});
+}, headings);
 
 console.log('Generated JSX code:');
 console.log(jsxOutput);

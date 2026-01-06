@@ -28,6 +28,26 @@ pub enum RenderBlock {
     },
 }
 
+/// Heading metadata extracted during rendering.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+pub struct HeadingEntry {
+    /// Heading depth (1-6).
+    pub depth: u8,
+    /// Slugified identifier.
+    pub slug: String,
+    /// Visible heading text.
+    pub text: String,
+}
+
+/// Result of parsing markdown to blocks with extracted metadata.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlocksResult {
+    /// Rendering blocks (HTML or Component).
+    pub blocks: Vec<RenderBlock>,
+    /// Extracted heading metadata.
+    pub headings: Vec<HeadingEntry>,
+}
+
 /// Manages the current rendering state with block-based architecture.
 ///
 /// This struct tracks the rendering context as we traverse the markdown AST,
@@ -39,6 +59,12 @@ pub struct Context<'a> {
 
     /// Current HTML buffer (not yet finalized into a block).
     pub current_html: String,
+
+    /// Extracted heading metadata for table of contents.
+    pub headings: Vec<HeadingEntry>,
+
+    /// Slugger for generating unique heading IDs.
+    slugger: crate::Slugger,
 
     stack: Vec<Scope>,
     #[allow(dead_code)]
@@ -102,6 +128,8 @@ impl<'a> Context<'a> {
         Self {
             blocks: Vec::new(),
             current_html: String::with_capacity(4096),
+            headings: Vec::new(),
+            slugger: crate::Slugger::new(),
             stack: vec![Scope::Root],
             options,
             directive_stack: Vec::new(),
@@ -225,9 +253,12 @@ impl<'a> Context<'a> {
     }
 
     /// Consumes the context and returns the list of rendering blocks.
-    pub fn finish(mut self) -> Vec<RenderBlock> {
+    pub fn finish(mut self) -> BlocksResult {
         self.flush_html();
-        self.blocks
+        BlocksResult {
+            blocks: self.blocks,
+            headings: self.headings,
+        }
     }
 }
 
@@ -372,6 +403,48 @@ fn extract_attr(html: &str, attr_name: &str) -> Option<String> {
     Some(unescaped)
 }
 
+/// Extracts plain text from a list of AST nodes (for heading text).
+///
+/// This recursively traverses the nodes and collects all text content,
+/// which is used for generating slugs and table of contents entries.
+fn extract_text_from_nodes(nodes: &[Node]) -> String {
+    let mut text = String::new();
+    for node in nodes {
+        extract_text_from_node(node, &mut text);
+    }
+    text.trim().to_string()
+}
+
+/// Helper function to recursively extract text from a single node.
+fn extract_text_from_node(node: &Node, buffer: &mut String) {
+    match node {
+        Node::Text(t) => buffer.push_str(&t.value),
+        Node::InlineCode(code) => buffer.push_str(&code.value),
+        Node::Strong(strong) => {
+            for child in &strong.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        Node::Emphasis(emphasis) => {
+            for child in &emphasis.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        Node::Link(link) => {
+            for child in &link.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        Node::Delete(del) => {
+            for child in &del.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        // Ignore other node types in headings
+        _ => {}
+    }
+}
+
 /// Recursively renders an AST node to HTML, updating the context state.
 fn render_node(node: &Node, ctx: &mut Context) {
     match node {
@@ -449,8 +522,20 @@ fn render_node(node: &Node, ctx: &mut Context) {
 
         // Heading node - render as <h1> to <h6>
         Node::Heading(heading) => {
+            // Extract heading text for table of contents
+            let text = extract_text_from_nodes(&heading.children);
+            let slug = ctx.slugger.next_slug(&text);
+
+            // Record heading metadata
+            ctx.headings.push(HeadingEntry {
+                depth: heading.depth,
+                slug: slug.clone(),
+                text,
+            });
+
+            // Render heading with ID
             let tag = format!("h{}", heading.depth);
-            ctx.push_raw(&format!("<{}>", tag));
+            ctx.push_raw(&format!("<{} id=\"{}\">", tag, slug));
             for child in &heading.children {
                 render_node(child, ctx);
             }
@@ -709,7 +794,7 @@ fn render_table_row(
 /// };
 /// let blocks = to_blocks(input, &options).unwrap();
 /// ```
-pub fn to_blocks(input: &str, options: &Options) -> Result<Vec<RenderBlock>, String> {
+pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String> {
     // 1. Preprocess directives if enabled
     let preprocessed = if options.enable_directives {
         preprocess_directives(input)

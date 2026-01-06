@@ -191,6 +191,16 @@ pub struct RenderBlock {
     pub slot_html: Option<String>,
 }
 
+/// Result of parseBlocks() with blocks and extracted headings.
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct ParseBlocksResult {
+    /// Rendering blocks (HTML or Component).
+    pub blocks: Vec<RenderBlock>,
+    /// Extracted heading metadata.
+    pub headings: Vec<HeadingEntry>,
+}
+
 use markflow_core::RewriteOptions;
 
 impl From<RewriteConfig> for RewriteOptions {
