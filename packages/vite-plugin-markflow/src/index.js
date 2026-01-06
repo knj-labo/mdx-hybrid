@@ -244,10 +244,32 @@ const unwrapVirtual = (value) =>
           return createFallbackModule(filename);
         }
         const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
-        const result = compiler.compile(source, filename, fileOptions);
-        result.code = injectAstroComponents(result.code);
-        if (starlightComponents) {
-          result.code = injectStarlightComponents(result.code, starlightComponents);
+
+        let result;
+        if (IS_MDAST) {
+          // Use parseBlocks() for mdast pipeline
+          const binding = await loadMarkflowBinding();
+          const blocks = binding.parseBlocks(source, {
+            inject_starlight_css: false,
+            enable_directives: true,
+          });
+          const frontmatterResult = binding.parseFrontmatter(source);
+          const frontmatter = frontmatterResult.frontmatter || {};
+
+          result = {
+            code: blocksToJsx(blocks, frontmatter),
+            map: null,
+            frontmatter_json: JSON.stringify(frontmatter),
+            headings: [],
+            imports: [],
+          };
+        } else {
+          // Use original compiler for multipass pipeline
+          result = compiler.compile(source, filename, fileOptions);
+          result.code = injectAstroComponents(result.code);
+          if (starlightComponents) {
+            result.code = injectStarlightComponents(result.code, starlightComponents);
+          }
         }
         const shiki = getShiki();
         if (shiki) {
@@ -318,6 +340,50 @@ function stripHeadingsMeta(code) {
   return code
     .replace(/export const headings\s*=\s*\[[\s\S]*?\];\r?\n/g, "")
     .replace(/export function getHeadings\(\)\s*\{[\s\S]*?\}\r?\n/g, "");
+}
+
+function blocksToJsx(blocks, frontmatter = {}) {
+  const fragments = [];
+  const componentImports = new Set();
+
+  for (const block of blocks) {
+    if (block.type === "html") {
+      fragments.push(block.content);
+    } else if (block.type === "component") {
+      componentImports.add(block.name);
+      const propsStr = block.props
+        ? Object.entries(block.props)
+            .map(([key, value]) => {
+              if (typeof value === "string") {
+                return `${key}="${value.replace(/"/g, '\\"')}"`;
+              }
+              return `${key}={${JSON.stringify(value)}}`;
+            })
+            .join(" ")
+        : "";
+      const openTag = propsStr ? `<${block.name} ${propsStr}>` : `<${block.name}>`;
+      fragments.push(`${openTag}${block.slotHtml || ""}</${block.name}>`);
+    }
+  }
+
+  const componentImportLines = Array.from(componentImports)
+    .map((name) => `import ${name} from '@astrojs/starlight/components/${name}.astro';`)
+    .join("\n");
+
+  const frontmatterJson = JSON.stringify(frontmatter);
+  const jsxContent = fragments.join("\n");
+
+  return `${componentImportLines}
+export const frontmatter = ${frontmatterJson};
+export function getHeadings() { return []; }
+export default function MarkflowContent() {
+  return (
+    <>
+${jsxContent}
+    </>
+  );
+}
+`;
 }
 
 function shouldBypassSource(source) {

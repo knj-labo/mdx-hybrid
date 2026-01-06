@@ -103,6 +103,99 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
     }
 }
 
+/// Parses markdown into structured RenderBlock objects using the mdast v2 renderer.
+///
+/// This function uses the Block Architecture to return a structured representation
+/// of the markdown content, allowing JavaScript to dynamically map component names
+/// to actual Astro components without hardcoding in Rust.
+///
+/// # Arguments
+///
+/// * `input` - The markdown text to parse
+/// * `opts` - Optional configuration object with:
+///   - `inject_starlight_css`: boolean (default: false)
+///   - `enable_directives`: boolean (default: true)
+///
+/// # Returns
+///
+/// Returns an array of RenderBlock objects. Each block is either:
+/// - `{type: "html", content: "<p>...</p>"}` - Plain HTML content
+/// - `{type: "component", name: "note", props: {title: "..."}, slotHtml: "..."}` - Component block
+///
+/// # Example (JavaScript)
+///
+/// ```javascript
+/// const { parseBlocks } = require('markflow-napi');
+///
+/// const input = `:::note[Important]
+/// This is **bold** text.
+/// :::`;
+///
+/// const blocks = parseBlocks(input, { enable_directives: true });
+/// // blocks = [
+/// //   {
+/// //     type: "component",
+/// //     name: "note",
+/// //     props: { title: "Important" },
+/// //     slotHtml: "<p>This is <strong>bold</strong> text.</p>"
+/// //   }
+/// // ]
+/// ```
+#[napi(js_name = "parseBlocks")]
+pub fn parse_blocks(input: String, opts: Option<BlockOptions>) -> napi::Result<Vec<RenderBlock>> {
+    use markflow_core::renderer::mdast;
+
+    // Parse options from JavaScript
+    let options = if let Some(o) = opts {
+        mdast::Options {
+            inject_starlight_css: o.inject_starlight_css.unwrap_or(false),
+            enable_directives: o.enable_directives.unwrap_or(true),
+        }
+    } else {
+        mdast::Options {
+            inject_starlight_css: false,
+            enable_directives: true,
+        }
+    };
+
+    // Parse markdown to blocks
+    let blocks = mdast::to_blocks(&input, &options)
+        .map_err(|e| Error::from_reason(format!("Failed to parse blocks: {}", e)))?;
+
+    // Convert core RenderBlock to NAPI RenderBlock
+    let result: Vec<RenderBlock> = blocks
+        .into_iter()
+        .map(|block| match block {
+            mdast::RenderBlock::Html { content } => RenderBlock {
+                r#type: "html".to_string(),
+                content: Some(content),
+                name: None,
+                props: None,
+                slot_html: None,
+            },
+            mdast::RenderBlock::Component {
+                name,
+                props,
+                slot_html,
+            } => {
+                // Convert HashMap<String, String> to JsonValue
+                let props_json = serde_json::to_value(&props)
+                    .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+
+                RenderBlock {
+                    r#type: "component".to_string(),
+                    content: None,
+                    name: Some(name),
+                    props: Some(props_json),
+                    slot_html: Some(slot_html),
+                }
+            }
+        })
+        .collect();
+
+    Ok(result)
+}
+
 /// Represents the type of the input file, either Markdown or MDX.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileType {

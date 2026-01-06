@@ -158,6 +158,39 @@ pub enum ImportKind {
     Transform,
 }
 
+/// Options for the mdast v2 block renderer.
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct BlockOptions {
+    /// Inject Starlight CSS classes for components (default: false)
+    pub inject_starlight_css: Option<bool>,
+    /// Enable directive preprocessing (:::note, etc.). Defaults to true.
+    pub enable_directives: Option<bool>,
+}
+
+/// Represents a rendering block returned by parse_blocks().
+///
+/// JavaScript receives this as:
+/// ```ts
+/// type RenderBlock =
+///   | { type: "html", content: string }
+///   | { type: "component", name: string, props: Record<string, string>, slotHtml: string }
+/// ```
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct RenderBlock {
+    /// Block type: "html" or "component"
+    pub r#type: String,
+    /// HTML content (for type="html")
+    pub content: Option<String>,
+    /// Component name (for type="component")
+    pub name: Option<String>,
+    /// Component props (for type="component")
+    pub props: Option<JsonValue>,
+    /// Slot HTML content (for type="component")
+    pub slot_html: Option<String>,
+}
+
 use markflow_core::RewriteOptions;
 
 impl From<RewriteConfig> for RewriteOptions {

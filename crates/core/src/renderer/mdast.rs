@@ -605,11 +605,9 @@ fn render_node(node: &Node, ctx: &mut Context) {
 
             // 1. Header row (thead)
             ctx.push_raw("<thead>");
-            if let Some(first_row) = table.children.first() {
-                if let Node::TableRow(row) = first_row {
-                    // true = is_header
-                    render_table_row(row, ctx, true, &table.align);
-                }
+            if let Some(Node::TableRow(row)) = table.children.first() {
+                // true = is_header
+                render_table_row(row, ctx, true, &table.align);
             }
             ctx.push_raw("</thead>");
 
