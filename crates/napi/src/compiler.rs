@@ -1,7 +1,7 @@
 //! The stateful compiler and its configuration.
 
 use crate::types::*;
-use markflow_core::{MarkflowError, render_to_html_mdast, render_to_jsx};
+use markflow_core::{MarkflowError, render_to_jsx};
 use napi_derive::napi;
 use std::path::Path;
 
@@ -35,13 +35,6 @@ fn split_leading_imports(input: &str) -> (Vec<String>, String) {
 #[derive(Debug, Clone)]
 pub(crate) struct InternalCompilerConfig {
     pub(crate) jsx_import_source: String,
-    pub(crate) pipeline: Pipeline,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Pipeline {
-    Multipass,
-    Mdast,
 }
 
 impl InternalCompilerConfig {
@@ -50,19 +43,8 @@ impl InternalCompilerConfig {
         let jsx_import_source = cfg
             .jsx_import_source
             .unwrap_or_else(|| ASTRO_DEFAULT_RUNTIME.to_string());
-        let pipeline = match std::env::var("MARKFLOW_PIPELINE").ok().as_deref() {
-            Some("mdast") => Pipeline::Mdast,
-            Some("multipass") => Pipeline::Multipass,
-            _ => match cfg.pipeline.as_deref() {
-                Some("mdast") => Pipeline::Mdast,
-                _ => Pipeline::Multipass,
-            },
-        };
 
-        Self {
-            jsx_import_source,
-            pipeline,
-        }
+        Self { jsx_import_source }
     }
 }
 
@@ -136,19 +118,8 @@ pub fn compile_ir(
     let frontmatter = frontmatter_extraction.value;
     let raw_body = source[frontmatter_extraction.body_start..].to_string();
 
-    let jsx_full = match internal.pipeline {
-        Pipeline::Multipass => render_to_jsx(&raw_body)
-            .map_err(|err| super::convert_error(with_path(err, &effective_path)))?,
-        Pipeline::Mdast => match render_to_html_mdast(&raw_body) {
-            Ok(value) => value,
-            Err(err) => {
-                let _ = err;
-
-                render_to_jsx(&raw_body)
-                    .map_err(|err| super::convert_error(with_path(err, &effective_path)))?
-            }
-        },
-    };
+    let jsx_full = render_to_jsx(&raw_body)
+        .map_err(|err| super::convert_error(with_path(err, &effective_path)))?;
     let (hoisted, jsx) = split_leading_imports(&jsx_full);
 
     let headings =
