@@ -29,7 +29,7 @@ pub use engine::{
 pub use error::MarkflowError;
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
 pub use parser::{ParseConfig, ParseConstructs};
-pub use renderer::{RewriteOptions, StreamingRewriter, render_to_html_mdast, render_to_jsx};
+pub use renderer::{RewriteOptions, StreamingRewriter, render_to_jsx};
 pub use slug::{Slugger, slugify};
 pub use transform::{
     code_fence,
