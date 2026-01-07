@@ -1,14 +1,21 @@
 {
-  "runs": 2,
-  "markflow": {
-    "avg": 18239.00475,
-    "min": 17906.454165999996,
-    "max": 18571.555334
+  "timestamp": "2026-01-07T13:10:47.762Z",
+  "baselineMs": 119739,
+  "markflowMs": 93179,
+  "mode": "semantic",
+  "semantic": {
+    "compared": 16,
+    "skipped": 0,
+    "differences": 15,
+    "samples": [
+      {
+        "file": "/en/getting-started/",
+        "reason": "content-diff",
+        "diffIndex": 894,
+        "previewA": "ldNodes); } } }); }, }; })(); .action:where(.astro-vnzlvqnm){gap:.5em;align-items:center;border-radius:999rem;",
+        "previewB": "ldNodes); } } }); }, }; })(); Skip to content [data-theme=\"dark\"] .flame { fill: url(#gradient); } Search GitH"
+      }
+    ]
   },
-  "baseline": {
-    "avg": 34885.509792,
-    "min": 34878.185709,
-    "max": 34892.833875
-  },
-  "speedup": 1.9126871378220347
+  "note": "semantic diff: pass if differences=0"
 }

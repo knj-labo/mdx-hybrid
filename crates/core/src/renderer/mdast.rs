@@ -40,7 +40,7 @@ pub struct HeadingEntry {
 }
 
 /// Result of parsing markdown to blocks with extracted metadata.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct BlocksResult {
     /// Rendering blocks (HTML or Component).
     pub blocks: Vec<RenderBlock>,
@@ -223,13 +223,19 @@ impl<'a> Context<'a> {
     ///
     /// Creates a temporary context to render the children, then combines
     /// all resulting blocks into a single HTML string.
-    pub fn render_children_to_string(&self, children: &[Node]) -> String {
+    ///
+    /// **Important:** This also bubbles up any headings found in the children
+    /// to the parent context, ensuring JSX component content appears in the TOC.
+    pub fn render_children_to_string(&mut self, children: &[Node]) -> String {
         let mut child_ctx = Context::new(self.options);
 
         for child in children {
             render_node(child, &mut child_ctx);
         }
         child_ctx.flush_html();
+
+        // Bubble up headings from child context to parent (for TOC)
+        self.headings.append(&mut child_ctx.headings);
 
         // Combine all blocks into a single HTML string
         let mut result = String::new();
@@ -717,6 +723,16 @@ fn render_node(node: &Node, ctx: &mut Context) {
         Node::TableRow(_) => {}
         Node::TableCell(_) => {}
 
+        // MDX: JSX flow elements (block-level <Component>...</Component>)
+        Node::MdxJsxFlowElement(elem) => {
+            render_jsx(elem.name.as_deref(), &elem.attributes, &elem.children, ctx);
+        }
+
+        // MDX: JSX text elements (inline <Component />)
+        Node::MdxJsxTextElement(elem) => {
+            render_jsx(elem.name.as_deref(), &elem.attributes, &elem.children, ctx);
+        }
+
         // Unhandled node types - log warning
         _ => {
             log::warn!("Unhandled markdown node type: {:?}", node);
@@ -770,6 +786,67 @@ fn render_table_row(
     ctx.push_raw("</tr>");
 }
 
+/// Renders a JSX element (MDX) as either a component block or transparent container.
+///
+/// # Arguments
+///
+/// * `name` - The JSX element name (e.g., "Card", "div"), or None for fragments (<>...</>)
+/// * `attributes` - JSX attributes/props
+/// * `children` - Child nodes to render
+/// * `ctx` - The rendering context
+///
+/// # Behavior
+///
+/// - Fragment elements (<>...</>) are transparent - children are rendered inline
+/// - Named elements become Component blocks with props and slot HTML
+/// - Children are recursively rendered to support nested markdown/JSX
+/// - Headings inside JSX are bubbled up to the parent context for TOC
+fn render_jsx(
+    name: Option<&str>,
+    attributes: &[markdown::mdast::AttributeContent],
+    children: &[Node],
+    ctx: &mut Context,
+) {
+    // 1. Fragment handling: <> ... </> has no name, just render children
+    let Some(tag_name) = name else {
+        for child in children {
+            render_node(child, ctx);
+        }
+        return;
+    };
+
+    // 2. Extract props from JSX attributes
+    let mut props = HashMap::new();
+    for attr in attributes {
+        match attr {
+            // key="value" or key={expression}
+            markdown::mdast::AttributeContent::Property(prop) => {
+                let value = match &prop.value {
+                    Some(markdown::mdast::AttributeValue::Literal(s)) => s.clone(),
+                    Some(markdown::mdast::AttributeValue::Expression(expr)) => {
+                        // Expression like {someVar} - use raw expression value
+                        expr.value.clone()
+                    }
+                    None => String::new(),
+                };
+                props.insert(prop.name.clone(), value);
+            }
+            // {...spread} - skip for now (complex to handle)
+            markdown::mdast::AttributeContent::Expression(_) => {
+                // Spread attributes not yet supported
+            }
+        }
+    }
+
+    // 3. Render children to HTML string (enables nested markdown/JSX)
+    // This is the key to supporting markdown inside JSX components!
+    // Headings found in children are automatically bubbled up to ctx for TOC.
+    let slot_html = ctx.render_children_to_string(children);
+
+    // 4. Push as component block (unified with directive rendering)
+    ctx.push_component(tag_name, props, slot_html);
+}
+
 /// Converts Markdown input to rendering blocks (entry point).
 ///
 /// # Arguments
@@ -805,12 +882,14 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
     // 2. Parse markdown to MDAST with enhanced options
     let parse_options = markdown::ParseOptions {
         constructs: markdown::Constructs {
+            // MDX: JSX support for <Component>...</Component>
+            mdx_jsx_flow: true,
+            mdx_jsx_text: true,
             // NOTE: Directive syntax (:::note, etc.) is preprocessed into <mf-directive> tags
-            // before parsing, then detected as Node::Html during rendering.
-            // HTML flow and text are ENABLED to support our directive placeholders
-            // Any user-provided HTML will be escaped during rendering
-            html_flow: true,
-            html_text: true,
+            // For directives to work, we need html_flow, but this conflicts with MDX JSX
+            // Disabling html_flow for now to test pure MDX support
+            html_flow: false,
+            html_text: false,
             // Enable frontmatter (--- ... ---)
             frontmatter: true,
             // GitHub Flavored Markdown features
