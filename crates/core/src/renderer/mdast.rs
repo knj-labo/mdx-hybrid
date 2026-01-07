@@ -277,11 +277,11 @@ pub struct Options {
     pub enable_directives: bool,
 }
 
-/// Preprocesses input markdown to convert directive syntax into placeholder HTML comments.
+/// Preprocesses input markdown to convert directive syntax into internal JSX tags.
 ///
 /// This allows markdown-rs to preserve directive structure even though it doesn't
-/// natively support `::: note` syntax. Using HTML comments ensures markdown between
-/// the markers is still parsed correctly.
+/// natively support `::: note` syntax. Using JSX tags ensures markdown between
+/// the markers is still parsed correctly and unifies directive handling with JSX.
 ///
 /// # Examples
 ///
@@ -294,9 +294,9 @@ pub struct Options {
 ///
 /// Output:
 /// ```text
-/// <!--mf-directive-start data-name="note" data-title="Title"-->
+/// <mf-directive-start name="note" title="Title" />
 /// Content
-/// <!--mf-directive-end-->
+/// <mf-directive-end />
 /// ```
 fn preprocess_directives(input: &str) -> String {
     use crate::transform::code_fence::{FenceState, advance_fence_state};
@@ -320,10 +320,10 @@ fn preprocess_directives(input: &str) -> String {
         if let Some(opening) = parse_opening_directive(line) {
             directive_stack.push(opening.name.clone());
 
-            // Convert to HTML comment placeholder
+            // Convert to JSX tag
             write!(
                 output,
-                "<!--mf-directive-start data-name=\"{}\"",
+                "<mf-directive-start name=\"{}\"",
                 opening.name
             )
             .ok();
@@ -331,26 +331,26 @@ fn preprocess_directives(input: &str) -> String {
             if let Some(title) = &opening.bracket_title {
                 // Escape quotes in title
                 let escaped_title = title.replace('"', "&quot;");
-                write!(output, " data-title=\"{}\"", escaped_title).ok();
+                write!(output, " title=\"{}\"", escaped_title).ok();
             }
 
             if !opening.raw_attrs.is_empty() {
                 write!(
                     output,
-                    " data-attrs=\"{}\"",
+                    " attrs=\"{}\"",
                     opening.raw_attrs.replace('"', "&quot;")
                 )
                 .ok();
             }
 
-            writeln!(output, "-->").ok();
+            writeln!(output, " />").ok();
             continue;
         }
 
         // Check for directive closer
         if is_directive_closer(line) && !directive_stack.is_empty() {
             directive_stack.pop();
-            writeln!(output, "<!--mf-directive-end-->").ok();
+            writeln!(output, "<mf-directive-end />").ok();
             continue;
         }
 
@@ -360,53 +360,10 @@ fn preprocess_directives(input: &str) -> String {
 
     // Close any unclosed directives
     while directive_stack.pop().is_some() {
-        writeln!(output, "<!--mf-directive-end-->").ok();
+        writeln!(output, "<mf-directive-end />").ok();
     }
 
     output
-}
-
-/// Parses a directive placeholder HTML comment to extract metadata.
-///
-/// Returns Some(DirectiveMeta) if the HTML is an opening <!--mf-directive-start--> comment,
-/// or None if it's a closing comment or not a directive placeholder.
-fn parse_directive_placeholder(html: &str) -> Option<DirectiveMeta> {
-    let trimmed = html.trim();
-
-    // Check for closing comment
-    if trimmed == "<!--mf-directive-end-->" {
-        return None;
-    }
-
-    // Check for opening comment
-    if !trimmed.starts_with("<!--mf-directive-start ") {
-        return None;
-    }
-
-    // Extract data-name attribute
-    let name = extract_attr(trimmed, "data-name")?;
-
-    // Extract optional data-title attribute
-    let title = extract_attr(trimmed, "data-title");
-
-    // Extract optional data-attrs attribute
-    let attrs = extract_attr(trimmed, "data-attrs");
-
-    Some(DirectiveMeta { name, title, attrs })
-}
-
-/// Helper to extract an attribute value from an HTML tag string.
-fn extract_attr(html: &str, attr_name: &str) -> Option<String> {
-    let pattern = format!("{}=\"", attr_name);
-    let start = html.find(&pattern)? + pattern.len();
-    let rest = &html[start..];
-    let end = rest.find('"')?;
-    let value = &rest[..end];
-
-    // Unescape HTML entities
-    let unescaped = value.replace("&quot;", "\"");
-
-    Some(unescaped)
 }
 
 /// Extracts plain text from a list of AST nodes (for heading text).
@@ -641,44 +598,15 @@ fn render_node(node: &Node, ctx: &mut Context) {
             ctx.push_raw("<hr />");
         }
 
-        // HTML node - check for directive placeholders
+        // HTML node - escape for security (XSS prevention)
         Node::Html(html) => {
-            let html_str = html.value.as_ref();
-
-            // Check if this is a directive placeholder
-            if let Some(meta) = parse_directive_placeholder(html_str) {
-                // Opening directive comment - push to stack
-                ctx.directive_stack.push(meta);
-                return; // Don't output the placeholder comment
-            }
-
-            // Check for closing directive comment
-            if html_str.trim() == "<!--mf-directive-end-->" {
-                // Pop directive metadata from stack
-                if let Some(meta) = ctx.directive_stack.pop() {
-                    // Extract slot HTML from current buffer
-                    let slot_html = std::mem::take(&mut ctx.current_html);
-
-                    // Build props from directive metadata
-                    let mut props = HashMap::new();
-                    if let Some(title) = meta.title {
-                        props.insert("title".to_string(), title);
-                    }
-                    // TODO: Parse attrs string if needed
-
-                    // Emit Component block
-                    ctx.push_component(&meta.name, props, slot_html);
-                }
-                return; // Don't output the placeholder comment
-            }
-
-            // For security: Escape any user-provided HTML to prevent XSS
-            // Only our directive placeholders are allowed through unescaped
+            // With html_flow: false, this should rarely be reached
+            // But if it is, escape the HTML for security
             log::warn!(
                 "Raw HTML in markdown will be escaped for security: {}",
-                html_str
+                html.value
             );
-            ctx.push_text(html_str);
+            ctx.push_text(&html.value);
         }
 
         // GFM: Strikethrough (~~text~~)
@@ -815,7 +743,63 @@ fn render_jsx(
         return;
     };
 
-    // 2. Extract props from JSX attributes
+    // 2. Handle internal directive markers
+
+    // Opening marker: <mf-directive-start name="..." title="..." />
+    if tag_name == "mf-directive-start" {
+        // Flush any pending HTML before starting directive capture
+        ctx.flush_html();
+
+        let mut meta = DirectiveMeta {
+            name: "note".to_string(),
+            title: None,
+            attrs: None,
+        };
+
+        // Extract metadata from attributes
+        for attr in attributes {
+            if let markdown::mdast::AttributeContent::Property(prop) = attr {
+                let val = match &prop.value {
+                    Some(markdown::mdast::AttributeValue::Literal(s)) => s.clone(),
+                    _ => String::new(),
+                };
+
+                match prop.name.as_str() {
+                    "name" => meta.name = val,
+                    "title" => {
+                        // Unescape &quot; back to "
+                        meta.title = Some(val.replace("&quot;", "\""));
+                    }
+                    "attrs" => meta.attrs = Some(val.replace("&quot;", "\"")),
+                    _ => {}
+                }
+            }
+        }
+
+        ctx.directive_stack.push(meta);
+        return; // Don't output anything to HTML
+    }
+
+    // Closing marker: <mf-directive-end />
+    if tag_name == "mf-directive-end" {
+        if let Some(meta) = ctx.directive_stack.pop() {
+            // Extract slot HTML from current buffer
+            let slot_html = std::mem::take(&mut ctx.current_html);
+
+            // Build props from directive metadata
+            let mut props = HashMap::new();
+            if let Some(title) = meta.title {
+                props.insert("title".to_string(), title);
+            }
+            // TODO: Parse attrs string if needed
+
+            // Emit Component block
+            ctx.push_component(&meta.name, props, slot_html);
+        }
+        return; // Don't output anything to HTML
+    }
+
+    // 3. Extract props from JSX attributes
     let mut props = HashMap::new();
     for attr in attributes {
         match attr {
@@ -838,12 +822,12 @@ fn render_jsx(
         }
     }
 
-    // 3. Render children to HTML string (enables nested markdown/JSX)
+    // 4. Render children to HTML string (enables nested markdown/JSX)
     // This is the key to supporting markdown inside JSX components!
     // Headings found in children are automatically bubbled up to ctx for TOC.
     let slot_html = ctx.render_children_to_string(children);
 
-    // 4. Push as component block (unified with directive rendering)
+    // 5. Push as component block (unified with directive rendering)
     ctx.push_component(tag_name, props, slot_html);
 }
 
@@ -885,9 +869,8 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
             // MDX: JSX support for <Component>...</Component>
             mdx_jsx_flow: true,
             mdx_jsx_text: true,
-            // NOTE: Directive syntax (:::note, etc.) is preprocessed into <mf-directive> tags
-            // For directives to work, we need html_flow, but this conflicts with MDX JSX
-            // Disabling html_flow for now to test pure MDX support
+            // HTML: DISABLED - directives are now rendered as internal JSX tags
+            // This unified approach allows directives and JSX to coexist seamlessly
             html_flow: false,
             html_text: false,
             // Enable frontmatter (--- ... ---)

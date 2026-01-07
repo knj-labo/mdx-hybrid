@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-01-07T13:10:47.762Z",
-  "baselineMs": 119739,
-  "markflowMs": 93179,
+  "timestamp": "2026-01-07T13:53:46.835Z",
+  "baselineMs": 113536,
+  "markflowMs": 86505,
   "mode": "semantic",
   "semantic": {
     "compared": 16,
