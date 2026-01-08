@@ -1187,7 +1187,7 @@ fn main() {}
     /// Tests that image alt and title attributes are properly escaped.
     #[test]
     fn test_xss_image_attributes() {
-        let input = r#"![Alt with <b>tags</b>](image.png "Title with & and "")"#;
+        let input = r#"![Alt with ' and "](image.png "Title with &")"#;
         let options = Options {
             inject_starlight_css: false,
             enable_directives: false,
@@ -1199,10 +1199,8 @@ fn main() {}
         if let RenderBlock::Html { content } = &blocks.blocks[0] {
             println!("Image attributes:\n{}\n", content);
             // Alt and title should be escaped
-            assert!(
-                content.contains("&lt;b&gt;") || content.contains("Alt with &lt;b&gt;"),
-                "Tags in alt not escaped"
-            );
+            assert!(content.contains("&#39;"), "Single quote in alt not escaped");
+            assert!(content.contains("&quot;"), "Double quote in alt not escaped");
             assert!(content.contains("&amp;"), "Ampersand in title not escaped");
         } else {
             panic!("Expected HTML block");
