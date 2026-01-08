@@ -965,7 +965,12 @@ mod tests {
         let blocks = to_blocks(input, &options).unwrap();
 
         // Should produce exactly 1 Component block
-        assert_eq!(blocks.blocks.len(), 1, "Expected 1 block, got {}", blocks.blocks.len());
+        assert_eq!(
+            blocks.blocks.len(),
+            1,
+            "Expected 1 block, got {}",
+            blocks.blocks.len()
+        );
 
         match &blocks.blocks[0] {
             RenderBlock::Component {
