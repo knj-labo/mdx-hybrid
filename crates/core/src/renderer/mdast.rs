@@ -1200,7 +1200,10 @@ fn main() {}
             println!("Image attributes:\n{}\n", content);
             // Alt and title should be escaped
             assert!(content.contains("&#39;"), "Single quote in alt not escaped");
-            assert!(content.contains("&quot;"), "Double quote in alt not escaped");
+            assert!(
+                content.contains("&quot;"),
+                "Double quote in alt not escaped"
+            );
             assert!(content.contains("&amp;"), "Ampersand in title not escaped");
         } else {
             panic!("Expected HTML block");
