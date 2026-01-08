@@ -142,7 +142,7 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
 /// // ]
 /// ```
 #[napi(js_name = "parseBlocks")]
-pub fn parse_blocks(input: String, opts: Option<BlockOptions>) -> napi::Result<Vec<RenderBlock>> {
+pub fn parse_blocks(input: String, opts: Option<BlockOptions>) -> napi::Result<ParseBlocksResult> {
     use markflow_core::renderer::mdast;
 
     // Parse options from JavaScript
@@ -158,12 +158,13 @@ pub fn parse_blocks(input: String, opts: Option<BlockOptions>) -> napi::Result<V
         }
     };
 
-    // Parse markdown to blocks
-    let blocks = mdast::to_blocks(&input, &options)
+    // Parse markdown to blocks and extract headings
+    let result = mdast::to_blocks(&input, &options)
         .map_err(|e| Error::from_reason(format!("Failed to parse blocks: {}", e)))?;
 
     // Convert core RenderBlock to NAPI RenderBlock
-    let result: Vec<RenderBlock> = blocks
+    let blocks: Vec<RenderBlock> = result
+        .blocks
         .into_iter()
         .map(|block| match block {
             mdast::RenderBlock::Html { content } => RenderBlock {
@@ -193,7 +194,18 @@ pub fn parse_blocks(input: String, opts: Option<BlockOptions>) -> napi::Result<V
         })
         .collect();
 
-    Ok(result)
+    // Convert headings
+    let headings: Vec<HeadingEntry> = result
+        .headings
+        .into_iter()
+        .map(|h| HeadingEntry {
+            depth: h.depth,
+            slug: h.slug,
+            text: h.text,
+        })
+        .collect();
+
+    Ok(ParseBlocksResult { blocks, headings })
 }
 
 /// Represents the type of the input file, either Markdown or MDX.

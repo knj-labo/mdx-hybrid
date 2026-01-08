@@ -249,7 +249,7 @@ const unwrapVirtual = (value) =>
         if (IS_MDAST) {
           // Use parseBlocks() for mdast pipeline
           const binding = await loadMarkflowBinding();
-          const blocks = binding.parseBlocks(source, {
+          const { blocks, headings } = binding.parseBlocks(source, {
             inject_starlight_css: false,
             enable_directives: true,
           });
@@ -257,10 +257,10 @@ const unwrapVirtual = (value) =>
           const frontmatter = frontmatterResult.frontmatter || {};
 
           result = {
-            code: blocksToJsx(blocks, frontmatter),
+            code: blocksToJsx(blocks, frontmatter, headings),
             map: null,
             frontmatter_json: JSON.stringify(frontmatter),
-            headings: [],
+            headings,
             imports: [],
           };
         } else {
@@ -342,7 +342,7 @@ function stripHeadingsMeta(code) {
     .replace(/export function getHeadings\(\)\s*\{[\s\S]*?\}\r?\n/g, "");
 }
 
-function blocksToJsx(blocks, frontmatter = {}) {
+function blocksToJsx(blocks, frontmatter = {}, headings = []) {
   const fragments = [];
   const componentImports = new Set();
 
@@ -371,11 +371,12 @@ function blocksToJsx(blocks, frontmatter = {}) {
     .join("\n");
 
   const frontmatterJson = JSON.stringify(frontmatter);
+  const headingsJson = JSON.stringify(headings);
   const jsxContent = fragments.join("\n");
 
   return `${componentImportLines}
 export const frontmatter = ${frontmatterJson};
-export function getHeadings() { return []; }
+export function getHeadings() { return ${headingsJson}; }
 export default function MarkflowContent() {
   return (
     <>

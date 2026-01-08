@@ -28,6 +28,26 @@ pub enum RenderBlock {
     },
 }
 
+/// Heading metadata extracted during rendering.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+pub struct HeadingEntry {
+    /// Heading depth (1-6).
+    pub depth: u8,
+    /// Slugified identifier.
+    pub slug: String,
+    /// Visible heading text.
+    pub text: String,
+}
+
+/// Result of parsing markdown to blocks with extracted metadata.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct BlocksResult {
+    /// Rendering blocks (HTML or Component).
+    pub blocks: Vec<RenderBlock>,
+    /// Extracted heading metadata.
+    pub headings: Vec<HeadingEntry>,
+}
+
 /// Manages the current rendering state with block-based architecture.
 ///
 /// This struct tracks the rendering context as we traverse the markdown AST,
@@ -39,6 +59,12 @@ pub struct Context<'a> {
 
     /// Current HTML buffer (not yet finalized into a block).
     pub current_html: String,
+
+    /// Extracted heading metadata for table of contents.
+    pub headings: Vec<HeadingEntry>,
+
+    /// Slugger for generating unique heading IDs.
+    slugger: crate::Slugger,
 
     stack: Vec<Scope>,
     #[allow(dead_code)]
@@ -102,6 +128,8 @@ impl<'a> Context<'a> {
         Self {
             blocks: Vec::new(),
             current_html: String::with_capacity(4096),
+            headings: Vec::new(),
+            slugger: crate::Slugger::new(),
             stack: vec![Scope::Root],
             options,
             directive_stack: Vec::new(),
@@ -195,13 +223,19 @@ impl<'a> Context<'a> {
     ///
     /// Creates a temporary context to render the children, then combines
     /// all resulting blocks into a single HTML string.
-    pub fn render_children_to_string(&self, children: &[Node]) -> String {
+    ///
+    /// **Important:** This also bubbles up any headings found in the children
+    /// to the parent context, ensuring JSX component content appears in the TOC.
+    pub fn render_children_to_string(&mut self, children: &[Node]) -> String {
         let mut child_ctx = Context::new(self.options);
 
         for child in children {
             render_node(child, &mut child_ctx);
         }
         child_ctx.flush_html();
+
+        // Bubble up headings from child context to parent (for TOC)
+        self.headings.append(&mut child_ctx.headings);
 
         // Combine all blocks into a single HTML string
         let mut result = String::new();
@@ -225,9 +259,12 @@ impl<'a> Context<'a> {
     }
 
     /// Consumes the context and returns the list of rendering blocks.
-    pub fn finish(mut self) -> Vec<RenderBlock> {
+    pub fn finish(mut self) -> BlocksResult {
         self.flush_html();
-        self.blocks
+        BlocksResult {
+            blocks: self.blocks,
+            headings: self.headings,
+        }
     }
 }
 
@@ -240,11 +277,11 @@ pub struct Options {
     pub enable_directives: bool,
 }
 
-/// Preprocesses input markdown to convert directive syntax into placeholder HTML comments.
+/// Preprocesses input markdown to convert directive syntax into internal JSX tags.
 ///
 /// This allows markdown-rs to preserve directive structure even though it doesn't
-/// natively support `::: note` syntax. Using HTML comments ensures markdown between
-/// the markers is still parsed correctly.
+/// natively support `::: note` syntax. Using JSX tags ensures markdown between
+/// the markers is still parsed correctly and unifies directive handling with JSX.
 ///
 /// # Examples
 ///
@@ -257,9 +294,9 @@ pub struct Options {
 ///
 /// Output:
 /// ```text
-/// <!--mf-directive-start data-name="note" data-title="Title"-->
+/// <mf-directive-start name="note" title="Title" />
 /// Content
-/// <!--mf-directive-end-->
+/// <mf-directive-end />
 /// ```
 fn preprocess_directives(input: &str) -> String {
     use crate::transform::code_fence::{FenceState, advance_fence_state};
@@ -283,37 +320,32 @@ fn preprocess_directives(input: &str) -> String {
         if let Some(opening) = parse_opening_directive(line) {
             directive_stack.push(opening.name.clone());
 
-            // Convert to HTML comment placeholder
-            write!(
-                output,
-                "<!--mf-directive-start data-name=\"{}\"",
-                opening.name
-            )
-            .ok();
+            // Convert to JSX tag
+            write!(output, "<mf-directive-start name=\"{}\"", opening.name).ok();
 
             if let Some(title) = &opening.bracket_title {
                 // Escape quotes in title
                 let escaped_title = title.replace('"', "&quot;");
-                write!(output, " data-title=\"{}\"", escaped_title).ok();
+                write!(output, " title=\"{}\"", escaped_title).ok();
             }
 
             if !opening.raw_attrs.is_empty() {
                 write!(
                     output,
-                    " data-attrs=\"{}\"",
+                    " attrs=\"{}\"",
                     opening.raw_attrs.replace('"', "&quot;")
                 )
                 .ok();
             }
 
-            writeln!(output, "-->").ok();
+            writeln!(output, " />").ok();
             continue;
         }
 
         // Check for directive closer
         if is_directive_closer(line) && !directive_stack.is_empty() {
             directive_stack.pop();
-            writeln!(output, "<!--mf-directive-end-->").ok();
+            writeln!(output, "<mf-directive-end />").ok();
             continue;
         }
 
@@ -323,53 +355,52 @@ fn preprocess_directives(input: &str) -> String {
 
     // Close any unclosed directives
     while directive_stack.pop().is_some() {
-        writeln!(output, "<!--mf-directive-end-->").ok();
+        writeln!(output, "<mf-directive-end />").ok();
     }
 
     output
 }
 
-/// Parses a directive placeholder HTML comment to extract metadata.
+/// Extracts plain text from a list of AST nodes (for heading text).
 ///
-/// Returns Some(DirectiveMeta) if the HTML is an opening <!--mf-directive-start--> comment,
-/// or None if it's a closing comment or not a directive placeholder.
-fn parse_directive_placeholder(html: &str) -> Option<DirectiveMeta> {
-    let trimmed = html.trim();
-
-    // Check for closing comment
-    if trimmed == "<!--mf-directive-end-->" {
-        return None;
+/// This recursively traverses the nodes and collects all text content,
+/// which is used for generating slugs and table of contents entries.
+fn extract_text_from_nodes(nodes: &[Node]) -> String {
+    let mut text = String::new();
+    for node in nodes {
+        extract_text_from_node(node, &mut text);
     }
-
-    // Check for opening comment
-    if !trimmed.starts_with("<!--mf-directive-start ") {
-        return None;
-    }
-
-    // Extract data-name attribute
-    let name = extract_attr(trimmed, "data-name")?;
-
-    // Extract optional data-title attribute
-    let title = extract_attr(trimmed, "data-title");
-
-    // Extract optional data-attrs attribute
-    let attrs = extract_attr(trimmed, "data-attrs");
-
-    Some(DirectiveMeta { name, title, attrs })
+    text.trim().to_string()
 }
 
-/// Helper to extract an attribute value from an HTML tag string.
-fn extract_attr(html: &str, attr_name: &str) -> Option<String> {
-    let pattern = format!("{}=\"", attr_name);
-    let start = html.find(&pattern)? + pattern.len();
-    let rest = &html[start..];
-    let end = rest.find('"')?;
-    let value = &rest[..end];
-
-    // Unescape HTML entities
-    let unescaped = value.replace("&quot;", "\"");
-
-    Some(unescaped)
+/// Helper function to recursively extract text from a single node.
+fn extract_text_from_node(node: &Node, buffer: &mut String) {
+    match node {
+        Node::Text(t) => buffer.push_str(&t.value),
+        Node::InlineCode(code) => buffer.push_str(&code.value),
+        Node::Strong(strong) => {
+            for child in &strong.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        Node::Emphasis(emphasis) => {
+            for child in &emphasis.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        Node::Link(link) => {
+            for child in &link.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        Node::Delete(del) => {
+            for child in &del.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        // Ignore other node types in headings
+        _ => {}
+    }
 }
 
 /// Recursively renders an AST node to HTML, updating the context state.
@@ -449,8 +480,20 @@ fn render_node(node: &Node, ctx: &mut Context) {
 
         // Heading node - render as <h1> to <h6>
         Node::Heading(heading) => {
+            // Extract heading text for table of contents
+            let text = extract_text_from_nodes(&heading.children);
+            let slug = ctx.slugger.next_slug(&text);
+
+            // Record heading metadata
+            ctx.headings.push(HeadingEntry {
+                depth: heading.depth,
+                slug: slug.clone(),
+                text,
+            });
+
+            // Render heading with ID
             let tag = format!("h{}", heading.depth);
-            ctx.push_raw(&format!("<{}>", tag));
+            ctx.push_raw(&format!("<{} id=\"{}\">", tag, slug));
             for child in &heading.children {
                 render_node(child, ctx);
             }
@@ -550,44 +593,15 @@ fn render_node(node: &Node, ctx: &mut Context) {
             ctx.push_raw("<hr />");
         }
 
-        // HTML node - check for directive placeholders
+        // HTML node - escape for security (XSS prevention)
         Node::Html(html) => {
-            let html_str = html.value.as_ref();
-
-            // Check if this is a directive placeholder
-            if let Some(meta) = parse_directive_placeholder(html_str) {
-                // Opening directive comment - push to stack
-                ctx.directive_stack.push(meta);
-                return; // Don't output the placeholder comment
-            }
-
-            // Check for closing directive comment
-            if html_str.trim() == "<!--mf-directive-end-->" {
-                // Pop directive metadata from stack
-                if let Some(meta) = ctx.directive_stack.pop() {
-                    // Extract slot HTML from current buffer
-                    let slot_html = std::mem::take(&mut ctx.current_html);
-
-                    // Build props from directive metadata
-                    let mut props = HashMap::new();
-                    if let Some(title) = meta.title {
-                        props.insert("title".to_string(), title);
-                    }
-                    // TODO: Parse attrs string if needed
-
-                    // Emit Component block
-                    ctx.push_component(&meta.name, props, slot_html);
-                }
-                return; // Don't output the placeholder comment
-            }
-
-            // For security: Escape any user-provided HTML to prevent XSS
-            // Only our directive placeholders are allowed through unescaped
+            // With html_flow: false, this should rarely be reached
+            // But if it is, escape the HTML for security
             log::warn!(
                 "Raw HTML in markdown will be escaped for security: {}",
-                html_str
+                html.value
             );
-            ctx.push_text(html_str);
+            ctx.push_text(&html.value);
         }
 
         // GFM: Strikethrough (~~text~~)
@@ -631,6 +645,16 @@ fn render_node(node: &Node, ctx: &mut Context) {
         // If they appear here directly, ignore them
         Node::TableRow(_) => {}
         Node::TableCell(_) => {}
+
+        // MDX: JSX flow elements (block-level <Component>...</Component>)
+        Node::MdxJsxFlowElement(elem) => {
+            render_jsx(elem.name.as_deref(), &elem.attributes, &elem.children, ctx);
+        }
+
+        // MDX: JSX text elements (inline <Component />)
+        Node::MdxJsxTextElement(elem) => {
+            render_jsx(elem.name.as_deref(), &elem.attributes, &elem.children, ctx);
+        }
 
         // Unhandled node types - log warning
         _ => {
@@ -685,6 +709,123 @@ fn render_table_row(
     ctx.push_raw("</tr>");
 }
 
+/// Renders a JSX element (MDX) as either a component block or transparent container.
+///
+/// # Arguments
+///
+/// * `name` - The JSX element name (e.g., "Card", "div"), or None for fragments (<>...</>)
+/// * `attributes` - JSX attributes/props
+/// * `children` - Child nodes to render
+/// * `ctx` - The rendering context
+///
+/// # Behavior
+///
+/// - Fragment elements (<>...</>) are transparent - children are rendered inline
+/// - Named elements become Component blocks with props and slot HTML
+/// - Children are recursively rendered to support nested markdown/JSX
+/// - Headings inside JSX are bubbled up to the parent context for TOC
+fn render_jsx(
+    name: Option<&str>,
+    attributes: &[markdown::mdast::AttributeContent],
+    children: &[Node],
+    ctx: &mut Context,
+) {
+    // 1. Fragment handling: <> ... </> has no name, just render children
+    let Some(tag_name) = name else {
+        for child in children {
+            render_node(child, ctx);
+        }
+        return;
+    };
+
+    // 2. Handle internal directive markers
+
+    // Opening marker: <mf-directive-start name="..." title="..." />
+    if tag_name == "mf-directive-start" {
+        // Flush any pending HTML before starting directive capture
+        ctx.flush_html();
+
+        let mut meta = DirectiveMeta {
+            name: "note".to_string(),
+            title: None,
+            attrs: None,
+        };
+
+        // Extract metadata from attributes
+        for attr in attributes {
+            if let markdown::mdast::AttributeContent::Property(prop) = attr {
+                let val = match &prop.value {
+                    Some(markdown::mdast::AttributeValue::Literal(s)) => s.clone(),
+                    _ => String::new(),
+                };
+
+                match prop.name.as_str() {
+                    "name" => meta.name = val,
+                    "title" => {
+                        // Unescape &quot; back to "
+                        meta.title = Some(val.replace("&quot;", "\""));
+                    }
+                    "attrs" => meta.attrs = Some(val.replace("&quot;", "\"")),
+                    _ => {}
+                }
+            }
+        }
+
+        ctx.directive_stack.push(meta);
+        return; // Don't output anything to HTML
+    }
+
+    // Closing marker: <mf-directive-end />
+    if tag_name == "mf-directive-end" {
+        if let Some(meta) = ctx.directive_stack.pop() {
+            // Extract slot HTML from current buffer
+            let slot_html = std::mem::take(&mut ctx.current_html);
+
+            // Build props from directive metadata
+            let mut props = HashMap::new();
+            if let Some(title) = meta.title {
+                props.insert("title".to_string(), title);
+            }
+            // TODO: Parse attrs string if needed
+
+            // Emit Component block
+            ctx.push_component(&meta.name, props, slot_html);
+        }
+        return; // Don't output anything to HTML
+    }
+
+    // 3. Extract props from JSX attributes
+    let mut props = HashMap::new();
+    for attr in attributes {
+        match attr {
+            // key="value" or key={expression}
+            markdown::mdast::AttributeContent::Property(prop) => {
+                let value = match &prop.value {
+                    Some(markdown::mdast::AttributeValue::Literal(s)) => s.clone(),
+                    Some(markdown::mdast::AttributeValue::Expression(expr)) => {
+                        // Expression like {someVar} - use raw expression value
+                        expr.value.clone()
+                    }
+                    None => String::new(),
+                };
+                props.insert(prop.name.clone(), value);
+            }
+            // {...spread} - skip for now (complex to handle)
+            markdown::mdast::AttributeContent::Expression(_) => {
+                // Spread attributes not yet supported
+            }
+        }
+    }
+
+    // 4. Render children to HTML string (enables nested markdown/JSX)
+    // This is the key to supporting markdown inside JSX components!
+    // Headings found in children are automatically bubbled up to ctx for TOC.
+    let slot_html = ctx.render_children_to_string(children);
+
+    // 5. Push as component block (unified with directive rendering)
+    ctx.push_component(tag_name, props, slot_html);
+}
+
 /// Converts Markdown input to rendering blocks (entry point).
 ///
 /// # Arguments
@@ -709,7 +850,7 @@ fn render_table_row(
 /// };
 /// let blocks = to_blocks(input, &options).unwrap();
 /// ```
-pub fn to_blocks(input: &str, options: &Options) -> Result<Vec<RenderBlock>, String> {
+pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String> {
     // 1. Preprocess directives if enabled
     let preprocessed = if options.enable_directives {
         preprocess_directives(input)
@@ -720,12 +861,13 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<Vec<RenderBlock>, Str
     // 2. Parse markdown to MDAST with enhanced options
     let parse_options = markdown::ParseOptions {
         constructs: markdown::Constructs {
-            // NOTE: Directive syntax (:::note, etc.) is preprocessed into <mf-directive> tags
-            // before parsing, then detected as Node::Html during rendering.
-            // HTML flow and text are ENABLED to support our directive placeholders
-            // Any user-provided HTML will be escaped during rendering
-            html_flow: true,
-            html_text: true,
+            // MDX: JSX support for <Component>...</Component>
+            mdx_jsx_flow: true,
+            mdx_jsx_text: true,
+            // HTML: DISABLED - directives are now rendered as internal JSX tags
+            // This unified approach allows directives and JSX to coexist seamlessly
+            html_flow: false,
+            html_text: false,
             // Enable frontmatter (--- ... ---)
             frontmatter: true,
             // GitHub Flavored Markdown features
@@ -763,8 +905,8 @@ mod tests {
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
-        match &blocks[0] {
+        assert_eq!(blocks.blocks.len(), 1);
+        match &blocks.blocks[0] {
             RenderBlock::Html { content } => {
                 assert!(content.contains("Hello, world!"));
             }
@@ -782,8 +924,8 @@ mod tests {
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
-        match &blocks[0] {
+        assert_eq!(blocks.blocks.len(), 1);
+        match &blocks.blocks[0] {
             RenderBlock::Html { content } => {
                 assert_eq!(content, "<p>This is a paragraph.</p>");
             }
@@ -801,8 +943,8 @@ mod tests {
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
-        match &blocks[0] {
+        assert_eq!(blocks.blocks.len(), 1);
+        match &blocks.blocks[0] {
             RenderBlock::Html { content } => {
                 assert!(content.contains(r#"<a href="https://www.rust-lang.org/""#));
                 assert!(content.contains("Rust</a>"));
@@ -823,9 +965,14 @@ mod tests {
         let blocks = to_blocks(input, &options).unwrap();
 
         // Should produce exactly 1 Component block
-        assert_eq!(blocks.len(), 1, "Expected 1 block, got {}", blocks.len());
+        assert_eq!(
+            blocks.blocks.len(),
+            1,
+            "Expected 1 block, got {}",
+            blocks.blocks.len()
+        );
 
-        match &blocks[0] {
+        match &blocks.blocks[0] {
             RenderBlock::Component {
                 name,
                 props,
@@ -835,7 +982,7 @@ mod tests {
                 assert_eq!(props.get("title"), Some(&"My Title".to_string()));
                 assert!(slot_html.contains("<p>This is <strong>important</strong> content.</p>"));
             }
-            _ => panic!("Expected Component block, got {:?}", blocks[0]),
+            _ => panic!("Expected Component block, got {:?}", blocks.blocks[0]),
         }
     }
 
@@ -849,9 +996,9 @@ mod tests {
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        match &blocks[0] {
+        match &blocks.blocks[0] {
             RenderBlock::Component {
                 name,
                 props,
@@ -877,7 +1024,7 @@ mod tests {
         let blocks = to_blocks(input, &options).unwrap();
 
         // Should parse as regular paragraph text
-        match &blocks[0] {
+        match &blocks.blocks[0] {
             RenderBlock::Html { content } => {
                 assert!(content.contains(":::note"));
             }
@@ -911,11 +1058,17 @@ fn main() {}
         let blocks = to_blocks(input, &options).unwrap();
 
         // Should produce 1 HTML block (no directives, so all content is HTML)
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
-            assert!(content.contains("<h1>Heading 1</h1>"), "Missing h1");
-            assert!(content.contains("<h2>Heading 2</h2>"), "Missing h2");
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
+            assert!(
+                content.contains("<h1 id=") && content.contains(">Heading 1</h1>"),
+                "Missing h1"
+            );
+            assert!(
+                content.contains("<h2 id=") && content.contains(">Heading 2</h2>"),
+                "Missing h2"
+            );
             assert!(content.contains("<ul>"), "Missing ul");
             assert!(content.contains("<li>"), "Missing li");
             assert!(content.contains("List Item 1"), "Missing list item text");
@@ -933,7 +1086,7 @@ fn main() {}
             assert!(content.contains(r#"title="Title""#), "Missing title");
             assert!(content.contains("<hr />"), "Missing hr");
         } else {
-            panic!("Expected HTML block, got {:?}", blocks[0]);
+            panic!("Expected HTML block, got {:?}", blocks.blocks[0]);
         }
     }
 
@@ -947,8 +1100,8 @@ fn main() {}
         };
         let blocks = to_blocks(input, &options).unwrap();
 
-        assert_eq!(blocks.len(), 1);
-        if let RenderBlock::Html { content } = &blocks[0] {
+        assert_eq!(blocks.blocks.len(), 1);
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             assert!(
                 content.contains(r#"class="task-list-item""#),
                 "Missing task-list-item class"
@@ -971,8 +1124,8 @@ fn main() {}
         };
         let blocks = to_blocks(input, &options).unwrap();
 
-        assert_eq!(blocks.len(), 1);
-        if let RenderBlock::Html { content } = &blocks[0] {
+        assert_eq!(blocks.blocks.len(), 1);
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             assert!(content.contains("<ol>"));
             assert!(content.contains("<li>"), "Missing <li>");
             assert!(content.contains("First"), "Missing 'First'");
@@ -992,19 +1145,35 @@ fn main() {}
             enable_directives: false,
         };
 
-        let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        let result = to_blocks(input, &options).unwrap();
+        assert_eq!(
+            result.blocks.len(),
+            3,
+            "Expected 3 blocks due to JSX parsing"
+        );
 
-        if let RenderBlock::Html { content } = &blocks[0] {
-            println!("XSS text content:\n{}\n", content);
-            // Script tags should be escaped
-            assert!(
-                content.contains("&lt;script&gt;"),
-                "Missing escaped script tag"
-            );
-            assert!(content.contains("&amp;"), "Ampersand not escaped");
-        } else {
-            panic!("Expected HTML block");
+        match &result.blocks[0] {
+            RenderBlock::Html { content } => {
+                assert_eq!(content, "<p>Text with ");
+            }
+            other => panic!("Expected HTML block, got {:?}", other),
+        }
+
+        match &result.blocks[1] {
+            RenderBlock::Component {
+                name, slot_html, ..
+            } => {
+                assert_eq!(name, "script");
+                assert_eq!(slot_html, "alert('xss')");
+            }
+            other => panic!("Expected Component block, got {:?}", other),
+        }
+
+        match &result.blocks[2] {
+            RenderBlock::Html { content } => {
+                assert_eq!(content, " and &amp; symbols.</p>");
+            }
+            other => panic!("Expected HTML block, got {:?}", other),
         }
     }
 
@@ -1018,9 +1187,9 @@ fn main() {}
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             println!("Attribute escaping:\n{}\n", content);
             // Special characters in title attribute should be escaped
             assert!(
@@ -1040,21 +1209,22 @@ fn main() {}
     /// Tests that image alt and title attributes are properly escaped.
     #[test]
     fn test_xss_image_attributes() {
-        let input = r#"![Alt with <b>tags</b>](image.png "Title with & and "")"#;
+        let input = r#"![Alt with ' and "](image.png "Title with &")"#;
         let options = Options {
             inject_starlight_css: false,
             enable_directives: false,
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             println!("Image attributes:\n{}\n", content);
             // Alt and title should be escaped
+            assert!(content.contains("&#39;"), "Single quote in alt not escaped");
             assert!(
-                content.contains("&lt;b&gt;") || content.contains("Alt with &lt;b&gt;"),
-                "Tags in alt not escaped"
+                content.contains("&quot;"),
+                "Double quote in alt not escaped"
             );
             assert!(content.contains("&amp;"), "Ampersand in title not escaped");
         } else {
@@ -1110,9 +1280,9 @@ fn main() {}
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             assert!(
                 content.contains("<del>deleted</del>"),
                 "Strikethrough not rendered"
@@ -1136,9 +1306,9 @@ fn main() {}
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             println!("Table HTML:\n{}\n", content);
 
             // Check table structure
@@ -1187,9 +1357,9 @@ fn main() {}
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             // Check that formatting is preserved inside table cells
             assert!(
                 content.contains("<strong>Bold</strong>"),
