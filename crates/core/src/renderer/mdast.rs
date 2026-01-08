@@ -321,12 +321,7 @@ fn preprocess_directives(input: &str) -> String {
             directive_stack.push(opening.name.clone());
 
             // Convert to JSX tag
-            write!(
-                output,
-                "<mf-directive-start name=\"{}\"",
-                opening.name
-            )
-            .ok();
+            write!(output, "<mf-directive-start name=\"{}\"", opening.name).ok();
 
             if let Some(title) = &opening.bracket_title {
                 // Escape quotes in title
