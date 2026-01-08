@@ -1061,8 +1061,14 @@ fn main() {}
         assert_eq!(blocks.blocks.len(), 1);
 
         if let RenderBlock::Html { content } = &blocks.blocks[0] {
-            assert!(content.contains("<h1>Heading 1</h1>"), "Missing h1");
-            assert!(content.contains("<h2>Heading 2</h2>"), "Missing h2");
+            assert!(
+                content.contains("<h1 id=") && content.contains(">Heading 1</h1>"),
+                "Missing h1"
+            );
+            assert!(
+                content.contains("<h2 id=") && content.contains(">Heading 2</h2>"),
+                "Missing h2"
+            );
             assert!(content.contains("<ul>"), "Missing ul");
             assert!(content.contains("<li>"), "Missing li");
             assert!(content.contains("List Item 1"), "Missing list item text");
@@ -1139,19 +1145,35 @@ fn main() {}
             enable_directives: false,
         };
 
-        let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.blocks.len(), 1);
+        let result = to_blocks(input, &options).unwrap();
+        assert_eq!(
+            result.blocks.len(),
+            3,
+            "Expected 3 blocks due to JSX parsing"
+        );
 
-        if let RenderBlock::Html { content } = &blocks.blocks[0] {
-            println!("XSS text content:\n{}\n", content);
-            // Script tags should be escaped
-            assert!(
-                content.contains("&lt;script&gt;"),
-                "Missing escaped script tag"
-            );
-            assert!(content.contains("&amp;"), "Ampersand not escaped");
-        } else {
-            panic!("Expected HTML block");
+        match &result.blocks[0] {
+            RenderBlock::Html { content } => {
+                assert_eq!(content, "<p>Text with ");
+            }
+            other => panic!("Expected HTML block, got {:?}", other),
+        }
+
+        match &result.blocks[1] {
+            RenderBlock::Component {
+                name, slot_html, ..
+            } => {
+                assert_eq!(name, "script");
+                assert_eq!(slot_html, "alert('xss')");
+            }
+            other => panic!("Expected Component block, got {:?}", other),
+        }
+
+        match &result.blocks[2] {
+            RenderBlock::Html { content } => {
+                assert_eq!(content, " and &amp; symbols.</p>");
+            }
+            other => panic!("Expected HTML block, got {:?}", other),
         }
     }
 
