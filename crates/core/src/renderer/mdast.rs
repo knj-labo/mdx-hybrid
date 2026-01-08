@@ -905,8 +905,8 @@ mod tests {
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
-        match &blocks[0] {
+        assert_eq!(blocks.blocks.len(), 1);
+        match &blocks.blocks[0] {
             RenderBlock::Html { content } => {
                 assert!(content.contains("Hello, world!"));
             }
@@ -924,8 +924,8 @@ mod tests {
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
-        match &blocks[0] {
+        assert_eq!(blocks.blocks.len(), 1);
+        match &blocks.blocks[0] {
             RenderBlock::Html { content } => {
                 assert_eq!(content, "<p>This is a paragraph.</p>");
             }
@@ -943,8 +943,8 @@ mod tests {
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
-        match &blocks[0] {
+        assert_eq!(blocks.blocks.len(), 1);
+        match &blocks.blocks[0] {
             RenderBlock::Html { content } => {
                 assert!(content.contains(r#"<a href="https://www.rust-lang.org/""#));
                 assert!(content.contains("Rust</a>"));
@@ -965,9 +965,9 @@ mod tests {
         let blocks = to_blocks(input, &options).unwrap();
 
         // Should produce exactly 1 Component block
-        assert_eq!(blocks.len(), 1, "Expected 1 block, got {}", blocks.len());
+        assert_eq!(blocks.blocks.len(), 1, "Expected 1 block, got {}", blocks.blocks.len());
 
-        match &blocks[0] {
+        match &blocks.blocks[0] {
             RenderBlock::Component {
                 name,
                 props,
@@ -977,7 +977,7 @@ mod tests {
                 assert_eq!(props.get("title"), Some(&"My Title".to_string()));
                 assert!(slot_html.contains("<p>This is <strong>important</strong> content.</p>"));
             }
-            _ => panic!("Expected Component block, got {:?}", blocks[0]),
+            _ => panic!("Expected Component block, got {:?}", blocks.blocks[0]),
         }
     }
 
@@ -991,9 +991,9 @@ mod tests {
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        match &blocks[0] {
+        match &blocks.blocks[0] {
             RenderBlock::Component {
                 name,
                 props,
@@ -1019,7 +1019,7 @@ mod tests {
         let blocks = to_blocks(input, &options).unwrap();
 
         // Should parse as regular paragraph text
-        match &blocks[0] {
+        match &blocks.blocks[0] {
             RenderBlock::Html { content } => {
                 assert!(content.contains(":::note"));
             }
@@ -1053,9 +1053,9 @@ fn main() {}
         let blocks = to_blocks(input, &options).unwrap();
 
         // Should produce 1 HTML block (no directives, so all content is HTML)
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             assert!(content.contains("<h1>Heading 1</h1>"), "Missing h1");
             assert!(content.contains("<h2>Heading 2</h2>"), "Missing h2");
             assert!(content.contains("<ul>"), "Missing ul");
@@ -1075,7 +1075,7 @@ fn main() {}
             assert!(content.contains(r#"title="Title""#), "Missing title");
             assert!(content.contains("<hr />"), "Missing hr");
         } else {
-            panic!("Expected HTML block, got {:?}", blocks[0]);
+            panic!("Expected HTML block, got {:?}", blocks.blocks[0]);
         }
     }
 
@@ -1089,8 +1089,8 @@ fn main() {}
         };
         let blocks = to_blocks(input, &options).unwrap();
 
-        assert_eq!(blocks.len(), 1);
-        if let RenderBlock::Html { content } = &blocks[0] {
+        assert_eq!(blocks.blocks.len(), 1);
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             assert!(
                 content.contains(r#"class="task-list-item""#),
                 "Missing task-list-item class"
@@ -1113,8 +1113,8 @@ fn main() {}
         };
         let blocks = to_blocks(input, &options).unwrap();
 
-        assert_eq!(blocks.len(), 1);
-        if let RenderBlock::Html { content } = &blocks[0] {
+        assert_eq!(blocks.blocks.len(), 1);
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             assert!(content.contains("<ol>"));
             assert!(content.contains("<li>"), "Missing <li>");
             assert!(content.contains("First"), "Missing 'First'");
@@ -1135,9 +1135,9 @@ fn main() {}
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             println!("XSS text content:\n{}\n", content);
             // Script tags should be escaped
             assert!(
@@ -1160,9 +1160,9 @@ fn main() {}
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             println!("Attribute escaping:\n{}\n", content);
             // Special characters in title attribute should be escaped
             assert!(
@@ -1189,9 +1189,9 @@ fn main() {}
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             println!("Image attributes:\n{}\n", content);
             // Alt and title should be escaped
             assert!(
@@ -1252,9 +1252,9 @@ fn main() {}
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             assert!(
                 content.contains("<del>deleted</del>"),
                 "Strikethrough not rendered"
@@ -1278,9 +1278,9 @@ fn main() {}
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             println!("Table HTML:\n{}\n", content);
 
             // Check table structure
@@ -1329,9 +1329,9 @@ fn main() {}
         };
 
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &blocks[0] {
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
             // Check that formatting is preserved inside table cells
             assert!(
                 content.contains("<strong>Bold</strong>"),
