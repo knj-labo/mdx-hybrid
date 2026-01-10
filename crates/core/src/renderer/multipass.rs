@@ -18,9 +18,24 @@ pub fn scan(input: &str) -> Vec<Block<'_>> {
 }
 
 fn push_markdown<'a>(blocks: &mut Vec<Block<'a>>, input: &'a str, start: usize, end: usize) {
-    if start < end {
-        blocks.push(Block::Markdown(&input[start..end]));
+    if start >= end {
+        return;
     }
+
+    // Merge adjacent markdown slices to avoid splitting paragraphs around inline spans.
+    if let Some(Block::Markdown(last)) = blocks.last_mut() {
+        let last_end_addr = last.as_ptr() as usize + last.len();
+        let new_start_addr = input.as_ptr() as usize + start;
+
+        if last_end_addr == new_start_addr {
+            let input_start_addr = input.as_ptr() as usize;
+            let last_start_offset = last.as_ptr() as usize - input_start_addr;
+            *last = &input[last_start_offset..end];
+            return;
+        }
+    }
+
+    blocks.push(Block::Markdown(&input[start..end]));
 }
 
 fn scan_nodes<'a>(
@@ -486,10 +501,7 @@ mod tests {
         let input = "```\n<Steps>";
         let blocks = scan(input);
 
-        assert_eq!(
-            blocks,
-            vec![Block::Markdown("`"), Block::Markdown("``\n<Steps>")]
-        );
+        assert_eq!(blocks, vec![Block::Markdown("```\n<Steps>")]);
     }
 
     #[test]
@@ -497,9 +509,6 @@ mod tests {
         let input = "<Steps>no close";
         let blocks = scan(input);
 
-        assert_eq!(
-            blocks,
-            vec![Block::Markdown("<"), Block::Markdown("Steps>no close")]
-        );
+        assert_eq!(blocks, vec![Block::Markdown("<Steps>no close")]);
     }
 }
