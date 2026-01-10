@@ -501,10 +501,7 @@ mod tests {
         let input = "```\n<Steps>";
         let blocks = scan(input);
 
-        assert_eq!(
-            blocks,
-            vec![Block::Markdown("`"), Block::Markdown("``\n<Steps>")]
-        );
+        assert_eq!(blocks, vec![Block::Markdown("```\n<Steps>")]);
     }
 
     #[test]
@@ -512,9 +509,6 @@ mod tests {
         let input = "<Steps>no close";
         let blocks = scan(input);
 
-        assert_eq!(
-            blocks,
-            vec![Block::Markdown("<"), Block::Markdown("Steps>no close")]
-        );
+        assert_eq!(blocks, vec![Block::Markdown("<Steps>no close")]);
     }
 }
