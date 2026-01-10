@@ -217,17 +217,17 @@ impl<W: Write> HtmlRenderer<W> {
                 };
                 self.writer.write_all(b"<")?;
                 self.writer.write_all(tag)?;
-                if let Some(alignment) = self.table_ctx.next_alignment() {
-                    if !matches!(alignment, Alignment::None) {
-                        self.writer.write_all(b" style=\"text-align:")?;
-                        self.writer.write_all(match alignment {
-                            Alignment::Left => b"left",
-                            Alignment::Right => b"right",
-                            Alignment::Center => b"center",
-                            Alignment::None => b"left",
-                        })?;
-                        self.writer.write_all(b"\"")?;
-                    }
+                if let Some(alignment) = self.table_ctx.next_alignment()
+                    && !matches!(alignment, Alignment::None)
+                {
+                    self.writer.write_all(b" style=\"text-align:")?;
+                    self.writer.write_all(match alignment {
+                        Alignment::Left => b"left",
+                        Alignment::Right => b"right",
+                        Alignment::Center => b"center",
+                        Alignment::None => b"left",
+                    })?;
+                    self.writer.write_all(b"\"")?;
                 }
                 self.writer.write_all(b">")
             }
@@ -334,7 +334,6 @@ impl<W: Write> HtmlRenderer<W> {
         self.escape_attr(value)?;
         self.writer.write_all(b"\"")
     }
-
 }
 
 impl TableContext {
