@@ -175,12 +175,37 @@ fn render_block(
                 } else if *name == "FileTree" {
                     render_file_tree_children(children, rewrite_options)?
                 } else {
-                    render_blocks(children, rewrite_options)?
+                    render_jsx_children(children, rewrite_options)?
                 };
                 Ok(format!("<{}{}>{}</{}>", name, rendered_attrs, inner, name))
             }
         }
     }
+}
+
+fn render_jsx_children(
+    children: &[Block<'_>],
+    rewrite_options: &RewriteOptions,
+) -> Result<String, MarkflowError> {
+    let mut output = String::new();
+
+    for child in children {
+        match child {
+            Block::Markdown(text) => {
+                let dedented = dedent_one_level(text);
+                output.push_str(&render_markdown_events(&dedented, rewrite_options)?);
+            }
+            Block::Code(text) => {
+                let dedented = dedent_one_level(text);
+                output.push_str(&render_markdown_events(&dedented, rewrite_options)?);
+            }
+            _ => {
+                output.push_str(&render_block(child, rewrite_options)?);
+            }
+        }
+    }
+
+    Ok(output)
 }
 
 fn render_steps_children(
