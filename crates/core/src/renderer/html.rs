@@ -6,9 +6,14 @@ use crate::event::{Alignment, CodeBlockKind, Event, LinkType, Tag, TagEnd};
 
 pub struct HtmlRenderer<W: Write> {
     writer: W,
-    table_head_depth: usize,
-    table_stack: Vec<TableState>,
-    image_stack: Vec<ImageContext>,
+    table_ctx: TableContext,
+    image_ctx: ImageContext,
+}
+
+#[derive(Default)]
+struct TableContext {
+    head_depth: usize,
+    stack: Vec<TableState>,
 }
 
 struct TableState {
@@ -16,7 +21,12 @@ struct TableState {
     column_index: usize,
 }
 
+#[derive(Default)]
 struct ImageContext {
+    stack: Vec<PendingImage>,
+}
+
+struct PendingImage {
     dest_url: String,
     title: String,
     alt: String,
@@ -26,9 +36,8 @@ impl<W: Write> HtmlRenderer<W> {
     pub fn new(writer: W) -> Self {
         Self {
             writer,
-            table_head_depth: 0,
-            table_stack: Vec::new(),
-            image_stack: Vec::new(),
+            table_ctx: TableContext::default(),
+            image_ctx: ImageContext::default(),
         }
     }
 
@@ -37,7 +46,7 @@ impl<W: Write> HtmlRenderer<W> {
         I: IntoIterator<Item = Event<'a>>,
     {
         for event in iter.into_iter() {
-            if self.handle_image_text(&event) {
+            if self.image_ctx.try_handle_text_event(&event) {
                 continue;
             }
 
@@ -50,14 +59,26 @@ impl<W: Write> HtmlRenderer<W> {
                         id,
                     } = tag
                     {
-                        self.start_image(link_type, dest_url, title, id);
+                        self.image_ctx.start_image(link_type, dest_url, title, id);
                     } else {
                         self.write_start_tag(tag)?;
                     }
                 }
                 Event::End(end) => {
                     if matches!(end, TagEnd::Image) {
-                        self.finish_image()?;
+                        if let Some(image) = self.image_ctx.finish_image() {
+                            self.writer.write_all(b"<img src=\"")?;
+                            Self::write_escaped(&mut self.writer, &image.dest_url)?;
+                            self.writer.write_all(b"\" alt=\"")?;
+                            Self::write_escaped(&mut self.writer, &image.alt)?;
+                            self.writer.write_all(b"\"")?;
+                            if !image.title.is_empty() {
+                                self.writer.write_all(b" title=\"")?;
+                                Self::write_escaped(&mut self.writer, &image.title)?;
+                                self.writer.write_all(b"\"")?;
+                            }
+                            self.writer.write_all(b" loading=\"lazy\" />")?;
+                        }
                     } else {
                         self.write_end_tag(end)?;
                     }
@@ -177,33 +198,26 @@ impl<W: Write> HtmlRenderer<W> {
                 )
             }
             Tag::Table(alignments) => {
-                self.table_stack.push(TableState {
-                    alignments,
-                    column_index: 0,
-                });
+                self.table_ctx.push_table(alignments);
                 self.writer.write_all(b"<table>")
             }
             Tag::TableHead => {
-                self.table_head_depth += 1;
+                self.table_ctx.enter_head();
                 self.writer.write_all(b"<thead>")
             }
             Tag::TableRow => {
-                if let Some(state) = self.table_stack.last_mut() {
-                    state.column_index = 0;
-                }
+                self.table_ctx.enter_row();
                 self.writer.write_all(b"<tr>")
             }
             Tag::TableCell => {
-                let tag = if self.table_head_depth > 0 {
+                let tag = if self.table_ctx.is_in_head() {
                     b"th"
                 } else {
                     b"td"
                 };
                 self.writer.write_all(b"<")?;
                 self.writer.write_all(tag)?;
-                if let Some(state) = self.table_stack.last_mut()
-                    && let Some(alignment) = state.alignments.get(state.column_index)
-                {
+                if let Some(alignment) = self.table_ctx.next_alignment() {
                     if !matches!(alignment, Alignment::None) {
                         self.writer.write_all(b" style=\"text-align:")?;
                         self.writer.write_all(match alignment {
@@ -214,7 +228,6 @@ impl<W: Write> HtmlRenderer<W> {
                         })?;
                         self.writer.write_all(b"\"")?;
                     }
-                    state.column_index += 1;
                 }
                 self.writer.write_all(b">")
             }
@@ -254,16 +267,16 @@ impl<W: Write> HtmlRenderer<W> {
             TagEnd::Item => self.writer.write_all(b"</li>"),
             TagEnd::FootnoteDefinition => self.writer.write_all(b"</section>\n"),
             TagEnd::Table => {
-                self.table_stack.pop();
+                self.table_ctx.pop_table();
                 self.writer.write_all(b"</table>\n")
             }
             TagEnd::TableHead => {
-                self.table_head_depth = self.table_head_depth.saturating_sub(1);
+                self.table_ctx.exit_head();
                 self.writer.write_all(b"</thead>\n")
             }
             TagEnd::TableRow => self.writer.write_all(b"</tr>\n"),
             TagEnd::TableCell => {
-                let tag = if self.table_head_depth > 0 {
+                let tag = if self.table_ctx.is_in_head() {
                     b"th"
                 } else {
                     b"td"
@@ -285,17 +298,29 @@ impl<W: Write> HtmlRenderer<W> {
     }
 
     fn escape_html(&mut self, text: &str) -> io::Result<()> {
-        for ch in text.chars() {
-            match ch {
-                '&' => self.writer.write_all(b"&amp;")?,
-                '<' => self.writer.write_all(b"&lt;")?,
-                '>' => self.writer.write_all(b"&gt;")?,
-                '"' => self.writer.write_all(b"&quot;")?,
-                '\'' => self.writer.write_all(b"&#39;")?,
-                _ => self
-                    .writer
-                    .write_all(ch.encode_utf8(&mut [0; 4]).as_bytes())?,
+        Self::write_escaped(&mut self.writer, text)
+    }
+
+    fn write_escaped(writer: &mut W, text: &str) -> io::Result<()> {
+        let bytes = text.as_bytes();
+        let mut last = 0;
+        for (i, &byte) in bytes.iter().enumerate() {
+            let replacement = match byte {
+                b'&' => b"&amp;" as &[u8],
+                b'<' => b"&lt;",
+                b'>' => b"&gt;",
+                b'"' => b"&quot;",
+                b'\'' => b"&#39;",
+                _ => continue,
+            };
+            if i > last {
+                writer.write_all(&bytes[last..i])?;
             }
+            writer.write_all(replacement)?;
+            last = i + 1;
+        }
+        if last < bytes.len() {
+            writer.write_all(&bytes[last..])?;
         }
         Ok(())
     }
@@ -310,6 +335,51 @@ impl<W: Write> HtmlRenderer<W> {
         self.writer.write_all(b"\"")
     }
 
+}
+
+impl TableContext {
+    fn push_table(&mut self, alignments: Vec<Alignment>) {
+        self.stack.push(TableState {
+            alignments,
+            column_index: 0,
+        });
+    }
+
+    fn pop_table(&mut self) {
+        self.stack.pop();
+    }
+
+    fn enter_head(&mut self) {
+        self.head_depth += 1;
+    }
+
+    fn exit_head(&mut self) {
+        self.head_depth = self.head_depth.saturating_sub(1);
+    }
+
+    fn enter_row(&mut self) {
+        if let Some(state) = self.stack.last_mut() {
+            state.column_index = 0;
+        }
+    }
+
+    fn is_in_head(&self) -> bool {
+        self.head_depth > 0
+    }
+
+    fn next_alignment(&mut self) -> Option<Alignment> {
+        if let Some(state) = self.stack.last_mut()
+            && let Some(alignment) = state.alignments.get(state.column_index)
+        {
+            state.column_index += 1;
+            Some(*alignment)
+        } else {
+            None
+        }
+    }
+}
+
+impl ImageContext {
     fn start_image(
         &mut self,
         _: LinkType,
@@ -317,33 +387,19 @@ impl<W: Write> HtmlRenderer<W> {
         title: Cow<'_, str>,
         _: Cow<'_, str>,
     ) {
-        self.image_stack.push(ImageContext {
+        self.stack.push(PendingImage {
             dest_url: dest_url.into_owned(),
             title: title.into_owned(),
             alt: String::new(),
         });
     }
 
-    fn finish_image(&mut self) -> io::Result<()> {
-        if let Some(image) = self.image_stack.pop() {
-            self.writer.write_all(b"<img src=\"")?;
-            self.escape_attr(&image.dest_url)?;
-            self.writer.write_all(b"\" alt=\"")?;
-            self.escape_attr(&image.alt)?;
-            self.writer.write_all(b"\"")?;
-            if !image.title.is_empty() {
-                self.writer.write_all(b" title=\"")?;
-                self.escape_attr(&image.title)?;
-                self.writer.write_all(b"\"")?;
-            }
-            self.writer.write_all(b" loading=\"lazy\" />")
-        } else {
-            Ok(())
-        }
+    fn finish_image(&mut self) -> Option<PendingImage> {
+        self.stack.pop()
     }
 
-    fn handle_image_text<'a>(&mut self, event: &Event<'a>) -> bool {
-        if let Some(current) = self.image_stack.last_mut() {
+    fn try_handle_text_event<'a>(&mut self, event: &Event<'a>) -> bool {
+        if let Some(current) = self.stack.last_mut() {
             match event {
                 Event::Text(text) | Event::Code(text) => {
                     current.alt.push_str(text.as_ref());
