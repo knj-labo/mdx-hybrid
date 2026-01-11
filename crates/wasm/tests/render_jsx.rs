@@ -25,8 +25,7 @@ fn render_jsx_with_options_hoists_imports() {
         }],
     };
     let opts = serde_wasm_bindgen::to_value(&options).expect("serialize options");
-    let output =
-        render_jsx_with_options_wasm(input, opts).expect("render_jsx_with_options");
+    let output = render_jsx_with_options_wasm(input, opts).expect("render_jsx_with_options");
     assert!(output.starts_with("import Badge from './Badge.astro';"));
     assert!(output.contains("<Badge>"));
 }
