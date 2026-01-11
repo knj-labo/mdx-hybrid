@@ -5,6 +5,7 @@ use crate::transform::code_fence::collect_root_imports;
 use crate::{DirectiveAdapter, HoistAdapter, MarkflowError, RewriteOptions, get_event_iterator};
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::fmt::Write as FmtWrite;
 use std::rc::Rc;
 
 /// Render Markdown input into a raw JSX-like string, preserving JSX nodes.
@@ -13,9 +14,10 @@ pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
     let mut seen_imports = HashSet::new();
     let (root_imports, _body_lines) = collect_root_imports(input);
     let blocks = scan(input);
-    let body = render_blocks(&blocks, &rewrite_options)?;
+    let mut body = String::with_capacity(input.len());
+    render_blocks_into(&blocks, &rewrite_options, &mut body)?;
 
-    let mut output = String::new();
+    let mut output = String::with_capacity(body.len() + input.len());
     for import in root_imports {
         if seen_imports.insert(import.clone()) {
             output.push_str(&import);
@@ -35,7 +37,8 @@ pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
 fn render_markdown_events(
     input: &str,
     rewrite_options: &RewriteOptions,
-) -> Result<String, MarkflowError> {
+    output: &mut String,
+) -> Result<(), MarkflowError> {
     let hoisted = Rc::new(RefCell::new(Vec::new()));
     let mut events: Box<dyn Iterator<Item = Event<'static>>> = Box::new(get_event_iterator(input)?);
     if rewrite_options.enable_hoist {
@@ -51,36 +54,34 @@ fn render_markdown_events(
     } else {
         events
     };
-    let mut output = String::new();
 
     let mut stack: Vec<Tag<'_>> = Vec::new();
     let mut heading_stack: Vec<HeadingContext> = Vec::new();
-
     for event in events {
         match event {
             Event::Start(tag) => {
                 if let Tag::Heading { level, id, .. } = &tag
                     && let Some(_id) = id.as_ref()
                 {
-                    output.push_str(&heading_wrapper_start(*level));
+                    write_heading_wrapper_start(output, *level);
                     heading_stack.push(HeadingContext {
                         text: String::new(),
                     });
                 }
-                output.push_str(&start_tag(&tag));
+                write_start_tag(output, &tag);
                 stack.push(tag);
             }
             Event::End(end) => {
                 if let Some(open) = stack.pop()
                     && matches_end(&open, &end)
                 {
-                    output.push_str(&end_tag(&end));
+                    write_end_tag(output, &end);
                     if let Tag::Heading { id, .. } = &open
                         && let Some(id) = id.as_ref()
                     {
                         let heading_text =
                             heading_stack.pop().map(|ctx| ctx.text).unwrap_or_default();
-                        output.push_str(&anchor_link(id.as_ref(), &heading_text));
+                        write_anchor_link(output, id.as_ref(), &heading_text);
                         output.push_str("</div>");
                     }
                 }
@@ -90,12 +91,12 @@ fn render_markdown_events(
                 if text.starts_with('\0') {
                     continue;
                 }
-                output.push_str(&escape_text(text));
+                escape_text_into(output, text);
                 push_heading_text(&mut heading_stack, text);
             }
             Event::Code(text) => {
                 output.push_str("<code>");
-                output.push_str(&escape_text(text.as_ref()));
+                escape_text_into(output, text.as_ref());
                 output.push_str("</code>");
                 push_heading_text(&mut heading_stack, text.as_ref());
             }
@@ -106,18 +107,23 @@ fn render_markdown_events(
                 output.push_str(text.as_ref());
             }
             Event::InlineMath(math) => {
-                output.push_str(&format!("<span class=\"math-inline\">{}</span>", math));
+                output.push_str("<span class=\"math-inline\">");
+                output.push_str(math.as_ref());
+                output.push_str("</span>");
                 push_heading_text(&mut heading_stack, math.as_ref());
             }
             Event::DisplayMath(math) => {
-                output.push_str(&format!("<div class=\"math-display\">{}</div>", math));
+                output.push_str("<div class=\"math-display\">");
+                output.push_str(math.as_ref());
+                output.push_str("</div>");
                 push_heading_text(&mut heading_stack, math.as_ref());
             }
             Event::FootnoteReference(label) => {
-                output.push_str(&format!(
+                let _ = write!(
+                    output,
                     "<sup class=\"footnote-ref\"><a href=\"#fn-{0}\" id=\"fnref-{0}\">{0}</a></sup>",
                     label
-                ));
+                );
                 push_heading_text(&mut heading_stack, label.as_ref());
             }
             Event::TaskListMarker(done) => {
@@ -139,27 +145,28 @@ fn render_markdown_events(
         }
     }
 
-    Ok(output)
+    Ok(())
 }
 
-fn render_blocks(
+fn render_blocks_into(
     blocks: &[Block<'_>],
     rewrite_options: &RewriteOptions,
-) -> Result<String, MarkflowError> {
-    let mut output = String::new();
+    output: &mut String,
+) -> Result<(), MarkflowError> {
     for block in blocks {
-        output.push_str(&render_block(block, rewrite_options)?);
+        render_block_into(block, rewrite_options, output)?;
     }
-    Ok(output)
+    Ok(())
 }
 
-fn render_block(
+fn render_block_into(
     block: &Block<'_>,
     rewrite_options: &RewriteOptions,
-) -> Result<String, MarkflowError> {
+    output: &mut String,
+) -> Result<(), MarkflowError> {
     match block {
-        Block::Markdown(text) => render_markdown_events(text, rewrite_options),
-        Block::Code(text) => render_markdown_events(text, rewrite_options),
+        Block::Markdown(text) => render_markdown_events(text, rewrite_options, output),
+        Block::Code(text) => render_markdown_events(text, rewrite_options, output),
         Block::JsxElement {
             name,
             attrs,
@@ -168,67 +175,81 @@ fn render_block(
         } => {
             let rendered_attrs = render_attrs(attrs, *is_self_closing);
             if *is_self_closing {
-                Ok(format!("<{}{} />", name, rendered_attrs))
+                output.push('<');
+                output.push_str(name);
+                output.push_str(&rendered_attrs);
+                output.push_str(" />");
             } else {
-                let inner = if *name == "Steps" {
-                    render_steps_children(children, rewrite_options)?
-                } else if *name == "FileTree" {
-                    render_file_tree_children(children, rewrite_options)?
-                } else {
-                    render_jsx_children(children, rewrite_options)?
-                };
-                Ok(format!("<{}{}>{}</{}>", name, rendered_attrs, inner, name))
+                output.push('<');
+                output.push_str(name);
+                output.push_str(&rendered_attrs);
+                output.push('>');
+        if *name == "Steps" {
+            let mut inner = String::new();
+            render_steps_children_into(children, rewrite_options, &mut inner)?;
+            output.push_str(&inner);
+        } else if *name == "FileTree" {
+            let mut inner = String::new();
+            render_file_tree_children_into(children, rewrite_options, &mut inner)?;
+            output.push_str(&inner);
+        } else {
+            render_jsx_children_into(children, rewrite_options, output)?;
+        }
+                output.push_str("</");
+                output.push_str(name);
+                output.push('>');
             }
+            Ok(())
         }
     }
 }
 
-fn render_jsx_children(
+fn render_jsx_children_into(
     children: &[Block<'_>],
     rewrite_options: &RewriteOptions,
-) -> Result<String, MarkflowError> {
-    let mut output = String::new();
-
+    output: &mut String,
+) -> Result<(), MarkflowError> {
     for child in children {
         match child {
             Block::Markdown(text) => {
                 let dedented = dedent_one_level(text);
-                output.push_str(&render_markdown_events(&dedented, rewrite_options)?);
+                render_markdown_events(&dedented, rewrite_options, output)?;
             }
             Block::Code(text) => {
                 let dedented = dedent_one_level(text);
-                output.push_str(&render_markdown_events(&dedented, rewrite_options)?);
+                render_markdown_events(&dedented, rewrite_options, output)?;
             }
             _ => {
-                output.push_str(&render_block(child, rewrite_options)?);
+                render_block_into(child, rewrite_options, output)?;
             }
         }
     }
 
-    Ok(output)
+    Ok(())
 }
 
-fn render_steps_children(
+fn render_steps_children_into(
     children: &[Block<'_>],
     rewrite_options: &RewriteOptions,
-) -> Result<String, MarkflowError> {
-    let mut output = String::new();
-
+    output: &mut String,
+) -> Result<(), MarkflowError> {
+    let mut scratch = String::new();
     for child in children {
+        scratch.clear();
         match child {
             Block::Markdown(text) => {
                 let dedented = dedent_one_level(text);
-                let rendered = render_markdown_events(&dedented, rewrite_options)?;
-                append_steps_fragment(&mut output, &rendered);
+                render_markdown_events(&dedented, rewrite_options, &mut scratch)?;
+                append_steps_fragment(output, &scratch);
             }
             _ => {
-                let rendered = render_block(child, rewrite_options)?;
-                insert_into_last_list_item(&mut output, &rendered);
+                render_block_into(child, rewrite_options, &mut scratch)?;
+                insert_into_last_list_item(output, &scratch);
             }
         }
     }
 
-    Ok(output)
+    Ok(())
 }
 
 fn append_steps_fragment(output: &mut String, fragment: &str) {
@@ -293,11 +314,12 @@ fn insert_before_list_close(output: &mut String, fragment: &str) {
     }
 }
 
-fn render_file_tree_children(
+fn render_file_tree_children_into(
     children: &[Block<'_>],
     rewrite_options: &RewriteOptions,
-) -> Result<String, MarkflowError> {
-    let mut output = String::new();
+    output: &mut String,
+) -> Result<(), MarkflowError> {
+    let mut inner = String::new();
     let mut markdown_buffer = String::new();
 
     for child in children {
@@ -307,19 +329,20 @@ fn render_file_tree_children(
             }
             _ => {
                 if !markdown_buffer.is_empty() {
-                    output.push_str(&render_markdown_events(&markdown_buffer, rewrite_options)?);
+                    render_markdown_events(&markdown_buffer, rewrite_options, &mut inner)?;
                     markdown_buffer.clear();
                 }
-                output.push_str(&render_block(child, rewrite_options)?);
+                render_block_into(child, rewrite_options, &mut inner)?;
             }
         }
     }
 
     if !markdown_buffer.is_empty() {
-        output.push_str(&render_markdown_events(&markdown_buffer, rewrite_options)?);
+        render_markdown_events(&markdown_buffer, rewrite_options, &mut inner)?;
     }
 
-    Ok(extract_first_unordered_list(&output))
+    output.push_str(&extract_first_unordered_list(&inner));
+    Ok(())
 }
 
 fn dedent_one_level(input: &str) -> String {
@@ -456,99 +479,120 @@ fn render_attrs(attrs: &str, is_self_closing: bool) -> String {
     }
 }
 
-fn start_tag(tag: &Tag<'_>) -> String {
+fn write_start_tag(output: &mut String, tag: &Tag<'_>) {
     match tag {
-        Tag::Paragraph => "<p>".to_string(),
+        Tag::Paragraph => output.push_str("<p>"),
         Tag::Heading {
             level,
             id,
             classes,
             attrs,
         } => {
-            let mut s = format!("<h{}", *level as u8);
+            let _ = write!(output, "<h{}", *level as u8);
             if let Some(id) = id {
-                s.push_str(&format!(" id=\"{}\"", id));
+                output.push_str(" id=\"");
+                output.push_str(id);
+                output.push('"');
             }
             if !classes.is_empty() {
-                s.push_str(" class=\"");
+                output.push_str(" class=\"");
                 for (idx, class) in classes.iter().enumerate() {
                     if idx > 0 {
-                        s.push(' ');
+                        output.push(' ');
                     }
-                    s.push_str(class);
+                    output.push_str(class);
                 }
-                s.push('"');
+                output.push('"');
             }
             for (key, value) in attrs {
                 match value {
-                    Some(v) => s.push_str(&format!(" {}=\"{}\"", key, v)),
-                    None => s.push_str(&format!(" {}", key)),
+                    Some(v) => {
+                        output.push(' ');
+                        output.push_str(key);
+                        output.push_str("=\"");
+                        output.push_str(v);
+                        output.push('"');
+                    }
+                    None => {
+                        output.push(' ');
+                        output.push_str(key);
+                    }
                 }
             }
-            s.push('>');
-            s
+            output.push('>');
         }
-        Tag::BlockQuote => "<blockquote>".to_string(),
+        Tag::BlockQuote => output.push_str("<blockquote>"),
         Tag::CodeBlock(kind) => match kind {
-            CodeBlockKind::Indented => "<pre><code>".to_string(),
-            CodeBlockKind::Fenced(lang) => format!("<pre><code class=\"language-{}\">", lang),
+            CodeBlockKind::Indented => output.push_str("<pre><code>"),
+            CodeBlockKind::Fenced(lang) => {
+                output.push_str("<pre><code class=\"language-");
+                output.push_str(lang);
+                output.push_str("\">");
+            }
         },
         Tag::List(start) => {
             if start.is_some() {
-                "<ol>".to_string()
+                output.push_str("<ol>");
             } else {
-                "<ul>".to_string()
+                output.push_str("<ul>");
             }
         }
-        Tag::Item => "<li>".to_string(),
+        Tag::Item => output.push_str("<li>"),
         Tag::FootnoteDefinition(label) => {
-            format!("<section class=\"footnote\" id=\"fn-{}\">", label)
+            output.push_str("<section class=\"footnote\" id=\"fn-");
+            output.push_str(label);
+            output.push_str("\">");
         }
-        Tag::Table(_) => "<table>".to_string(),
-        Tag::TableHead => "<thead>".to_string(),
-        Tag::TableRow => "<tr>".to_string(),
-        Tag::TableCell => "<td>".to_string(),
-        Tag::Emphasis => "<em>".to_string(),
-        Tag::Strong => "<strong>".to_string(),
-        Tag::Strikethrough => "<del>".to_string(),
+        Tag::Table(_) => output.push_str("<table>"),
+        Tag::TableHead => output.push_str("<thead>"),
+        Tag::TableRow => output.push_str("<tr>"),
+        Tag::TableCell => output.push_str("<td>"),
+        Tag::Emphasis => output.push_str("<em>"),
+        Tag::Strong => output.push_str("<strong>"),
+        Tag::Strikethrough => output.push_str("<del>"),
         Tag::Link {
             dest_url, title, ..
         } => {
-            let mut s = format!("<a href=\"{}\"", dest_url);
+            output.push_str("<a href=\"");
+            output.push_str(dest_url);
+            output.push('"');
             if !title.is_empty() {
-                s.push_str(&format!(" title=\"{}\"", title));
+                output.push_str(" title=\"");
+                output.push_str(title);
+                output.push('"');
             }
-            s.push('>');
-            s
+            output.push('>');
         }
-        Tag::Image { .. } => String::new(), // handled elsewhere in HTML renderer; skip here
+        Tag::Image { .. } => {} // handled elsewhere in HTML renderer; skip here
     }
 }
 
-fn end_tag(end: &TagEnd) -> String {
+fn write_end_tag(output: &mut String, end: &TagEnd) {
     match end {
-        TagEnd::Paragraph => "</p>\n".to_string(),
-        TagEnd::Heading(level) => format!("</h{}>", *level as u8),
-        TagEnd::BlockQuote => "</blockquote>\n".to_string(),
-        TagEnd::CodeBlock => "</code></pre>\n".to_string(),
+        TagEnd::Paragraph => output.push_str("</p>\n"),
+        TagEnd::Heading(level) => {
+            let _ = write!(output, "</h{}>", *level as u8);
+        }
+        TagEnd::BlockQuote => output.push_str("</blockquote>\n"),
+        TagEnd::CodeBlock => output.push_str("</code></pre>\n"),
         TagEnd::List(ordered) => {
             if *ordered {
-                "</ol>\n".to_string()
+                output.push_str("</ol>\n");
             } else {
-                "</ul>\n".to_string()
+                output.push_str("</ul>\n");
             }
         }
-        TagEnd::Item => "</li>".to_string(),
-        TagEnd::FootnoteDefinition => "</section>\n".to_string(),
-        TagEnd::Table => "</table>\n".to_string(),
-        TagEnd::TableHead => "</thead>\n".to_string(),
-        TagEnd::TableRow => "</tr>\n".to_string(),
-        TagEnd::TableCell => "</td>".to_string(),
-        TagEnd::Emphasis => "</em>".to_string(),
-        TagEnd::Strong => "</strong>".to_string(),
-        TagEnd::Strikethrough => "</del>".to_string(),
-        TagEnd::Link => "</a>".to_string(),
-        TagEnd::Image => String::new(),
+        TagEnd::Item => output.push_str("</li>"),
+        TagEnd::FootnoteDefinition => output.push_str("</section>\n"),
+        TagEnd::Table => output.push_str("</table>\n"),
+        TagEnd::TableHead => output.push_str("</thead>\n"),
+        TagEnd::TableRow => output.push_str("</tr>\n"),
+        TagEnd::TableCell => output.push_str("</td>"),
+        TagEnd::Emphasis => output.push_str("</em>"),
+        TagEnd::Strong => output.push_str("</strong>"),
+        TagEnd::Strikethrough => output.push_str("</del>"),
+        TagEnd::Link => output.push_str("</a>"),
+        TagEnd::Image => {}
     }
 }
 
@@ -578,16 +622,21 @@ struct HeadingContext {
     text: String,
 }
 
-fn heading_wrapper_start(level: HeadingLevel) -> String {
-    format!("<div class=\"sl-heading-wrapper level-h{}\">", level as u8)
+fn write_heading_wrapper_start(output: &mut String, level: HeadingLevel) {
+    let _ = write!(
+        output,
+        "<div class=\"sl-heading-wrapper level-h{}\">",
+        level as u8
+    );
 }
 
-fn anchor_link(id: &str, heading_text: &str) -> String {
-    let label = format!("Section titled \"{}\"", heading_text.trim());
-    format!(
-        "<a class=\"sl-anchor-link\" href=\"#{id}\"><span aria-hidden=\"true\" class=\"sl-anchor-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\"><path fill=\"currentcolor\" d=\"m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z\"></path></svg></span><span class=\"sr-only\">{}</span></a>",
-        escape_text(&label)
-    )
+fn write_anchor_link(output: &mut String, id: &str, heading_text: &str) {
+    output.push_str("<a class=\"sl-anchor-link\" href=\"#");
+    output.push_str(id);
+    output.push_str("\"><span aria-hidden=\"true\" class=\"sl-anchor-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\"><path fill=\"currentcolor\" d=\"m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z\"></path></svg></span><span class=\"sr-only\">");
+    output.push_str("Section titled \"");
+    escape_text_into(output, heading_text.trim());
+    output.push_str("\"</span></a>");
 }
 
 fn push_heading_text(heading_stack: &mut [HeadingContext], text: &str) {
@@ -596,8 +645,7 @@ fn push_heading_text(heading_stack: &mut [HeadingContext], text: &str) {
     }
 }
 
-fn escape_text(text: &str) -> String {
-    let mut out = String::new();
+fn escape_text_into(out: &mut String, text: &str) {
     for ch in text.chars() {
         match ch {
             '&' => out.push_str("&amp;"),
@@ -608,5 +656,4 @@ fn escape_text(text: &str) -> String {
             _ => out.push(ch),
         }
     }
-    out
 }
