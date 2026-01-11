@@ -72,6 +72,8 @@ pub struct CompilerConfig {
     pub syntax_highlighting: Option<bool>,
     /// Overrides the module used for JSX runtime helpers.
     pub jsx_import_source: Option<String>,
+    /// Optional JSX render options (component imports + rewrite options).
+    pub jsx: Option<JsxRenderOptions>,
     /// Selects the rendering pipeline ("multipass" or "mdast").
     pub pipeline: Option<String>,
 }

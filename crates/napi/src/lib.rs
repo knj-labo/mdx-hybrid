@@ -278,7 +278,7 @@ mod tests {
     use super::render_to_jsx_napi;
     use super::{empty_frontmatter, parse_frontmatter};
     use crate::compiler::InternalCompilerConfig;
-    use crate::types::{JsxComponentImport, JsxRenderOptions};
+    use crate::types::{CompilerConfig, JsxComponentImport, JsxRenderOptions};
     use serde_json::Value as JsonValue;
 
     #[test]
@@ -384,6 +384,33 @@ mod tests {
             1,
             "hoisted import should not appear in JSX body: {}",
             result.code
+        );
+    }
+
+    #[test]
+    fn compile_ir_hoists_component_imports() {
+        let source = "<Badge>Hi</Badge>".to_string();
+        let config = CompilerConfig {
+            jsx: Some(JsxRenderOptions {
+                component_imports: Some(vec![JsxComponentImport {
+                    name: "Badge".to_string(),
+                    import: "import Badge from './Badge.astro';".to_string(),
+                }]),
+                ..JsxRenderOptions::default()
+            }),
+            ..CompilerConfig::default()
+        };
+
+        let result = crate::compiler::compile_ir(source, "test.mdx".into(), None, Some(config))
+            .expect("compile_ir success");
+
+        assert!(
+            result
+                .hoisted_imports
+                .iter()
+                .any(|spec| spec.source.contains("import Badge from './Badge.astro';")),
+            "component import should be hoisted: {:?}",
+            result.hoisted_imports
         );
     }
 
