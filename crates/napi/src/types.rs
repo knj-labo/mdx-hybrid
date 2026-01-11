@@ -20,6 +20,26 @@ pub struct RewriteConfig {
     pub enable_components: Option<bool>,
 }
 
+/// JSX component import mapping entry.
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsxComponentImport {
+    /// JSX tag name (e.g., "Badge").
+    pub name: String,
+    /// Import statement to hoist (e.g., "import Badge from './Badge.astro';").
+    pub import: String,
+}
+
+/// Options for JSX rendering (component imports + rewrite options).
+#[napi(object)]
+#[derive(Debug, Clone, Default)]
+pub struct JsxRenderOptions {
+    /// Optional rewrite options (directives/hoist/smartypants/components).
+    pub rewrite: Option<RewriteConfig>,
+    /// Component import mappings to hoist into the output.
+    pub component_imports: Option<Vec<JsxComponentImport>>,
+}
+
 /// Parse result with HTML output and processing statistics
 #[napi(object)]
 #[derive(Debug, Clone)]
@@ -201,7 +221,7 @@ pub struct ParseBlocksResult {
     pub headings: Vec<HeadingEntry>,
 }
 
-use markflow_core::RewriteOptions;
+use markflow_core::{ComponentRegistry, JsxOptions, RewriteOptions};
 
 impl From<RewriteConfig> for RewriteOptions {
     fn from(config: RewriteConfig) -> Self {
@@ -212,6 +232,25 @@ impl From<RewriteConfig> for RewriteOptions {
             enable_smartypants: config.enable_smartypants.unwrap_or(true),
             enable_components: config.enable_components.unwrap_or(true),
             ..RewriteOptions::default()
+        }
+    }
+}
+
+impl From<JsxRenderOptions> for JsxOptions {
+    fn from(options: JsxRenderOptions) -> Self {
+        let rewrite_options = options
+            .rewrite
+            .map(RewriteOptions::from)
+            .unwrap_or_default();
+        let mut components = ComponentRegistry::new();
+        if let Some(imports) = options.component_imports {
+            for entry in imports {
+                components.register_import(entry.name, entry.import);
+            }
+        }
+        JsxOptions {
+            rewrite_options,
+            components,
         }
     }
 }

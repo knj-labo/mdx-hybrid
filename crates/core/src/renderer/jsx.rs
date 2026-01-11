@@ -42,10 +42,12 @@ pub fn render_to_jsx_with_options(
     render_blocks_into(&blocks, &ctx, &mut body)?;
 
     let mut output = String::with_capacity(body.len() + input.len());
-    for import in root_imports {
-        if seen_imports.insert(import.clone()) {
-            output.push_str(&import);
-            output.push('\n');
+    if rewrite_options.enable_hoist {
+        for import in root_imports {
+            if seen_imports.insert(import.clone()) {
+                output.push_str(&import);
+                output.push('\n');
+            }
         }
     }
     for import in rewrite_options.required_imports.borrow().iter() {
