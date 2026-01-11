@@ -50,7 +50,7 @@ fn stream_matches_render_html() {
 
 #[wasm_bindgen_test]
 fn stream_respects_lazy_option() {
-    let input = "<img src=\"/hero.png\">";
+    let input = "<img src=\"/hero.png\" />";
     let default_output = collect_stream(input, None, None, None, None, None).join("");
     assert!(default_output.contains("loading=\"lazy\""));
 
