@@ -18,6 +18,8 @@ pub mod parser;
 pub mod renderer;
 /// Slug generation utilities.
 pub mod slug;
+/// Source span utilities.
+pub mod span;
 /// Streaming transformers (hoist, directives, code fences, etc.).
 pub mod transform;
 
@@ -31,6 +33,7 @@ pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatt
 pub use parser::{ParseConfig, ParseConstructs};
 pub use renderer::{RewriteOptions, StreamingRewriter, render_to_jsx};
 pub use slug::{Slugger, slugify};
+pub use span::Span;
 pub use transform::{
     code_fence,
     directive_adapter::DirectiveAdapter,

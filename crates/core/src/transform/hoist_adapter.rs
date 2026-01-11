@@ -37,19 +37,19 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         for event in self.inner.by_ref() {
             match &event {
-                Event::Start(Tag::CodeBlock(_)) => {
+                Event::Start(Tag::CodeBlock(_), _) => {
                     self.in_code_block += 1;
                 }
-                Event::End(TagEnd::CodeBlock) => {
+                Event::End(TagEnd::CodeBlock, _) => {
                     self.in_code_block = self.in_code_block.saturating_sub(1);
                 }
-                Event::Start(_) => {
+                Event::Start(_, _) => {
                     self.depth = self.depth.saturating_add(1);
                 }
-                Event::End(_) => {
+                Event::End(_, _) => {
                     self.depth = self.depth.saturating_sub(1);
                 }
-                Event::Html(text) if self.depth == 0 && self.in_code_block == 0 => {
+                Event::Html(text, _) if self.depth == 0 && self.in_code_block == 0 => {
                     let trimmed = text.trim_start();
                     if trimmed.starts_with("import ") || trimmed.starts_with("export ") {
                         self.hoisted.borrow_mut().push(trimmed.to_string());
