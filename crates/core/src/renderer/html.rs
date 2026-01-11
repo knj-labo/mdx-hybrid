@@ -51,7 +51,7 @@ impl<W: Write> HtmlRenderer<W> {
             }
 
             match event {
-                Event::Start(tag) => {
+                Event::Start(tag, _) => {
                     if let Tag::Image {
                         link_type,
                         dest_url,
@@ -64,7 +64,7 @@ impl<W: Write> HtmlRenderer<W> {
                         self.write_start_tag(tag)?;
                     }
                 }
-                Event::End(end) => {
+                Event::End(end, _) => {
                     if matches!(end, TagEnd::Image) {
                         if let Some(image) = self.image_ctx.finish_image() {
                             self.writer.write_all(b"<img src=\"")?;
@@ -83,42 +83,42 @@ impl<W: Write> HtmlRenderer<W> {
                         self.write_end_tag(end)?;
                     }
                 }
-                Event::Text(text) => {
+                Event::Text(text, _) => {
                     let text = text.as_ref();
                     if text.starts_with('\0') {
                         continue;
                     }
                     self.write_text(text)?;
                 }
-                Event::Code(text) => {
+                Event::Code(text, _) => {
                     self.writer.write_all(b"<code>")?;
                     self.escape_html(text.as_ref())?;
                     self.writer.write_all(b"</code>")?;
                 }
-                Event::Html(html) | Event::InlineHtml(html) => {
+                Event::Html(html, _) | Event::InlineHtml(html, _) => {
                     self.writer.write_all(html.as_ref().as_bytes())?;
                 }
-                Event::JsxInline(snippet) | Event::JsxFlow(snippet) => {
+                Event::JsxInline(snippet, _) | Event::JsxFlow(snippet, _) => {
                     self.writer.write_all(snippet.as_ref().as_bytes())?;
                 }
-                Event::InlineMath(math) => {
+                Event::InlineMath(math, _) => {
                     self.writer.write_all(b"<span class=\"math-inline\">")?;
                     self.escape_html(math.as_ref())?;
                     self.writer.write_all(b"</span>")?;
                 }
-                Event::DisplayMath(math) => {
+                Event::DisplayMath(math, _) => {
                     self.writer.write_all(b"<div class=\"math-display\">")?;
                     self.escape_html(math.as_ref())?;
                     self.writer.write_all(b"</div>")?;
                 }
-                Event::FootnoteReference(label) => {
+                Event::FootnoteReference(label, _) => {
                     write!(
                         self.writer,
                         "<sup class=\"footnote-ref\"><a href=\"#fn-{0}\" id=\"fnref-{0}\">{0}</a></sup>",
                         label.as_ref()
                     )?;
                 }
-                Event::TaskListMarker(done) => {
+                Event::TaskListMarker(done, _) => {
                     if done {
                         self.writer
                             .write_all(b"<input type=\"checkbox\" disabled=\"\" checked=\"\" />")?;
@@ -127,13 +127,13 @@ impl<W: Write> HtmlRenderer<W> {
                             .write_all(b"<input type=\"checkbox\" disabled=\"\" />")?;
                     }
                 }
-                Event::Rule => {
+                Event::Rule(_) => {
                     self.writer.write_all(b"<hr />\n")?;
                 }
-                Event::HardBreak => {
+                Event::HardBreak(_) => {
                     self.writer.write_all(b"<br />\n")?;
                 }
-                Event::SoftBreak => {
+                Event::SoftBreak(_) => {
                     self.writer.write_all(b"\n")?;
                 }
             }
@@ -406,11 +406,11 @@ impl ImageContext {
     fn try_handle_text_event<'a>(&mut self, event: &Event<'a>) -> bool {
         if let Some(current) = self.stack.last_mut() {
             match event {
-                Event::Text(text) | Event::Code(text) => {
+                Event::Text(text, _) | Event::Code(text, _) => {
                     current.alt.push_str(text.as_ref());
                     return true;
                 }
-                Event::SoftBreak | Event::HardBreak => {
+                Event::SoftBreak(_) | Event::HardBreak(_) => {
                     current.alt.push(' ');
                     return true;
                 }
@@ -423,6 +423,7 @@ impl ImageContext {
 
 #[cfg(test)]
 mod tests {
+    use crate::Span;
     use crate::adapter::MarkdownStream;
     use crate::event::Event as MfEvent;
     use std::borrow::Cow;
@@ -431,8 +432,8 @@ mod tests {
     fn renders_jsx_events_without_panicking() {
         let mut output_buffer = Vec::new();
         let events = vec![
-            MfEvent::JsxInline(Cow::Borrowed("<Inline />")),
-            MfEvent::JsxFlow(Cow::Borrowed("<Block>\n</Block>")),
+            MfEvent::JsxInline(Cow::Borrowed("<Inline />"), Span::default()),
+            MfEvent::JsxFlow(Cow::Borrowed("<Block>\n</Block>"), Span::default()),
         ];
 
         events

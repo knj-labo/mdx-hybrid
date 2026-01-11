@@ -28,6 +28,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Span;
     use crate::event::{Event as MfEvent, HeadingLevel, Tag};
     use std::borrow::Cow;
 
@@ -42,9 +43,9 @@ mod tests {
             attrs: Vec::new(),
         };
         let events = vec![
-            MfEvent::Start(heading.clone()),
-            MfEvent::Text(Cow::Borrowed("Hello Stream")),
-            MfEvent::End(heading.to_end()),
+            MfEvent::Start(heading.clone(), Span::default()),
+            MfEvent::Text(Cow::Borrowed("Hello Stream"), Span::default()),
+            MfEvent::End(heading.to_end(), Span::default()),
         ];
 
         events

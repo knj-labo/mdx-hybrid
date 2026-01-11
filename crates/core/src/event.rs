@@ -1,39 +1,41 @@
 use std::borrow::Cow;
 use std::convert::TryFrom;
 
+use crate::Span;
+
 /// A Markdown event emitted by the Markflow pipeline.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event<'a> {
     /// Start of a tagged element.
-    Start(Tag<'a>),
+    Start(Tag<'a>, Span),
     /// End of a tagged element.
-    End(TagEnd),
+    End(TagEnd, Span),
     /// Text node.
-    Text(Cow<'a, str>),
+    Text(Cow<'a, str>, Span),
     /// Inline code span.
-    Code(Cow<'a, str>),
+    Code(Cow<'a, str>, Span),
     /// HTML chunk (block-level).
-    Html(Cow<'a, str>),
+    Html(Cow<'a, str>, Span),
     /// Inline HTML snippet.
-    InlineHtml(Cow<'a, str>),
+    InlineHtml(Cow<'a, str>, Span),
     /// Inline JSX snippet (preserved as-is).
-    JsxInline(Cow<'a, str>),
+    JsxInline(Cow<'a, str>, Span),
     /// Flow JSX block (preserved as-is).
-    JsxFlow(Cow<'a, str>),
+    JsxFlow(Cow<'a, str>, Span),
     /// Inline math.
-    InlineMath(Cow<'a, str>),
+    InlineMath(Cow<'a, str>, Span),
     /// Display math.
-    DisplayMath(Cow<'a, str>),
+    DisplayMath(Cow<'a, str>, Span),
     /// Footnote reference.
-    FootnoteReference(Cow<'a, str>),
+    FootnoteReference(Cow<'a, str>, Span),
     /// Task list checkbox marker.
-    TaskListMarker(bool),
+    TaskListMarker(bool, Span),
     /// Horizontal rule.
-    Rule,
+    Rule(Span),
     /// Hard line break.
-    HardBreak,
+    HardBreak(Span),
     /// Soft line break.
-    SoftBreak,
+    SoftBreak(Span),
 }
 
 /// Tags for container elements.

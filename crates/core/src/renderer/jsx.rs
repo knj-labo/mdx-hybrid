@@ -59,7 +59,7 @@ fn render_markdown_events(
     let mut heading_stack: Vec<HeadingContext> = Vec::new();
     for event in events {
         match event {
-            Event::Start(tag) => {
+            Event::Start(tag, _) => {
                 if let Tag::Heading { level, id, .. } = &tag
                     && let Some(_id) = id.as_ref()
                 {
@@ -71,7 +71,7 @@ fn render_markdown_events(
                 write_start_tag(output, &tag);
                 stack.push(tag);
             }
-            Event::End(end) => {
+            Event::End(end, _) => {
                 if let Some(open) = stack.pop()
                     && matches_end(&open, &end)
                 {
@@ -86,7 +86,7 @@ fn render_markdown_events(
                     }
                 }
             }
-            Event::Text(text) => {
+            Event::Text(text, _) => {
                 let text = text.as_ref();
                 if text.starts_with('\0') {
                     continue;
@@ -94,31 +94,31 @@ fn render_markdown_events(
                 escape_text_into(output, text);
                 push_heading_text(&mut heading_stack, text);
             }
-            Event::Code(text) => {
+            Event::Code(text, _) => {
                 output.push_str("<code>");
                 escape_text_into(output, text.as_ref());
                 output.push_str("</code>");
                 push_heading_text(&mut heading_stack, text.as_ref());
             }
-            Event::Html(text) | Event::InlineHtml(text) => {
+            Event::Html(text, _) | Event::InlineHtml(text, _) => {
                 output.push_str(text.as_ref());
             }
-            Event::JsxInline(text) | Event::JsxFlow(text) => {
+            Event::JsxInline(text, _) | Event::JsxFlow(text, _) => {
                 output.push_str(text.as_ref());
             }
-            Event::InlineMath(math) => {
+            Event::InlineMath(math, _) => {
                 output.push_str("<span class=\"math-inline\">");
                 output.push_str(math.as_ref());
                 output.push_str("</span>");
                 push_heading_text(&mut heading_stack, math.as_ref());
             }
-            Event::DisplayMath(math) => {
+            Event::DisplayMath(math, _) => {
                 output.push_str("<div class=\"math-display\">");
                 output.push_str(math.as_ref());
                 output.push_str("</div>");
                 push_heading_text(&mut heading_stack, math.as_ref());
             }
-            Event::FootnoteReference(label) => {
+            Event::FootnoteReference(label, _) => {
                 let _ = write!(
                     output,
                     "<sup class=\"footnote-ref\"><a href=\"#fn-{0}\" id=\"fnref-{0}\">{0}</a></sup>",
@@ -126,19 +126,19 @@ fn render_markdown_events(
                 );
                 push_heading_text(&mut heading_stack, label.as_ref());
             }
-            Event::TaskListMarker(done) => {
+            Event::TaskListMarker(done, _) => {
                 if done {
                     output.push_str("<input type=\"checkbox\" disabled=\"\" checked=\"\" />");
                 } else {
                     output.push_str("<input type=\"checkbox\" disabled=\"\" />");
                 }
             }
-            Event::Rule => output.push_str("<hr />\n"),
-            Event::HardBreak => {
+            Event::Rule(_) => output.push_str("<hr />\n"),
+            Event::HardBreak(_) => {
                 output.push_str("<br />\n");
                 push_heading_text(&mut heading_stack, " ");
             }
-            Event::SoftBreak => {
+            Event::SoftBreak(_) => {
                 output.push('\n');
                 push_heading_text(&mut heading_stack, " ");
             }

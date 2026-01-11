@@ -7,6 +7,7 @@ use html_escape::encode_text_to_string;
 use log::warn;
 use markdown::{MdxEsmParse, MdxSignal, ParseOptions, mdast, message::Message, to_mdast};
 
+use crate::Span;
 use crate::event::{Alignment, CodeBlockKind, Event, HeadingLevel, LinkType, Tag};
 use crate::parser::parse_config::ParseConfig;
 use crate::slug::Slugger;
@@ -57,13 +58,22 @@ impl MarkdownParser {
 
     fn push_node(&mut self, node: mdast::Node) {
         match node {
-            mdast::Node::Root(root) => self.stack.push(Frame::transparent(root.children)),
+            mdast::Node::Root(root) => self.stack.push(Frame::transparent(
+                root.children,
+                self.span_from_position(root.position.as_ref()),
+            )),
             mdast::Node::Paragraph(paragraph) => {
                 if self.is_direct_child_of_tight_list() {
-                    self.stack.push(Frame::transparent(paragraph.children));
+                    self.stack.push(Frame::transparent(
+                        paragraph.children,
+                        self.span_from_position(paragraph.position.as_ref()),
+                    ));
                 } else {
-                    self.stack
-                        .push(Frame::container(Tag::Paragraph, paragraph.children));
+                    self.stack.push(Frame::container(
+                        Tag::Paragraph,
+                        paragraph.children,
+                        self.span_from_position(paragraph.position.as_ref()),
+                    ));
                 }
             }
             mdast::Node::Heading(heading) => {
@@ -75,11 +85,18 @@ impl MarkdownParser {
                     classes: Vec::new(),
                     attrs: Vec::new(),
                 };
-                self.stack.push(Frame::container(tag, heading.children));
+                self.stack.push(Frame::container(
+                    tag,
+                    heading.children,
+                    self.span_from_position(heading.position.as_ref()),
+                ));
             }
             mdast::Node::Blockquote(block) => {
-                self.stack
-                    .push(Frame::container(Tag::BlockQuote, block.children));
+                self.stack.push(Frame::container(
+                    Tag::BlockQuote,
+                    block.children,
+                    self.span_from_position(block.position.as_ref()),
+                ));
             }
             mdast::Node::List(list) => {
                 let start = if list.ordered {
@@ -88,15 +105,22 @@ impl MarkdownParser {
                 } else {
                     None
                 };
-                self.stack
-                    .push(Frame::container(Tag::List(start), list.children));
+                self.stack.push(Frame::container(
+                    Tag::List(start),
+                    list.children,
+                    self.span_from_position(list.position.as_ref()),
+                ));
             }
             mdast::Node::ListItem(item) => {
-                let mut frame = Frame::container(Tag::Item, item.children);
+                let mut frame = Frame::container(
+                    Tag::Item,
+                    item.children,
+                    self.span_from_position(item.position.as_ref()),
+                );
                 if let Some(checked) = item.checked {
                     frame
                         .pending_after_start
-                        .push_back(Event::TaskListMarker(checked));
+                        .push_back(Event::TaskListMarker(checked, frame.span));
                 }
                 if !item.spread {
                     frame.tight_state = TightState::PendingIncrement;
@@ -105,39 +129,64 @@ impl MarkdownParser {
             }
             mdast::Node::FootnoteDefinition(def) => {
                 let tag = Tag::FootnoteDefinition(Cow::Owned(def.identifier));
-                self.stack.push(Frame::container(tag, def.children));
+                self.stack.push(Frame::container(
+                    tag,
+                    def.children,
+                    self.span_from_position(def.position.as_ref()),
+                ));
             }
-            mdast::Node::ThematicBreak(_) => self.pending_events.push_back(Event::Rule),
+            mdast::Node::ThematicBreak(node) => self
+                .pending_events
+                .push_back(Event::Rule(self.span_from_position(node.position.as_ref()))),
             mdast::Node::Code(code) => self.push_code_block(code),
             mdast::Node::Text(text) => {
-                self.pending_events
-                    .push_back(Event::Text(Cow::Owned(text.value)));
+                self.pending_events.push_back(Event::Text(
+                    Cow::Owned(text.value),
+                    self.span_from_position(text.position.as_ref()),
+                ));
             }
             mdast::Node::Emphasis(node) => {
-                self.stack
-                    .push(Frame::container(Tag::Emphasis, node.children));
+                self.stack.push(Frame::container(
+                    Tag::Emphasis,
+                    node.children,
+                    self.span_from_position(node.position.as_ref()),
+                ));
             }
             mdast::Node::Strong(node) => {
-                self.stack
-                    .push(Frame::container(Tag::Strong, node.children));
+                self.stack.push(Frame::container(
+                    Tag::Strong,
+                    node.children,
+                    self.span_from_position(node.position.as_ref()),
+                ));
             }
             mdast::Node::Delete(node) => {
-                self.stack
-                    .push(Frame::container(Tag::Strikethrough, node.children));
+                self.stack.push(Frame::container(
+                    Tag::Strikethrough,
+                    node.children,
+                    self.span_from_position(node.position.as_ref()),
+                ));
             }
             mdast::Node::InlineCode(code) => {
-                self.pending_events
-                    .push_back(Event::Code(Cow::Owned(code.value)));
+                self.pending_events.push_back(Event::Code(
+                    Cow::Owned(code.value),
+                    self.span_from_position(code.position.as_ref()),
+                ));
             }
             mdast::Node::InlineMath(math) => {
-                self.pending_events
-                    .push_back(Event::InlineMath(Cow::Owned(math.value)));
+                self.pending_events.push_back(Event::InlineMath(
+                    Cow::Owned(math.value),
+                    self.span_from_position(math.position.as_ref()),
+                ));
             }
             mdast::Node::Math(math) => {
-                self.pending_events
-                    .push_back(Event::DisplayMath(Cow::Owned(math.value)));
+                self.pending_events.push_back(Event::DisplayMath(
+                    Cow::Owned(math.value),
+                    self.span_from_position(math.position.as_ref()),
+                ));
             }
-            mdast::Node::Break(_) => self.pending_events.push_back(Event::HardBreak),
+            mdast::Node::Break(node) => self.pending_events.push_back(Event::HardBreak(
+                self.span_from_position(node.position.as_ref()),
+            )),
             mdast::Node::Link(link) => {
                 let tag = Tag::Link {
                     link_type: LinkType::Inline,
@@ -145,7 +194,11 @@ impl MarkdownParser {
                     title: link.title.map_or_else(|| Cow::Borrowed(""), Cow::Owned),
                     id: Cow::Owned(String::new()),
                 };
-                self.stack.push(Frame::container(tag, link.children));
+                self.stack.push(Frame::container(
+                    tag,
+                    link.children,
+                    self.span_from_position(link.position.as_ref()),
+                ));
             }
             mdast::Node::LinkReference(link) => {
                 let target = self.lookup_definition(&link.identifier);
@@ -160,13 +213,19 @@ impl MarkdownParser {
                         .unwrap_or(Cow::Borrowed("")),
                     id: Cow::Owned(link.identifier),
                 };
-                self.stack.push(Frame::container(tag, link.children));
+                self.stack.push(Frame::container(
+                    tag,
+                    link.children,
+                    self.span_from_position(link.position.as_ref()),
+                ));
             }
             mdast::Node::Image(image) => self.push_inline_image(image),
             mdast::Node::ImageReference(image) => self.push_image_reference(image),
             mdast::Node::Html(html) => {
-                self.pending_events
-                    .push_back(Event::Html(Cow::Owned(html.value)));
+                self.pending_events.push_back(Event::Html(
+                    Cow::Owned(html.value),
+                    self.span_from_position(html.position.as_ref()),
+                ));
             }
             mdast::Node::Table(table) => {
                 let alignments = table
@@ -179,36 +238,49 @@ impl MarkdownParser {
                         mdast::AlignKind::None => Alignment::None,
                     })
                     .collect();
-                self.stack
-                    .push(Frame::container(Tag::Table(alignments), table.children));
+                self.stack.push(Frame::container(
+                    Tag::Table(alignments),
+                    table.children,
+                    self.span_from_position(table.position.as_ref()),
+                ));
             }
             mdast::Node::TableRow(row) => {
-                self.stack
-                    .push(Frame::container(Tag::TableRow, row.children));
+                self.stack.push(Frame::container(
+                    Tag::TableRow,
+                    row.children,
+                    self.span_from_position(row.position.as_ref()),
+                ));
             }
             mdast::Node::TableCell(cell) => {
-                self.stack
-                    .push(Frame::container(Tag::TableCell, cell.children));
+                self.stack.push(Frame::container(
+                    Tag::TableCell,
+                    cell.children,
+                    self.span_from_position(cell.position.as_ref()),
+                ));
             }
             mdast::Node::Toml(doc) => {
-                self.pending_events
-                    .push_back(Event::Html(Cow::Owned(format_frontmatter(
-                        "toml", &doc.value,
-                    ))));
+                self.pending_events.push_back(Event::Html(
+                    Cow::Owned(format_frontmatter("toml", &doc.value)),
+                    self.span_from_position(doc.position.as_ref()),
+                ));
             }
             mdast::Node::Yaml(doc) => {
-                self.pending_events
-                    .push_back(Event::Html(Cow::Owned(format_frontmatter(
-                        "yaml", &doc.value,
-                    ))));
+                self.pending_events.push_back(Event::Html(
+                    Cow::Owned(format_frontmatter("yaml", &doc.value)),
+                    self.span_from_position(doc.position.as_ref()),
+                ));
             }
             mdast::Node::MdxjsEsm(doc) => {
-                self.pending_events
-                    .push_back(Event::Html(Cow::Owned(doc.value)));
+                self.pending_events.push_back(Event::Html(
+                    Cow::Owned(doc.value),
+                    self.span_from_position(doc.position.as_ref()),
+                ));
             }
             mdast::Node::FootnoteReference(reference) => {
-                self.pending_events
-                    .push_back(Event::FootnoteReference(Cow::Owned(reference.identifier)));
+                self.pending_events.push_back(Event::FootnoteReference(
+                    Cow::Owned(reference.identifier),
+                    self.span_from_position(reference.position.as_ref()),
+                ));
             }
             mdast::Node::MdxFlowExpression(expr) => {
                 self.push_mdx_html(
@@ -236,8 +308,10 @@ impl MarkdownParser {
                     let mut shadow = String::new();
                     collect_text(&element.children, &mut shadow);
                     if !shadow.is_empty() {
-                        self.pending_events
-                            .push_back(Event::Text(Cow::Owned(format!("\0{shadow}"))));
+                        self.pending_events.push_back(Event::Text(
+                            Cow::Owned(format!("\0{shadow}")),
+                            self.span_from_position(element.position.as_ref()),
+                        ));
                     }
                 }
                 let fallback = raw.is_empty().then(|| {
@@ -252,8 +326,10 @@ impl MarkdownParser {
                 } else {
                     raw
                 };
-                self.pending_events
-                    .push_back(Event::JsxFlow(Cow::Owned(snippet)));
+                self.pending_events.push_back(Event::JsxFlow(
+                    Cow::Owned(snippet),
+                    self.span_from_position(element.position.as_ref()),
+                ));
             }
             mdast::Node::MdxJsxTextElement(element) => {
                 let raw = element
@@ -261,8 +337,10 @@ impl MarkdownParser {
                     .as_ref()
                     .and_then(|pos| self.slice_from_position(pos))
                     .unwrap_or_default();
-                self.pending_events
-                    .push_back(Event::JsxInline(Cow::Owned(raw)));
+                self.pending_events.push_back(Event::JsxInline(
+                    Cow::Owned(raw),
+                    self.span_from_position(element.position.as_ref()),
+                ));
             }
             mdast::Node::Definition(_) => { /* already recorded */ }
         }
@@ -296,10 +374,13 @@ impl MarkdownParser {
             None => CodeBlockKind::Indented,
         };
         let tag = Tag::CodeBlock(kind);
-        self.pending_events.push_back(Event::Start(tag.clone()));
+        let span = self.span_from_position(code.position.as_ref());
         self.pending_events
-            .push_back(Event::Text(Cow::Owned(code.value)));
-        self.pending_events.push_back(Event::End(tag.to_end()));
+            .push_back(Event::Start(tag.clone(), span));
+        self.pending_events
+            .push_back(Event::Text(Cow::Owned(code.value), span));
+        self.pending_events
+            .push_back(Event::End(tag.to_end(), span));
     }
 
     fn push_inline_image(&mut self, image: mdast::Image) {
@@ -309,12 +390,15 @@ impl MarkdownParser {
             title: image.title.map_or_else(|| Cow::Borrowed(""), Cow::Owned),
             id: Cow::Owned(String::new()),
         };
-        self.pending_events.push_back(Event::Start(tag.clone()));
+        let span = self.span_from_position(image.position.as_ref());
+        self.pending_events
+            .push_back(Event::Start(tag.clone(), span));
         if !image.alt.is_empty() {
             self.pending_events
-                .push_back(Event::Text(Cow::Owned(image.alt)));
+                .push_back(Event::Text(Cow::Owned(image.alt), span));
         }
-        self.pending_events.push_back(Event::End(tag.to_end()));
+        self.pending_events
+            .push_back(Event::End(tag.to_end(), span));
     }
 
     fn push_image_reference(&mut self, image: mdast::ImageReference) {
@@ -330,12 +414,15 @@ impl MarkdownParser {
                 .unwrap_or(Cow::Borrowed("")),
             id: Cow::Owned(image.identifier),
         };
-        self.pending_events.push_back(Event::Start(tag.clone()));
+        let span = self.span_from_position(image.position.as_ref());
+        self.pending_events
+            .push_back(Event::Start(tag.clone(), span));
         if !image.alt.is_empty() {
             self.pending_events
-                .push_back(Event::Text(Cow::Owned(image.alt)));
+                .push_back(Event::Text(Cow::Owned(image.alt), span));
         }
-        self.pending_events.push_back(Event::End(tag.to_end()));
+        self.pending_events
+            .push_back(Event::End(tag.to_end(), span));
     }
 
     fn lookup_definition(&self, identifier: &str) -> Option<&DefinitionTarget> {
@@ -356,10 +443,11 @@ impl MarkdownParser {
         if let Some(position) = position
             && let Some(raw) = self.slice_from_position(position)
         {
+            let span = self.span_from_position(Some(position));
             let event = if block {
-                Event::Html(Cow::Owned(raw))
+                Event::Html(Cow::Owned(raw), span)
             } else {
-                Event::InlineHtml(Cow::Owned(raw))
+                Event::InlineHtml(Cow::Owned(raw), span)
             };
             self.pending_events.push_back(event);
             return;
@@ -367,9 +455,9 @@ impl MarkdownParser {
 
         if let Some(fallback) = fallback {
             let event = if block {
-                Event::Html(Cow::Owned(fallback))
+                Event::Html(Cow::Owned(fallback), Span::default())
             } else {
-                Event::InlineHtml(Cow::Owned(fallback))
+                Event::InlineHtml(Cow::Owned(fallback), Span::default())
             };
             self.pending_events.push_back(event);
             return;
@@ -386,6 +474,18 @@ impl MarkdownParser {
         } else {
             None
         }
+    }
+
+    fn span_from_position(&self, position: Option<&markdown::unist::Position>) -> Span {
+        // TODO: spans currently refer to the normalized source (MDX JSX indentation may shift offsets).
+        if let Some(position) = position {
+            let start = position.start.offset;
+            let end = position.end.offset;
+            if start <= end && end <= self.source.len() {
+                return Span::new(start, end);
+            }
+        }
+        Span::default()
     }
 
     fn is_direct_child_of_tight_list(&self) -> bool {
@@ -430,7 +530,7 @@ impl Iterator for MarkdownParser {
                     FramePhase::Start => {
                         frame.phase = FramePhase::Prologue;
                         if let FrameKind::Container(tag) = &frame.kind {
-                            return Some(Event::Start(tag.clone()));
+                            return Some(Event::Start(tag.clone(), frame.span));
                         }
                     }
                     FramePhase::Prologue => {
@@ -455,6 +555,7 @@ impl Iterator for MarkdownParser {
                         }
                     }
                     FramePhase::End => {
+                        let span = frame.span;
                         let end = match &frame.kind {
                             FrameKind::Container(tag) => tag.to_end(),
                             FrameKind::Transparent => {
@@ -464,7 +565,7 @@ impl Iterator for MarkdownParser {
                             }
                         };
                         self.stack.pop();
-                        return Some(Event::End(end));
+                        return Some(Event::End(end, span));
                     }
                 },
             }
@@ -478,6 +579,7 @@ struct Frame {
     children: VecDeque<mdast::Node>,
     pending_after_start: VecDeque<Event<'static>>,
     tight_state: TightState,
+    span: Span,
 }
 
 enum FrameKind {
@@ -501,23 +603,25 @@ enum TightState {
 }
 
 impl Frame {
-    fn container(tag: Tag<'static>, children: Vec<mdast::Node>) -> Self {
+    fn container(tag: Tag<'static>, children: Vec<mdast::Node>, span: Span) -> Self {
         Self {
             kind: FrameKind::Container(tag),
             phase: FramePhase::Start,
             children: VecDeque::from(children),
             pending_after_start: VecDeque::new(),
             tight_state: TightState::None,
+            span,
         }
     }
 
-    fn transparent(children: Vec<mdast::Node>) -> Self {
+    fn transparent(children: Vec<mdast::Node>, span: Span) -> Self {
         Self {
             kind: FrameKind::Transparent,
             phase: FramePhase::Children,
             children: VecDeque::from(children),
             pending_after_start: VecDeque::new(),
             tight_state: TightState::None,
+            span,
         }
     }
 }
@@ -737,7 +841,7 @@ mod tests {
         assert!(
             !events
                 .iter()
-                .any(|event| matches!(event, MfEvent::Start(Tag::Paragraph)))
+                .any(|event| matches!(event, MfEvent::Start(Tag::Paragraph, _)))
         );
     }
 
@@ -747,7 +851,7 @@ mod tests {
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, MfEvent::Start(Tag::Paragraph)))
+                .any(|event| matches!(event, MfEvent::Start(Tag::Paragraph, _)))
         );
     }
 
@@ -765,7 +869,7 @@ mod tests {
 </Steps>\n";
         let events = collect_events_with_config(input, ParseConfig::mdx());
         let code_text = events.iter().find_map(|event| match event {
-            MfEvent::Text(text)
+            MfEvent::Text(text, _)
                 if text.as_ref().contains("first: line")
                     && text.as_ref().contains("second: line") =>
             {
@@ -787,11 +891,11 @@ mod tests {
         let events = collect_events("- [x] done");
         let marker_index = events
             .iter()
-            .position(|event| matches!(event, MfEvent::TaskListMarker(true)))
+            .position(|event| matches!(event, MfEvent::TaskListMarker(true, _)))
             .expect("marker present");
         let text_index = events
             .iter()
-            .position(|event| matches!(event, MfEvent::Text(text) if text.as_ref() == "done"))
+            .position(|event| matches!(event, MfEvent::Text(text, _) if text.as_ref() == "done"))
             .expect("text present");
         assert!(marker_index < text_index);
     }
@@ -803,9 +907,9 @@ mod tests {
         let mut found_paragraph = false;
         for event in events {
             match event {
-                MfEvent::Start(Tag::BlockQuote) => inside_blockquote = true,
-                MfEvent::End(TagEnd::BlockQuote) => inside_blockquote = false,
-                MfEvent::Start(Tag::Paragraph) if inside_blockquote => {
+                MfEvent::Start(Tag::BlockQuote, _) => inside_blockquote = true,
+                MfEvent::End(TagEnd::BlockQuote, _) => inside_blockquote = false,
+                MfEvent::Start(Tag::Paragraph, _) if inside_blockquote => {
                     found_paragraph = true;
                     break;
                 }
@@ -821,15 +925,15 @@ mod tests {
         let input = "import Button from './Button.jsx'";
         let events = collect_events_with_config(input, ParseConfig::markdown());
         assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, Event::Text(text) if text.contains("import Button"))),
+            events.iter().any(
+                |event| matches!(event, Event::Text(text, _) if text.contains("import Button"))
+            ),
             "import statement should remain as text: {events:?}"
         );
         assert!(
-            !events
-                .iter()
-                .any(|event| matches!(event, Event::Html(html) if html.contains("import Button"))),
+            !events.iter().any(
+                |event| matches!(event, Event::Html(html, _) if html.contains("import Button"))
+            ),
             "markdown mode should not emit HTML events for imports"
         );
     }
@@ -839,9 +943,9 @@ mod tests {
         let input = "import Button from './Button.jsx'";
         let events = collect_events_with_config(input, ParseConfig::mdx());
         assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, Event::Html(html) if html.contains("import Button"))),
+            events.iter().any(
+                |event| matches!(event, Event::Html(html, _) if html.contains("import Button"))
+            ),
             "mdx mode should surface mdx ESM blocks"
         );
     }
@@ -851,9 +955,9 @@ mod tests {
         let input = "Hello {props.name}";
         let events = collect_events_with_config(input, ParseConfig::markdown());
         assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, Event::Text(text) if text.contains("{props.name}"))),
+            events.iter().any(
+                |event| matches!(event, Event::Text(text, _) if text.contains("{props.name}"))
+            ),
             "expression should remain literal text in markdown mode"
         );
     }
@@ -865,7 +969,7 @@ mod tests {
         assert!(
             events.iter().any(|event| matches!(
                 event,
-                Event::InlineHtml(html) if html.contains("{props.name}")
+                Event::InlineHtml(html, _) if html.contains("{props.name}")
             )),
             "mdx mode should emit inline HTML for expressions"
         );
