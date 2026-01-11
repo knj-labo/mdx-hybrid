@@ -8,7 +8,7 @@ use std::io::{self, Write};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::transform::components::component_handlers;
+use crate::transform::components::{ComponentHandlers, component_handlers};
 use crate::transform::directives::{AsideDirectiveMapper, DirectiveMapper};
 
 /// Configuration flags that control how the streaming rewriter manipulates HTML.
@@ -120,7 +120,7 @@ impl<W: Write> Write for StreamingRewriter<W> {
 impl RewriteOptions {
     fn as_settings(&self) -> Settings<'static, 'static> {
         let mut settings = Settings::default();
-        let mut handlers = Vec::new();
+        let mut handlers = ComponentHandlers::new();
 
         if self.enforce_img_loading_lazy {
             handlers.push(lazy_img_handler());
@@ -130,7 +130,7 @@ impl RewriteOptions {
             handlers.extend(component_handlers());
         }
 
-        settings.element_content_handlers = handlers;
+        settings.element_content_handlers = handlers.into_vec();
         settings
     }
 }
