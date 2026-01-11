@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve, relative } from 'node:path'
 import matter from 'gray-matter'
-import { parse as markflowParse } from '../../../../crates/napi/index.js'
+import { parse as markflowParse, parseWithOptions } from '../../../../crates/napi/index.js'
 
 const DOCS_DIR = resolve(
   new URL('../content/docs/', import.meta.url).pathname,
@@ -9,6 +9,9 @@ const DOCS_DIR = resolve(
 
 export default function markflowContentPlugin() {
   const useBaseline = process.env.MARKFLOW_HARNESS_BASELINE === '1'
+  const skipFrontmatter = process.env.MARKFLOW_HARNESS_SKIP_FRONTMATTER === '1'
+  const disableSmartypants =
+    process.env.MARKFLOW_HARNESS_DISABLE_SMARTYPANTS === '1'
 
   return {
     name: 'markflow-content-plugin',
@@ -34,7 +37,15 @@ export default function markflowContentPlugin() {
           const processed = await compiler.process(baselineSource)
           html = String(processed)
         } else {
-          html = markflowParse(raw)
+          html = disableSmartypants
+            ? parseWithOptions(raw, {
+                enforceImgLoadingLazy: true,
+                enableSmartypants: false,
+              })
+            : markflowParse(raw)
+          if (skipFrontmatter) {
+            html = stripFrontmatterHtml(html)
+          }
         }
 
         docs.push({
@@ -96,8 +107,7 @@ function preprocessBaseline(markdown) {
   const lines = markdown.split(/\r?\n/)
   const out = []
   let fence = null
-  let skipEsm = false
-
+  // Harness normalization: keep ESM filtering line-based for stability.
   for (const line of lines) {
     const fenceMatch = line.match(/^\s*(?:>\s*)?(```|~~~)/)
     if (fenceMatch) {
@@ -112,17 +122,7 @@ function preprocessBaseline(markdown) {
       continue
     }
 
-    if (skipEsm) {
-      if (line.includes(';')) {
-        skipEsm = false
-      }
-      continue
-    }
-
     if (isMdxEsmLine(line)) {
-      if (!line.trim().endsWith(';')) {
-        skipEsm = true
-      }
       continue
     }
 
@@ -155,4 +155,12 @@ function isMdxEsmLine(line) {
   if (trimmed.startsWith('export {') || trimmed.startsWith('export *')) return true
   if (trimmed.startsWith('import') && /\sfrom\s/.test(trimmed)) return true
   return trimmed.startsWith('export') && /\sfrom\s/.test(trimmed)
+}
+
+function stripFrontmatterHtml(html) {
+  if (!html) return html
+  return html.replace(
+    /<pre\s+class="frontmatter"[^>]*>[\s\S]*?<\/pre>/gi,
+    '',
+  )
 }

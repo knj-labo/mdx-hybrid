@@ -35,6 +35,8 @@ function parseArgs(argv) {
 
 async function main() {
   const { summary, skipInstall, mode } = parseArgs(process.argv)
+  process.env.MARKFLOW_HARNESS_SKIP_FRONTMATTER = '1'
+  process.env.MARKFLOW_HARNESS_DISABLE_SMARTYPANTS = '1'
 
   const distBaseline = resolve(harnessDir, 'dist-baseline')
   const distMarkflow = resolve(harnessDir, 'dist-markflow')
@@ -45,9 +47,11 @@ async function main() {
     fs.rm(distMarkflow, { recursive: true, force: true }),
   ])
 
+  await cleanBuildArtifacts()
   const baseline = await runHarness('baseline', { skipInstall })
   await moveDist('baseline', distBaseline)
 
+  await cleanBuildArtifacts()
   const markflow = await runHarness('markflow', { skipInstall })
   await moveDist('markflow', distMarkflow)
 
@@ -131,6 +135,17 @@ async function compareSemantic(dirA, dirB) {
     differences: diffs.length,
     samples: diffs.slice(0, 1),
   }
+}
+
+async function cleanBuildArtifacts() {
+  const targets = [
+    resolve(harnessDir, 'dist'),
+    resolve(harnessDir, '.astro'),
+    resolve(harnessDir, '.vite-cache'),
+    resolve(harnessDir, 'node_modules', '.astro'),
+    resolve(harnessDir, 'node_modules', '.vite'),
+  ]
+  await Promise.all(targets.map((dir) => fs.rm(dir, { recursive: true, force: true })))
 }
 
 async function collectHtml(root) {

@@ -16,3 +16,10 @@ MARKFLOW_HARNESS_E2E=1 node tests/directives.aside.test.mjs
 The harness exposes docs through the virtual module `virtual:markflow-docs`. When the
 baseline env var is set, the plugin falls back to a remark-based compiler to simulate
 Astro's legacy pipeline, enabling quick performance comparisons.
+
+## Repro flags
+
+- `MARKFLOW_HARNESS_SKIP_FRONTMATTER=1`: omit rendered frontmatter HTML from Markflow output.
+- `MARKFLOW_HARNESS_DISABLE_SMARTYPANTS=1`: disable smartypants transforms for Markflow output.
+
+`scripts/compare-astro-harness.mjs` forces both flags on to reduce baseline/markflow diffs.
