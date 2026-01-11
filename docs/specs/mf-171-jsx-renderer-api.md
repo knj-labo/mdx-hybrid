@@ -11,8 +11,13 @@ Define the Rust/NAPI/WASM API surface and the escaping/serialization rules for t
   - `render_to_jsx_with_options(input: &str, options: JsxOptions) -> Result<String, MarkflowError>`
   - `JsxOptions { rewrite_options: RewriteOptions, components: ComponentRegistry }`
     - `ComponentRegistry` handles built-in JSX components (`Steps`, `FileTree`) plus optional plugins and import mappings.
-- NAPI: `renderToJsx(input: string, options?: { ... }) => string` (TBD; needs a JS-facing mirror of `JsxOptions`)
-- WASM: `render_jsx(input: string, options?: { ... }) => string` (TBD; needs a JS-facing mirror of `JsxOptions`)
+- NAPI:
+  - `renderToJsx(input: string, options?: JsxRenderOptions): string`
+  - `JsxRenderOptions { rewrite?: RewriteConfig, componentImports?: { name: string, import: string }[] }`
+- WASM:
+  - `render_jsx(input: string, enable_directives?, enable_hoist?, enable_smartypants?, enable_components?) => string` (legacy signature)
+  - `render_jsx_with_options(input: string, options?: JsxRenderOptions) => string`
+  - `JsxRenderOptions { enableDirectives?, enableHoist?, enableSmartypants?, enableComponents?, enforceImgLoadingLazy?, componentImports?: { name: string, import: string }[] }`
 
 ## Event → JSX Mapping (current behavior)
 | Event | Output | Escaping |
@@ -61,12 +66,38 @@ Define the Rust/NAPI/WASM API surface and the escaping/serialization rules for t
 - `<Steps>`: Multiple rendered `<ol>` fragments are merged into a single list; non-list HTML fragments are inserted into the latest `<li>` to keep exactly one root `<ol>`.
 - `<Steps>`: Markdown children are dedented by one indentation level before rendering so fenced blocks remain fences (not indented code).
 
+## Usage Examples
+
+### NAPI (Node)
+```ts
+import { renderToJsx } from 'markflow-napi'
+
+const jsx = renderToJsx('<Badge>Hi</Badge>', {
+  componentImports: [
+    { name: 'Badge', import: "import Badge from './Badge.astro';" },
+  ],
+  rewrite: { enableHoist: true },
+})
+```
+
+### WASM (Browser/Edge)
+```ts
+import { render_jsx_with_options } from './markflow_wasm'
+
+const jsx = render_jsx_with_options('<Badge>Hi</Badge>', {
+  componentImports: [
+    { name: 'Badge', import: "import Badge from './Badge.astro';" },
+  ],
+  enableHoist: true,
+})
+```
+
 ## Open Questions
 - Should attributes be HTML-escaped or JSX-brace-wrapped in a future pass?
 - How to expose `runtime_import` / layout wrapping defaults without breaking existing NAPI callers?
 - Should `<script>`/`<style>` be filtered or left as-is in JSX mode?
 
 ## Next Steps
-- Expose `JsxOptions`/`ComponentRegistry` to NAPI + WASM so callers can register component imports/plugins.
+- Consider exposing plugin hooks beyond import mappings (user-defined child transforms).
 - Expand table for table alignment, images (current behavior skips image rendering in JSX renderer).
 - Add fixtures: text with braces/angles, HTML entities, nested JSX + Markdown mix, attributes with quotes.
