@@ -38,6 +38,20 @@ fn jsx_steps_nested_tabs_stays_in_list_item() {
 }
 
 #[test]
+fn jsx_inline_code_preserves_paragraph() {
+    let input = "Click `button` now";
+    let output = render_to_jsx(input).expect("render_to_jsx succeeds");
+    assert!(
+        output.contains("<p>Click <code>button</code> now</p>"),
+        "inline code should stay inside a single paragraph. output: {output}"
+    );
+    assert!(
+        !output.contains("</p><code>button</code><p>"),
+        "inline code should not split paragraphs. output: {output}"
+    );
+}
+
+#[test]
 fn test_parse() {
     let input = "# Hello, World!";
     let output = parse(input).unwrap().html;
