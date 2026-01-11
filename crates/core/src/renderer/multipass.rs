@@ -117,6 +117,12 @@ fn scan_nodes<'a>(
         }
         if cursor < bytes.len() && bytes[cursor] == b'<' {
             if let Some((name, attrs, open_end)) = parse_open_tag(input, cursor) {
+                if !is_component_tag(name) {
+                    let end = open_end.saturating_add(1);
+                    push_markdown(&mut blocks, input, cursor, end);
+                    cursor = end;
+                    continue;
+                }
                 let is_self_closing = is_self_closing(bytes, cursor, open_end);
                 if is_self_closing {
                     blocks.push(Block::JsxElement {
@@ -189,6 +195,12 @@ fn is_self_closing(bytes: &[u8], open_start: usize, open_end: usize) -> bool {
 
 fn is_name_char(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b':' | b'_')
+}
+
+fn is_component_tag(name: &str) -> bool {
+    name.chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_uppercase())
 }
 
 fn is_tag_terminator(byte: u8) -> bool {
@@ -410,6 +422,14 @@ mod tests {
                 is_self_closing: false,
             }]
         );
+    }
+
+    #[test]
+    fn scan_keeps_lowercase_html_as_markdown() {
+        let input = "<h3>Title</h3>";
+        let blocks = scan(input);
+
+        assert_eq!(blocks, vec![Block::Markdown(input)]);
     }
 
     #[test]

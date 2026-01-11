@@ -8,24 +8,46 @@ use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
 use std::rc::Rc;
 
-mod handlers;
-use handlers::ComponentHandlers;
+mod components;
+pub use components::{
+    ComponentRegistry, JsxComponentPlugin, JsxElement, RenderContext, RenderOutcome,
+};
+
+/// Options for JSX rendering.
+#[derive(Default)]
+pub struct JsxOptions {
+    /// Rewrite options for directive/hoist/smartypants behavior.
+    pub rewrite_options: RewriteOptions,
+    /// Component registry (built-ins + plugins).
+    pub components: ComponentRegistry,
+}
 
 /// Render Markdown input into a raw JSX-like string, preserving JSX nodes.
 pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
-    let rewrite_options = RewriteOptions::default();
+    render_to_jsx_with_options(input, JsxOptions::default())
+}
+
+/// Render Markdown input into a raw JSX-like string with custom options.
+pub fn render_to_jsx_with_options(
+    input: &str,
+    options: JsxOptions,
+) -> Result<String, MarkflowError> {
+    let rewrite_options = options.rewrite_options;
+    let components = options.components;
     let mut seen_imports = HashSet::new();
     let (root_imports, _body_lines) = collect_root_imports(input);
     let blocks = scan(input);
-    let handlers = ComponentHandlers::new();
+    let ctx = RenderContext::new(&rewrite_options, &components);
     let mut body = String::with_capacity(input.len());
-    render_blocks_into(&blocks, &rewrite_options, &handlers, &mut body)?;
+    render_blocks_into(&blocks, &ctx, &mut body)?;
 
     let mut output = String::with_capacity(body.len() + input.len());
-    for import in root_imports {
-        if seen_imports.insert(import.clone()) {
-            output.push_str(&import);
-            output.push('\n');
+    if rewrite_options.enable_hoist {
+        for import in root_imports {
+            if seen_imports.insert(import.clone()) {
+                output.push_str(&import);
+                output.push('\n');
+            }
         }
     }
     for import in rewrite_options.required_imports.borrow().iter() {
@@ -154,25 +176,23 @@ fn render_markdown_events(
 
 fn render_blocks_into(
     blocks: &[Block<'_>],
-    rewrite_options: &RewriteOptions,
-    handlers: &ComponentHandlers,
+    ctx: &RenderContext<'_>,
     output: &mut String,
 ) -> Result<(), MarkflowError> {
     for block in blocks {
-        render_block_into(block, rewrite_options, handlers, output)?;
+        render_block_into(block, ctx, output)?;
     }
     Ok(())
 }
 
 fn render_block_into(
     block: &Block<'_>,
-    rewrite_options: &RewriteOptions,
-    handlers: &ComponentHandlers,
+    ctx: &RenderContext<'_>,
     output: &mut String,
 ) -> Result<(), MarkflowError> {
     match block {
-        Block::Markdown(text) => render_markdown_events(text, rewrite_options, output),
-        Block::Code(text) => render_markdown_events(text, rewrite_options, output),
+        Block::Markdown(text) => render_markdown_events(text, ctx.rewrite_options, output),
+        Block::Code(text) => render_markdown_events(text, ctx.rewrite_options, output),
         Block::JsxElement {
             name,
             attrs,
@@ -180,7 +200,17 @@ fn render_block_into(
             is_self_closing,
         } => {
             let rendered_attrs = render_attrs(attrs, *is_self_closing);
+            let element = JsxElement {
+                name,
+                attrs,
+                children,
+                is_self_closing: *is_self_closing,
+            };
             if *is_self_closing {
+                let mut scratch = String::new();
+                let _ = ctx
+                    .components
+                    .render_children(&element, ctx, &mut scratch)?;
                 output.push('<');
                 output.push_str(name);
                 output.push_str(&rendered_attrs);
@@ -190,8 +220,8 @@ fn render_block_into(
                 output.push_str(name);
                 output.push_str(&rendered_attrs);
                 output.push('>');
-                if !handlers.render_children(name, children, rewrite_options, output)? {
-                    render_jsx_children_into(children, rewrite_options, handlers, output)?;
+                if !ctx.components.render_children(&element, ctx, output)? {
+                    render_jsx_children_into(children, ctx, output)?;
                 }
                 output.push_str("</");
                 output.push_str(name);
@@ -204,22 +234,21 @@ fn render_block_into(
 
 fn render_jsx_children_into(
     children: &[Block<'_>],
-    rewrite_options: &RewriteOptions,
-    handlers: &ComponentHandlers,
+    ctx: &RenderContext<'_>,
     output: &mut String,
 ) -> Result<(), MarkflowError> {
     for child in children {
         match child {
             Block::Markdown(text) => {
                 let dedented = dedent_one_level(text);
-                render_markdown_events(&dedented, rewrite_options, output)?;
+                render_markdown_events(&dedented, ctx.rewrite_options, output)?;
             }
             Block::Code(text) => {
                 let dedented = dedent_one_level(text);
-                render_markdown_events(&dedented, rewrite_options, output)?;
+                render_markdown_events(&dedented, ctx.rewrite_options, output)?;
             }
             _ => {
-                render_block_into(child, rewrite_options, handlers, output)?;
+                render_block_into(child, ctx, output)?;
             }
         }
     }
@@ -443,7 +472,11 @@ fn write_heading_wrapper_start(output: &mut String, level: HeadingLevel) {
 fn write_anchor_link(output: &mut String, id: &str, heading_text: &str) {
     output.push_str("<a class=\"sl-anchor-link\" href=\"#");
     output.push_str(id);
-    output.push_str("\"><span aria-hidden=\"true\" class=\"sl-anchor-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\"><path fill=\"currentcolor\" d=\"m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z\"></path></svg></span><span class=\"sr-only\">");
+    output.push_str("\"><span aria-hidden=\"true\" class=\"sl-anchor-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\"><path fill=\"currentcolor\"
+  d=\"m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-
+  1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42
+  1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z\"></path></svg></
+  span><span class=\"sr-only\">");
     output.push_str("Section titled \"");
     escape_text_into(output, heading_text.trim());
     output.push_str("\"</span></a>");

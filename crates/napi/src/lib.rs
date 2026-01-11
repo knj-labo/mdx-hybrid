@@ -1,7 +1,9 @@
 #![deny(missing_docs)]
 //! Node.js bindings that surface Markflow's Rust implementation.
 
-use markflow_core::{MarkflowError, RewriteOptions, extract_frontmatter};
+use markflow_core::{
+    MarkflowError, RewriteOptions, extract_frontmatter, render_to_jsx_with_options,
+};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use std::path::Path;
@@ -29,8 +31,12 @@ pub fn parse(input: String) -> napi::Result<String> {
 
 /// Renders markdown/MDX to a JSX string while preserving raw JSX nodes.
 #[napi(js_name = "renderToJsx")]
-pub fn render_to_jsx_napi(input: String) -> napi::Result<String> {
-    markflow_core::render_to_jsx(&input).map_err(convert_error)
+pub fn render_to_jsx_napi(
+    input: String,
+    options: Option<JsxRenderOptions>,
+) -> napi::Result<String> {
+    let options = options.unwrap_or_default();
+    render_to_jsx_with_options(&input, options.into()).map_err(convert_error)
 }
 
 #[cfg(test)]
@@ -272,6 +278,7 @@ mod tests {
     use super::render_to_jsx_napi;
     use super::{empty_frontmatter, parse_frontmatter};
     use crate::compiler::InternalCompilerConfig;
+    use crate::types::{CompilerConfig, JsxComponentImport, JsxRenderOptions};
     use serde_json::Value as JsonValue;
 
     #[test]
@@ -297,9 +304,24 @@ mod tests {
     #[test]
     fn render_to_jsx_preserves_raw_jsx() {
         let input = "import X from './x'\n\n<MyComponent />".to_string();
-        let output = render_to_jsx_napi(input).expect("render_to_jsx succeeds");
+        let output = render_to_jsx_napi(input, None).expect("render_to_jsx succeeds");
         assert!(output.starts_with("import X from './x'"));
         assert!(output.contains("<MyComponent />"));
+    }
+
+    #[test]
+    fn render_to_jsx_supports_component_imports() {
+        let input = "<Badge>Hi</Badge>".to_string();
+        let options = JsxRenderOptions {
+            component_imports: Some(vec![JsxComponentImport {
+                name: "Badge".to_string(),
+                import: "import Badge from './Badge.astro';".to_string(),
+            }]),
+            ..JsxRenderOptions::default()
+        };
+        let output = render_to_jsx_napi(input, Some(options)).expect("render_to_jsx succeeds");
+        assert!(output.starts_with("import Badge from './Badge.astro';"));
+        assert!(output.contains("<Badge>"));
     }
 
     #[test]
@@ -362,6 +384,33 @@ mod tests {
             1,
             "hoisted import should not appear in JSX body: {}",
             result.code
+        );
+    }
+
+    #[test]
+    fn compile_ir_hoists_component_imports() {
+        let source = "<Badge>Hi</Badge>".to_string();
+        let config = CompilerConfig {
+            jsx: Some(JsxRenderOptions {
+                component_imports: Some(vec![JsxComponentImport {
+                    name: "Badge".to_string(),
+                    import: "import Badge from './Badge.astro';".to_string(),
+                }]),
+                ..JsxRenderOptions::default()
+            }),
+            ..CompilerConfig::default()
+        };
+
+        let result = crate::compiler::compile_ir(source, "test.mdx".into(), None, Some(config))
+            .expect("compile_ir success");
+
+        assert!(
+            result
+                .hoisted_imports
+                .iter()
+                .any(|spec| spec.source.contains("import Badge from './Badge.astro';")),
+            "component import should be hoisted: {:?}",
+            result.hoisted_imports
         );
     }
 

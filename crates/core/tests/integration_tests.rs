@@ -1,4 +1,8 @@
-use markflow_core::{RewriteOptions, parse, parse_with_options, render_to_jsx};
+use markflow_core::{
+    ComponentRegistry, JsxComponentPlugin, JsxElement, JsxOptions, MarkflowError, RenderContext,
+    RenderOutcome, RewriteOptions, parse, parse_with_options, render_to_jsx,
+    render_to_jsx_with_options,
+};
 use std::fs;
 use std::path::PathBuf;
 
@@ -12,12 +16,59 @@ fn read_fixture(path: &str) -> String {
     fs::read_to_string(fixtures_dir().join(path)).unwrap()
 }
 
+struct BadgePlugin;
+
+impl JsxComponentPlugin for BadgePlugin {
+    fn matches(&self, name: &str) -> bool {
+        name == "Badge"
+    }
+
+    fn render_children(
+        &self,
+        element: &JsxElement<'_>,
+        ctx: &RenderContext<'_>,
+        output: &mut String,
+    ) -> Result<RenderOutcome, MarkflowError> {
+        output.push_str("<span class=\"badge\">");
+        ctx.render_children(element.children, output)?;
+        output.push_str("</span>");
+        Ok(RenderOutcome::Handled)
+    }
+}
+
 #[test]
 fn jsx_renderer_preserves_raw_jsx() {
     let input = "import X from './x'\n\n<MyComponent />\n";
     let result = render_to_jsx(input).expect("render_to_jsx succeeds");
     assert!(result.starts_with("import X from './x'"));
     assert!(result.contains("<MyComponent />"));
+}
+
+#[test]
+fn jsx_registry_allows_imports_and_plugins() {
+    let input = "<Badge>Hi</Badge>";
+    let mut components = ComponentRegistry::new();
+    components.register_import("Badge", "import Badge from './Badge.astro';");
+    components.register_plugin(BadgePlugin);
+    let options = JsxOptions {
+        components,
+        ..JsxOptions::default()
+    };
+    let output =
+        render_to_jsx_with_options(input, options).expect("render_to_jsx_with_options succeeds");
+
+    assert!(
+        output.starts_with("import Badge from './Badge.astro';\n"),
+        "import should be hoisted before the body. output: {output}"
+    );
+    assert!(
+        output.contains("<span class=\"badge\"><p>Hi</p>"),
+        "plugin output should wrap children. output: {output}"
+    );
+    assert!(
+        output.contains("</span></Badge>"),
+        "plugin output should remain inside the component. output: {output}"
+    );
 }
 
 #[test]

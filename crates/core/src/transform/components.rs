@@ -4,6 +4,44 @@ use lol_html::Selector;
 use lol_html::{ElementContentHandlers, element};
 use std::borrow::Cow;
 
+/// Builder for aggregating element handlers before passing to lol_html.
+pub struct ComponentHandlers {
+    handlers: Vec<(Cow<'static, Selector>, ElementContentHandlers<'static>)>,
+}
+
+impl ComponentHandlers {
+    /// Creates an empty handler list.
+    pub fn new() -> Self {
+        Self {
+            handlers: Vec::new(),
+        }
+    }
+
+    /// Pushes a single handler tuple.
+    pub fn push(&mut self, handler: (Cow<'static, Selector>, ElementContentHandlers<'static>)) {
+        self.handlers.push(handler);
+    }
+
+    /// Extends the list with more handlers.
+    pub fn extend(
+        &mut self,
+        handlers: Vec<(Cow<'static, Selector>, ElementContentHandlers<'static>)>,
+    ) {
+        self.handlers.extend(handlers);
+    }
+
+    /// Converts into the handler vector.
+    pub fn into_vec(self) -> Vec<(Cow<'static, Selector>, ElementContentHandlers<'static>)> {
+        self.handlers
+    }
+}
+
+impl Default for ComponentHandlers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Returns lol_html handlers for rewriting Astro docs components into plain HTML.
 pub fn component_handlers() -> Vec<(Cow<'static, Selector>, ElementContentHandlers<'static>)> {
     vec![

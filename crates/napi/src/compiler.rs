@@ -1,7 +1,7 @@
 //! The stateful compiler and its configuration.
 
 use crate::types::*;
-use markflow_core::{MarkflowError, render_to_jsx};
+use markflow_core::{MarkflowError, render_to_jsx, render_to_jsx_with_options};
 use napi_derive::napi;
 use std::path::Path;
 
@@ -35,6 +35,7 @@ fn split_leading_imports(input: &str) -> (Vec<String>, String) {
 #[derive(Debug, Clone)]
 pub(crate) struct InternalCompilerConfig {
     pub(crate) jsx_import_source: String,
+    pub(crate) jsx_render_options: Option<JsxRenderOptions>,
 }
 
 impl InternalCompilerConfig {
@@ -44,7 +45,10 @@ impl InternalCompilerConfig {
             .jsx_import_source
             .unwrap_or_else(|| ASTRO_DEFAULT_RUNTIME.to_string());
 
-        Self { jsx_import_source }
+        Self {
+            jsx_import_source,
+            jsx_render_options: cfg.jsx,
+        }
     }
 }
 
@@ -83,6 +87,7 @@ impl MarkflowCompiler {
             options.clone(),
             Some(CompilerConfig {
                 jsx_import_source: Some(self.config.jsx_import_source.clone()),
+                jsx: self.config.jsx_render_options.clone(),
                 ..CompilerConfig::default()
             }),
         )?;
@@ -118,8 +123,12 @@ pub fn compile_ir(
     let frontmatter = frontmatter_extraction.value;
     let raw_body = source[frontmatter_extraction.body_start..].to_string();
 
-    let jsx_full = render_to_jsx(&raw_body)
-        .map_err(|err| super::convert_error(with_path(err, &effective_path)))?;
+    let jsx_full = if let Some(options) = internal.jsx_render_options.clone() {
+        render_to_jsx_with_options(&raw_body, options.into())
+    } else {
+        render_to_jsx(&raw_body)
+    }
+    .map_err(|err| super::convert_error(with_path(err, &effective_path)))?;
     let (hoisted, jsx) = split_leading_imports(&jsx_full);
 
     let headings =
@@ -192,6 +201,7 @@ pub(crate) fn compile_document(
         options,
         Some(CompilerConfig {
             jsx_import_source: Some(config.jsx_import_source.clone()),
+            jsx: config.jsx_render_options.clone(),
             ..CompilerConfig::default()
         }),
     )?;
