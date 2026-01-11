@@ -12,4 +12,13 @@ pub enum MarkflowError {
     /// markdown-rs parser error surfaced through the adapter.
     #[error("markdown-rs error: {0}")]
     MarkdownAdapter(String),
+    /// Rendering error while emitting HTML/JSX.
+    #[error("Render error: {0}")]
+    RenderError(String),
+    /// Unknown component or directive encountered.
+    #[error("Unknown component: {0}")]
+    UnknownComponent(String),
+    /// Internal logic error (unexpected state).
+    #[error("Internal error: {0}")]
+    InternalError(String),
 }

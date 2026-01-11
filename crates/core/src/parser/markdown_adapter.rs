@@ -458,7 +458,9 @@ impl Iterator for MarkdownParser {
                         let end = match &frame.kind {
                             FrameKind::Container(tag) => tag.to_end(),
                             FrameKind::Transparent => {
-                                unreachable!("transparent frames never emit closing tags")
+                                warn!("Skipping unexpected transparent frame end");
+                                self.stack.pop();
+                                continue;
                             }
                         };
                         self.stack.pop();

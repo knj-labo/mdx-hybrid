@@ -247,7 +247,10 @@ impl<W: Write> HtmlRenderer<W> {
                 }
                 self.writer.write_all(b">")
             }
-            Tag::Image { .. } => unreachable!("image handled separately"),
+            Tag::Image { .. } => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "image handled separately",
+            )),
         }
     }
 
@@ -289,7 +292,10 @@ impl<W: Write> HtmlRenderer<W> {
             TagEnd::Strong => self.writer.write_all(b"</strong>"),
             TagEnd::Strikethrough => self.writer.write_all(b"</del>"),
             TagEnd::Link => self.writer.write_all(b"</a>"),
-            TagEnd::Image => unreachable!("image handled separately"),
+            TagEnd::Image => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "image handled separately",
+            )),
         }
     }
 

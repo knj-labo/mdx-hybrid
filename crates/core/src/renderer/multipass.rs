@@ -76,11 +76,15 @@ fn scan_nodes<'a>(
             }
             return (blocks, input.len(), false);
         }
-        if bytes.get(cursor) == Some(&b'`')
-            && let Some(end) = find_inline_code_end(bytes, cursor)
-        {
-            push_markdown(&mut blocks, input, cursor, end);
-            cursor = end;
+        if bytes.get(cursor) == Some(&b'`') {
+            if let Some(end) = find_inline_code_end(bytes, cursor) {
+                push_markdown(&mut blocks, input, cursor, end);
+                cursor = end;
+            } else {
+                // Treat lone/unclosed backticks as literal text to avoid stalling the scanner.
+                push_markdown(&mut blocks, input, cursor, cursor + 1);
+                cursor += 1;
+            }
             continue;
         }
         let mut next_lt = find_byte(bytes, cursor, b'<');
@@ -350,6 +354,22 @@ mod tests {
     #[test]
     fn scan_returns_single_markdown_block() {
         let input = "hello";
+        let blocks = scan(input);
+
+        assert_eq!(blocks, vec![Block::Markdown(input)]);
+    }
+
+    #[test]
+    fn scan_coalesces_inline_code_fragments() {
+        let input = "Click `button` now";
+        let blocks = scan(input);
+
+        assert_eq!(blocks, vec![Block::Markdown(input)]);
+    }
+
+    #[test]
+    fn scan_unclosed_inline_code_is_markdown() {
+        let input = "Click `button now";
         let blocks = scan(input);
 
         assert_eq!(blocks, vec![Block::Markdown(input)]);
