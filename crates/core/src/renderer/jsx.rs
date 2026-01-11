@@ -8,14 +8,38 @@ use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
 use std::rc::Rc;
 
+mod components;
+pub use components::{
+    ComponentRegistry, JsxComponentPlugin, JsxElement, RenderContext, RenderOutcome,
+};
+
+/// Options for JSX rendering.
+#[derive(Default)]
+pub struct JsxOptions {
+    /// Rewrite options for directive/hoist/smartypants behavior.
+    pub rewrite_options: RewriteOptions,
+    /// Component registry (built-ins + plugins).
+    pub components: ComponentRegistry,
+}
+
 /// Render Markdown input into a raw JSX-like string, preserving JSX nodes.
 pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
-    let rewrite_options = RewriteOptions::default();
+    render_to_jsx_with_options(input, JsxOptions::default())
+}
+
+/// Render Markdown input into a raw JSX-like string with custom options.
+pub fn render_to_jsx_with_options(
+    input: &str,
+    options: JsxOptions,
+) -> Result<String, MarkflowError> {
+    let rewrite_options = options.rewrite_options;
+    let components = options.components;
     let mut seen_imports = HashSet::new();
     let (root_imports, _body_lines) = collect_root_imports(input);
     let blocks = scan(input);
+    let ctx = RenderContext::new(&rewrite_options, &components);
     let mut body = String::with_capacity(input.len());
-    render_blocks_into(&blocks, &rewrite_options, &mut body)?;
+    render_blocks_into(&blocks, &ctx, &mut body)?;
 
     let mut output = String::with_capacity(body.len() + input.len());
     for import in root_imports {
@@ -150,23 +174,23 @@ fn render_markdown_events(
 
 fn render_blocks_into(
     blocks: &[Block<'_>],
-    rewrite_options: &RewriteOptions,
+    ctx: &RenderContext<'_>,
     output: &mut String,
 ) -> Result<(), MarkflowError> {
     for block in blocks {
-        render_block_into(block, rewrite_options, output)?;
+        render_block_into(block, ctx, output)?;
     }
     Ok(())
 }
 
 fn render_block_into(
     block: &Block<'_>,
-    rewrite_options: &RewriteOptions,
+    ctx: &RenderContext<'_>,
     output: &mut String,
 ) -> Result<(), MarkflowError> {
     match block {
-        Block::Markdown(text) => render_markdown_events(text, rewrite_options, output),
-        Block::Code(text) => render_markdown_events(text, rewrite_options, output),
+        Block::Markdown(text) => render_markdown_events(text, ctx.rewrite_options, output),
+        Block::Code(text) => render_markdown_events(text, ctx.rewrite_options, output),
         Block::JsxElement {
             name,
             attrs,
@@ -174,7 +198,17 @@ fn render_block_into(
             is_self_closing,
         } => {
             let rendered_attrs = render_attrs(attrs, *is_self_closing);
+            let element = JsxElement {
+                name,
+                attrs,
+                children,
+                is_self_closing: *is_self_closing,
+            };
             if *is_self_closing {
+                let mut scratch = String::new();
+                let _ = ctx
+                    .components
+                    .render_children(&element, ctx, &mut scratch)?;
                 output.push('<');
                 output.push_str(name);
                 output.push_str(&rendered_attrs);
@@ -184,16 +218,8 @@ fn render_block_into(
                 output.push_str(name);
                 output.push_str(&rendered_attrs);
                 output.push('>');
-                if *name == "Steps" {
-                    let mut inner = String::new();
-                    render_steps_children_into(children, rewrite_options, &mut inner)?;
-                    output.push_str(&inner);
-                } else if *name == "FileTree" {
-                    let mut inner = String::new();
-                    render_file_tree_children_into(children, rewrite_options, &mut inner)?;
-                    output.push_str(&inner);
-                } else {
-                    render_jsx_children_into(children, rewrite_options, output)?;
+                if !ctx.components.render_children(&element, ctx, output)? {
+                    render_jsx_children_into(children, ctx, output)?;
                 }
                 output.push_str("</");
                 output.push_str(name);
@@ -206,142 +232,25 @@ fn render_block_into(
 
 fn render_jsx_children_into(
     children: &[Block<'_>],
-    rewrite_options: &RewriteOptions,
+    ctx: &RenderContext<'_>,
     output: &mut String,
 ) -> Result<(), MarkflowError> {
     for child in children {
         match child {
             Block::Markdown(text) => {
                 let dedented = dedent_one_level(text);
-                render_markdown_events(&dedented, rewrite_options, output)?;
+                render_markdown_events(&dedented, ctx.rewrite_options, output)?;
             }
             Block::Code(text) => {
                 let dedented = dedent_one_level(text);
-                render_markdown_events(&dedented, rewrite_options, output)?;
+                render_markdown_events(&dedented, ctx.rewrite_options, output)?;
             }
             _ => {
-                render_block_into(child, rewrite_options, output)?;
+                render_block_into(child, ctx, output)?;
             }
         }
     }
 
-    Ok(())
-}
-
-fn render_steps_children_into(
-    children: &[Block<'_>],
-    rewrite_options: &RewriteOptions,
-    output: &mut String,
-) -> Result<(), MarkflowError> {
-    let mut scratch = String::new();
-    for child in children {
-        scratch.clear();
-        match child {
-            Block::Markdown(text) => {
-                let dedented = dedent_one_level(text);
-                render_markdown_events(&dedented, rewrite_options, &mut scratch)?;
-                append_steps_fragment(output, &scratch);
-            }
-            _ => {
-                render_block_into(child, rewrite_options, &mut scratch)?;
-                insert_into_last_list_item(output, &scratch);
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn append_steps_fragment(output: &mut String, fragment: &str) {
-    if fragment.is_empty() {
-        return;
-    }
-    if output.is_empty() {
-        output.push_str(fragment);
-        return;
-    }
-
-    if let Some((pre, inner, post)) = split_ordered_list_fragment(fragment) {
-        if !pre.trim().is_empty() {
-            insert_into_last_list_item(output, pre);
-        }
-        if !inner.trim().is_empty() {
-            insert_before_list_close(output, inner);
-        }
-        if !post.trim().is_empty() {
-            insert_into_last_list_item(output, post);
-        }
-    } else if fragment.contains("<li") && !fragment.contains("<ol") {
-        insert_before_list_close(output, fragment);
-    } else {
-        insert_into_last_list_item(output, fragment);
-    }
-}
-
-fn split_ordered_list_fragment(fragment: &str) -> Option<(&str, &str, &str)> {
-    let open_start = fragment.find("<ol")?;
-    let open_end = fragment[open_start..].find('>')? + open_start;
-    let close_start = fragment.rfind("</ol>")?;
-    let close_end = close_start + "</ol>".len();
-    if close_start < open_end {
-        return None;
-    }
-    let pre = &fragment[..open_start];
-    let inner = &fragment[open_end + 1..close_start];
-    let post = &fragment[close_end..];
-    Some((pre, inner, post))
-}
-
-fn insert_into_last_list_item(output: &mut String, fragment: &str) {
-    if fragment.is_empty() {
-        return;
-    }
-    if let Some(idx) = output.rfind("</li>") {
-        output.insert_str(idx, fragment);
-    } else {
-        output.push_str(fragment);
-    }
-}
-
-fn insert_before_list_close(output: &mut String, fragment: &str) {
-    if fragment.is_empty() {
-        return;
-    }
-    if let Some(idx) = output.rfind("</ol>") {
-        output.insert_str(idx, fragment);
-    } else {
-        output.push_str(fragment);
-    }
-}
-
-fn render_file_tree_children_into(
-    children: &[Block<'_>],
-    rewrite_options: &RewriteOptions,
-    output: &mut String,
-) -> Result<(), MarkflowError> {
-    let mut inner = String::new();
-    let mut markdown_buffer = String::new();
-
-    for child in children {
-        match child {
-            Block::Markdown(text) => {
-                markdown_buffer.push_str(&dedent_one_level(text));
-            }
-            _ => {
-                if !markdown_buffer.is_empty() {
-                    render_markdown_events(&markdown_buffer, rewrite_options, &mut inner)?;
-                    markdown_buffer.clear();
-                }
-                render_block_into(child, rewrite_options, &mut inner)?;
-            }
-        }
-    }
-
-    if !markdown_buffer.is_empty() {
-        render_markdown_events(&markdown_buffer, rewrite_options, &mut inner)?;
-    }
-
-    output.push_str(&extract_first_unordered_list(&inner));
     Ok(())
 }
 
@@ -390,78 +299,6 @@ fn dedent_one_level(input: &str) -> String {
         }
     }
     output
-}
-
-fn extract_first_unordered_list(input: &str) -> String {
-    let bytes = input.as_bytes();
-    let Some(start) = find_ul_open(bytes, 0) else {
-        return input.to_string();
-    };
-
-    let mut depth = 0usize;
-    let mut pos = start;
-    while pos < bytes.len() {
-        if let Some(open_pos) = find_ul_open(bytes, pos)
-            && open_pos == pos
-        {
-            depth += 1;
-            pos += 3;
-            continue;
-        }
-        if let Some((close_pos, close_len)) = find_ul_close(bytes, pos)
-            && close_pos == pos
-        {
-            depth = depth.saturating_sub(1);
-            pos += close_len;
-            if depth == 0 {
-                let end = pos;
-                return input[start..end].to_string();
-            }
-            continue;
-        }
-        pos += 1;
-    }
-
-    input.to_string()
-}
-
-fn find_ul_open(bytes: &[u8], start: usize) -> Option<usize> {
-    let mut pos = start;
-    while pos + 2 < bytes.len() {
-        if bytes[pos] == b'<' && bytes[pos + 1] == b'u' && bytes[pos + 2] == b'l' {
-            let next = bytes.get(pos + 3).copied().unwrap_or(b'>');
-            if matches!(next, b'>' | b' ' | b'\t' | b'\n' | b'\r') {
-                return Some(pos);
-            }
-        }
-        pos += 1;
-    }
-    None
-}
-
-fn find_ul_close(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
-    let mut pos = start;
-    while pos + 3 < bytes.len() {
-        if bytes[pos] == b'<'
-            && bytes[pos + 1] == b'/'
-            && bytes[pos + 2] == b'u'
-            && bytes[pos + 3] == b'l'
-        {
-            let mut end = pos + 4;
-            while end < bytes.len() {
-                match bytes[end] {
-                    b'>' => return Some((pos, end + 1 - pos)),
-                    b' ' | b'\t' | b'\n' | b'\r' => {
-                        end += 1;
-                        continue;
-                    }
-                    _ => break,
-                }
-            }
-        }
-        pos += 1;
-    }
-    None
 }
 
 fn render_attrs(attrs: &str, is_self_closing: bool) -> String {

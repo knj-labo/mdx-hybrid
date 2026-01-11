@@ -6,12 +6,13 @@ Status: Draft (reinforced with current implementation)
 Define the Rust/NAPI/WASM API surface and the escaping/serialization rules for the Markdown→JSX renderer so downstream bundlers receive predictable JSX with raw JSX passthrough.
 
 ## API Surface (proposed)
-- Rust: `render_to_jsx(input: &str, options: JsxOptions) -> Result<String, MarkflowError>`
-  - `JsxOptions { runtime_import: Option<String>, wrap_layout: bool, escape_html: bool }`
-  - Current implementation defaults: `runtime_import = None`, `wrap_layout = false`, `escape_html = true (text only)`.
-- NAPI: `renderToJsx(input: string, options?: { runtimeImport?: string; wrapLayout?: boolean; escapeHtml?: boolean; }) => string`
-- WASM: `render_jsx(input: string, options?: { runtimeImport?: string; wrapLayout?: boolean; escapeHtml?: boolean; }) => string`
-- For Phase 2 the options are optional; missing = same defaults as above.
+- Rust:
+  - `render_to_jsx(input: &str) -> Result<String, MarkflowError>`
+  - `render_to_jsx_with_options(input: &str, options: JsxOptions) -> Result<String, MarkflowError>`
+  - `JsxOptions { rewrite_options: RewriteOptions, components: ComponentRegistry }`
+    - `ComponentRegistry` handles built-in JSX components (`Steps`, `FileTree`) plus optional plugins and import mappings.
+- NAPI: `renderToJsx(input: string, options?: { ... }) => string` (TBD; needs a JS-facing mirror of `JsxOptions`)
+- WASM: `render_jsx(input: string, options?: { ... }) => string` (TBD; needs a JS-facing mirror of `JsxOptions`)
 
 ## Event → JSX Mapping (current behavior)
 | Event | Output | Escaping |
@@ -66,6 +67,6 @@ Define the Rust/NAPI/WASM API surface and the escaping/serialization rules for t
 - Should `<script>`/`<style>` be filtered or left as-is in JSX mode?
 
 ## Next Steps
-- Add options struct to Rust and expose in NAPI/WASM with defaults.
+- Expose `JsxOptions`/`ComponentRegistry` to NAPI + WASM so callers can register component imports/plugins.
 - Expand table for table alignment, images (current behavior skips image rendering in JSX renderer).
 - Add fixtures: text with braces/angles, HTML entities, nested JSX + Markdown mix, attributes with quotes.
