@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use crate::Span;
 use crate::event::{Event, Tag, TagEnd};
 use crate::transform::directives::rewrite_with_mapper;
 use crate::transform::directives::{DirectiveMapper, DirectiveOpening};
@@ -46,9 +47,10 @@ where
         while let Some(opened) = self.stack.pop() {
             if let Some(transform) = self.mapper.map_opening(&opened) {
                 self.pending
-                    .push_back(Event::Html(transform.end_tag.into()));
+                    .push_back(Event::Html(transform.end_tag.into(), Span::default()));
             } else {
-                self.pending.push_back(Event::Html("</div>".into()));
+                self.pending
+                    .push_back(Event::Html("</div>".into(), Span::default()));
             }
         }
     }
@@ -58,7 +60,7 @@ where
         buf.push(start);
 
         for ev in self.inner.by_ref() {
-            let is_end = matches!(ev, Event::End(TagEnd::Paragraph));
+            let is_end = matches!(ev, Event::End(TagEnd::Paragraph, _));
             buf.push(ev.clone());
             if is_end {
                 break;
@@ -81,24 +83,25 @@ where
         }
 
         if let Some(event) = self.inner.next() {
-            match &event {
-                Event::Start(Tag::CodeBlock(_)) => {
+            match event {
+                Event::Start(Tag::CodeBlock(_), _) => {
                     self.in_code_block += 1;
                     return Some(event);
                 }
-                Event::End(TagEnd::CodeBlock) => {
+                Event::End(TagEnd::CodeBlock, _) => {
                     self.in_code_block = self.in_code_block.saturating_sub(1);
                     return Some(event);
                 }
-                Event::Start(Tag::Paragraph) if self.in_code_block == 0 => {
-                    let paragraph_events = self.capture_paragraph(event);
+                Event::Start(Tag::Paragraph, span) if self.in_code_block == 0 => {
+                    let paragraph_events =
+                        self.capture_paragraph(Event::Start(Tag::Paragraph, span));
                     let mut content = String::new();
                     for ev in paragraph_events.iter() {
                         match ev {
-                            Event::Text(t) if !t.as_ref().starts_with('\0') => {
+                            Event::Text(t, _) if !t.as_ref().starts_with('\0') => {
                                 content.push_str(t.as_ref());
                             }
-                            Event::SoftBreak => content.push('\n'),
+                            Event::SoftBreak(_) => content.push('\n'),
                             _ => {}
                         }
                     }
@@ -107,7 +110,7 @@ where
                     if count > 0 {
                         *self.directive_count.borrow_mut() += count;
                         self.required_imports.borrow_mut().extend(imports);
-                        self.pending.push_back(Event::Html(rewritten.into()));
+                        self.pending.push_back(Event::Html(rewritten.into(), span));
                         return self.pending.pop_front();
                     }
                     // Not a directive marker; emit original paragraph.

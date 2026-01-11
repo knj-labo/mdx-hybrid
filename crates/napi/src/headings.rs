@@ -58,18 +58,18 @@ impl HeadingCollector {
 
     fn observe<'a>(&mut self, event: &CoreEvent<'a>) {
         match event {
-            CoreEvent::Start(CoreTag::Heading { level, id, .. }) => {
+            CoreEvent::Start(CoreTag::Heading { level, id, .. }, _) => {
                 let slug_from_tag = id.as_ref().map(|cow| cow.to_string());
                 self.begin_heading(*level, slug_from_tag)
             }
-            CoreEvent::End(CoreTagEnd::Heading(level)) => self.end_heading(*level),
-            CoreEvent::Text(text)
-            | CoreEvent::Code(text)
-            | CoreEvent::Html(text)
-            | CoreEvent::InlineHtml(text)
-            | CoreEvent::InlineMath(text)
-            | CoreEvent::DisplayMath(text) => self.push_heading_text(text.as_ref()),
-            CoreEvent::SoftBreak | CoreEvent::HardBreak => self.push_heading_text(" "),
+            CoreEvent::End(CoreTagEnd::Heading(level), _) => self.end_heading(*level),
+            CoreEvent::Text(text, _)
+            | CoreEvent::Code(text, _)
+            | CoreEvent::Html(text, _)
+            | CoreEvent::InlineHtml(text, _)
+            | CoreEvent::InlineMath(text, _)
+            | CoreEvent::DisplayMath(text, _) => self.push_heading_text(text.as_ref()),
+            CoreEvent::SoftBreak(_) | CoreEvent::HardBreak(_) => self.push_heading_text(" "),
             _ => {}
         }
     }
