@@ -26,6 +26,7 @@ const DEFAULTS = {
   maxDiff: 0.002,
   wait: 200,
   build: false,
+  stratifyLocales: true,
 };
 
 const CONTENT_TYPES = {
@@ -74,6 +75,7 @@ Options:
   --include <regex>        Only include matching routes.
   --exclude <regex>        Exclude matching routes.
   --max <n>                Max routes to compare (0 = all).
+  --no-stratify-locales    Disable per-locale sampling when --max is set.
   --port <n>               Base port for static servers.
   --width <n>              Viewport width.
   --height <n>             Viewport height.
@@ -100,6 +102,7 @@ function parseArgs(argv) {
     maxDiff: DEFAULTS.maxDiff,
     wait: DEFAULTS.wait,
     build: DEFAULTS.build,
+    stratifyLocales: DEFAULTS.stratifyLocales,
   };
 
   for (let i = 2; i < argv.length; i++) {
@@ -138,6 +141,10 @@ function parseArgs(argv) {
     }
     if (arg === '--max' && argv[i + 1]) {
       args.max = Number(argv[++i]);
+      continue;
+    }
+    if (arg === '--no-stratify-locales') {
+      args.stratifyLocales = false;
       continue;
     }
     if (arg === '--port' && argv[i + 1]) {
@@ -199,9 +206,9 @@ async function main() {
   const routes = opts.routes
     ? await loadRoutes(opts.routes)
     : await collectRoutes(opts.baseline);
-
-  const filtered = filterRoutes(routes, opts.include, opts.exclude, opts.max);
-  if (filtered.length === 0) {
+  const locales = await loadLocales();
+  const selected = selectRoutes(routes, opts, locales);
+  if (selected.length === 0) {
     console.error('No routes to compare.');
     process.exit(1);
   }
@@ -233,7 +240,7 @@ async function main() {
   let failures = 0;
 
   try {
-    for (const route of filtered) {
+  for (const route of selected) {
       const slug = routeToSlug(route);
       const basePath = resolve(outBase, `${slug}.png`);
       const markPath = resolve(outMark, `${slug}.png`);
@@ -287,7 +294,7 @@ async function main() {
     baseline: relative(repoRoot, opts.baseline),
     markflow: relative(repoRoot, opts.markflow),
     out: relative(repoRoot, opts.out),
-    routes: filtered.length,
+    routes: selected.length,
     failures,
     maxDiff: opts.maxDiff,
     threshold: opts.threshold,
@@ -393,13 +400,78 @@ async function collectRoutes(rootDir) {
   return Array.from(new Set(routes));
 }
 
-function filterRoutes(routes, include, exclude, max) {
+function selectRoutes(routes, opts, locales) {
   let out = routes;
-  if (include) out = out.filter((route) => include.test(route));
-  if (exclude) out = out.filter((route) => !exclude.test(route));
+  if (opts.include) out = out.filter((route) => opts.include.test(route));
+  if (opts.exclude) out = out.filter((route) => !opts.exclude.test(route));
   out.sort((a, b) => (a === '/' ? -1 : b === '/' ? 1 : a.localeCompare(b)));
-  if (max === 0) return out;
-  return out.slice(0, max);
+  if (opts.max === 0) return out;
+  if (!opts.stratifyLocales || locales.length === 0) {
+    return out.slice(0, opts.max);
+  }
+  return stratifyByLocale(out, locales, opts.max);
+}
+
+function stratifyByLocale(routes, locales, max) {
+  const localeList = [...locales].sort((a, b) => b.length - a.length);
+  const buckets = new Map();
+  for (const route of routes) {
+    const locale = matchLocale(route, localeList);
+    const key = locale || '__root__';
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(route);
+  }
+
+  const keys = Array.from(buckets.keys()).sort((a, b) => {
+    if (a === '__root__') return -1;
+    if (b === '__root__') return 1;
+    return a.localeCompare(b);
+  });
+
+  const picked = [];
+  let madeProgress = true;
+  while (picked.length < max && madeProgress) {
+    madeProgress = false;
+    for (const key of keys) {
+      if (picked.length >= max) break;
+      const bucket = buckets.get(key);
+      if (!bucket || bucket.length === 0) continue;
+      picked.push(bucket.shift());
+      madeProgress = true;
+    }
+  }
+  return picked;
+}
+
+function matchLocale(route, locales) {
+  for (const locale of locales) {
+    const prefix = `/${locale}`;
+    if (route === prefix || route.startsWith(`${prefix}/`)) {
+      return locale;
+    }
+  }
+  return null;
+}
+
+async function loadLocales() {
+  const localePath = resolve(withastroRoot, 'config', 'locales.ts');
+  try {
+    const data = await fs.readFile(localePath, 'utf8');
+    const start = data.indexOf('export const localesConfig');
+    if (start === -1) return [];
+    const slice = data.slice(start);
+    const end = slice.indexOf('} satisfies');
+    const block = end === -1 ? slice : slice.slice(0, end);
+    const locales = new Set();
+    const regex = /^\s*['"]?([a-z0-9-]+)['"]?:\s*{[^}]*}\s*,?$/gim;
+    let match;
+    while ((match = regex.exec(block))) {
+      locales.add(match[1]);
+    }
+    return Array.from(locales);
+  } catch {
+    return [];
+  }
 }
 
 function routeFromHtml(rel) {

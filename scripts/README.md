@@ -1,6 +1,6 @@
 # scripts/ usage quick reference
 
-- `compare-astro-harness.mjs` — build baseline/markflow harness and record timings to `fixtures/integration/astro-harness/harness-summary.json`。`--mode=semantic` で簡易HTML構造diff（属性ソート/空白圧縮/コメント除去）を行い、差分があれば非0終了。
+- `compare-astro-harness.mjs` — build baseline/markflow harness and record timings to `fixtures/integration/astro-harness/harness-summary.json`。`--mode=semantic` で簡易HTML構造diff（属性ソート/空白圧縮/コメント除去）を行い、差分があれば非0終了。比較時は再現性フラグ（frontmatter除去 + smartypants無効化）を強制ONし、各ビルド前にハーネスのキャッシュを掃除する。通常ビルドには影響しない。詳細は `fixtures/integration/astro-harness/README.md` を参照。
 - `compare-withastro-docs.mjs` — withastro/docs を baseline/markflow でビルドし、`--mode=semantic` でHTML構造diffを行う（デフォルトは `fixtures/integration/withastro-docs/semantic-routes.txt` の固定ルート）。
 - `run-astro-harness.mjs` — run the harness once in `markflow` (default) or `baseline` mode. Accepts `--skip-install` to reuse node_modules。
 - `smoke-napi.mjs` — smoke-test N-API build against a fixture markdown (e.g., `fixtures/core/markdown/hello.md`).

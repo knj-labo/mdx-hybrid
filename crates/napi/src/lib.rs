@@ -258,13 +258,10 @@ fn convert_error<E: Into<MarkflowError>>(err: E) -> Error {
         MarkflowError::RenderError(msg) => {
             Error::new(Status::InvalidArg, format!("Render error: {}", msg))
         }
-        MarkflowError::UnknownComponent(name) => Error::new(
-            Status::InvalidArg,
-            format!("Unknown component: {}", name),
-        ),
-        MarkflowError::InternalError(msg) => {
-            Error::from_reason(format!("Internal error: {}", msg))
+        MarkflowError::UnknownComponent(name) => {
+            Error::new(Status::InvalidArg, format!("Unknown component: {}", name))
         }
+        MarkflowError::InternalError(msg) => Error::from_reason(format!("Internal error: {}", msg)),
     }
 }
 

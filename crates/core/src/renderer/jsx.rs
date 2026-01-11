@@ -184,17 +184,17 @@ fn render_block_into(
                 output.push_str(name);
                 output.push_str(&rendered_attrs);
                 output.push('>');
-        if *name == "Steps" {
-            let mut inner = String::new();
-            render_steps_children_into(children, rewrite_options, &mut inner)?;
-            output.push_str(&inner);
-        } else if *name == "FileTree" {
-            let mut inner = String::new();
-            render_file_tree_children_into(children, rewrite_options, &mut inner)?;
-            output.push_str(&inner);
-        } else {
-            render_jsx_children_into(children, rewrite_options, output)?;
-        }
+                if *name == "Steps" {
+                    let mut inner = String::new();
+                    render_steps_children_into(children, rewrite_options, &mut inner)?;
+                    output.push_str(&inner);
+                } else if *name == "FileTree" {
+                    let mut inner = String::new();
+                    render_file_tree_children_into(children, rewrite_options, &mut inner)?;
+                    output.push_str(&inner);
+                } else {
+                    render_jsx_children_into(children, rewrite_options, output)?;
+                }
                 output.push_str("</");
                 output.push_str(name);
                 output.push('>');
