@@ -1,24 +1,11 @@
 use std::collections::HashMap;
 
-use super::{
-    Block, MarkflowError, RewriteOptions, dedent_one_level, render_block_into,
-    render_markdown_events,
-};
+use crate::renderer::multipass::ScanEvent;
 
-/// Lightweight view of a JSX element emitted by the multipass scanner.
-#[derive(Debug, Clone, Copy)]
-pub struct JsxElement<'a> {
-    /// Element tag name.
-    pub name: &'a str,
-    /// Raw attribute string from the source.
-    pub attrs: &'a str,
-    /// Child blocks for the element.
-    pub children: &'a [Block<'a>],
-    /// Whether the element is self-closing.
-    pub is_self_closing: bool,
-}
+use super::{JsxStreamRenderer, MarkflowError, RewriteOptions};
 
 /// Shared context passed to JSX component plugins.
+#[derive(Clone, Copy)]
 pub struct RenderContext<'a> {
     pub(super) rewrite_options: &'a RewriteOptions,
     pub(super) components: &'a ComponentRegistry,
@@ -42,29 +29,6 @@ impl<'a> RenderContext<'a> {
             .borrow_mut()
             .push(import.into());
     }
-
-    /// Renders nested blocks using the same component registry.
-    pub fn render_children(
-        &self,
-        children: &[Block<'_>],
-        output: &mut String,
-    ) -> Result<(), MarkflowError> {
-        super::render_jsx_children_into(children, self, output)
-    }
-
-    /// Renders a single block using the same component registry.
-    pub fn render_block(
-        &self,
-        block: &Block<'_>,
-        output: &mut String,
-    ) -> Result<(), MarkflowError> {
-        render_block_into(block, self, output)
-    }
-
-    /// Renders Markdown text into HTML using the current rewrite options.
-    pub fn render_markdown(&self, input: &str, output: &mut String) -> Result<(), MarkflowError> {
-        render_markdown_events(input, self.rewrite_options, output)
-    }
 }
 
 /// Outcome of plugin rendering.
@@ -79,11 +43,12 @@ pub enum RenderOutcome {
 pub trait JsxComponentPlugin {
     /// Returns true if the plugin wants to handle the given component name.
     fn matches(&self, name: &str) -> bool;
-    /// Optionally renders the component's children or performs side effects.
-    fn render_children(
+    /// Optionally renders the component stream or performs side effects.
+    fn render_stream<'a>(
         &self,
-        element: &JsxElement<'_>,
-        ctx: &RenderContext<'_>,
+        event: &ScanEvent<'a>,
+        stream: &mut dyn Iterator<Item = ScanEvent<'a>>,
+        renderer: &mut JsxStreamRenderer<'a>,
         output: &mut String,
     ) -> Result<RenderOutcome, MarkflowError>;
 }
@@ -111,32 +76,45 @@ impl ComponentRegistry {
         self.import_map.insert(name.into(), import.into());
     }
 
-    pub(crate) fn render_children(
+    pub(crate) fn render_stream<'a>(
         &self,
-        element: &JsxElement<'_>,
-        ctx: &RenderContext<'_>,
+        event: &ScanEvent<'a>,
+        stream: &mut dyn Iterator<Item = ScanEvent<'a>>,
+        renderer: &mut JsxStreamRenderer<'a>,
         output: &mut String,
     ) -> Result<bool, MarkflowError> {
-        if let Some(import) = self.import_map.get(element.name) {
-            ctx.require_import(import.clone());
+        let ScanEvent::JsxOpen {
+            name,
+            is_self_closing,
+            ..
+        } = event
+        else {
+            return Ok(false);
+        };
+
+        if let Some(import) = self.import_map.get(*name) {
+            renderer.require_import(import.clone());
         }
 
         for plugin in &self.plugins {
-            if plugin.matches(element.name) {
-                match plugin.render_children(element, ctx, output)? {
+            if plugin.matches(name) {
+                let mut child = renderer.child();
+                match plugin.render_stream(event, stream, &mut child, output)? {
                     RenderOutcome::Handled => return Ok(true),
                     RenderOutcome::Skipped => {}
                 }
             }
         }
 
-        match element.name {
-            "Steps" => {
-                render_steps_children(element.children, ctx, output)?;
+        match *name {
+            "Steps" if !*is_self_closing => {
+                let mut child = renderer.child();
+                render_steps_stream(stream, &mut child, output)?;
                 Ok(true)
             }
-            "FileTree" => {
-                render_file_tree_children(element.children, ctx, output)?;
+            "FileTree" if !*is_self_closing => {
+                let mut child = renderer.child();
+                render_file_tree_stream(stream, &mut child, output)?;
                 Ok(true)
             }
             _ => Ok(false),
@@ -144,55 +122,58 @@ impl ComponentRegistry {
     }
 }
 
-fn render_steps_children(
-    children: &[Block<'_>],
-    ctx: &RenderContext<'_>,
+fn render_steps_stream<'a>(
+    stream: &mut dyn Iterator<Item = ScanEvent<'a>>,
+    renderer: &mut JsxStreamRenderer<'a>,
     output: &mut String,
 ) -> Result<(), MarkflowError> {
     let mut scratch = String::new();
-    for child in children {
-        scratch.clear();
-        match child {
-            Block::Markdown(text) => {
-                let dedented = dedent_one_level(text);
-                ctx.render_markdown(&dedented, &mut scratch)?;
+    while let Some(event) = stream.next() {
+        match event {
+            ScanEvent::JsxClose { name: "Steps", .. } => break,
+            ScanEvent::Markdown { .. } => {
+                scratch.clear();
+                renderer.render_event(event, stream, &mut scratch)?;
                 append_steps_fragment(output, &scratch);
             }
             _ => {
-                ctx.render_block(child, &mut scratch)?;
+                scratch.clear();
+                renderer.render_event(event, stream, &mut scratch)?;
                 insert_into_last_list_item(output, &scratch);
             }
         }
     }
-
     Ok(())
 }
 
-fn render_file_tree_children(
-    children: &[Block<'_>],
-    ctx: &RenderContext<'_>,
+fn render_file_tree_stream<'a>(
+    stream: &mut dyn Iterator<Item = ScanEvent<'a>>,
+    renderer: &mut JsxStreamRenderer<'a>,
     output: &mut String,
 ) -> Result<(), MarkflowError> {
     let mut inner = String::new();
     let mut markdown_buffer = String::new();
 
-    for child in children {
-        match child {
-            Block::Markdown(text) => {
-                markdown_buffer.push_str(&dedent_one_level(text));
+    while let Some(event) = stream.next() {
+        match event {
+            ScanEvent::JsxClose {
+                name: "FileTree", ..
+            } => break,
+            ScanEvent::Markdown { text, .. } => {
+                markdown_buffer.push_str(text);
             }
             _ => {
                 if !markdown_buffer.is_empty() {
-                    ctx.render_markdown(&markdown_buffer, &mut inner)?;
+                    renderer.render_markdown(&markdown_buffer, &mut inner)?;
                     markdown_buffer.clear();
                 }
-                ctx.render_block(child, &mut inner)?;
+                renderer.render_event(event, stream, &mut inner)?;
             }
         }
     }
 
     if !markdown_buffer.is_empty() {
-        ctx.render_markdown(&markdown_buffer, &mut inner)?;
+        renderer.render_markdown(&markdown_buffer, &mut inner)?;
     }
 
     output.push_str(&extract_first_unordered_list(&inner));
@@ -318,14 +299,10 @@ fn find_ul_close(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
         {
             let mut end = pos + 4;
             while end < bytes.len() {
-                match bytes[end] {
-                    b'>' => return Some((pos, end + 1 - pos)),
-                    b' ' | b'\t' | b'\n' | b'\r' => {
-                        end += 1;
-                        continue;
-                    }
-                    _ => break,
+                if bytes[end] == b'>' {
+                    return Some((pos, end - pos + 1));
                 }
+                end += 1;
             }
         }
         pos += 1;

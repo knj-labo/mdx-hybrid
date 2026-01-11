@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 use crate::event::{CodeBlockKind, Event, HeadingLevel, Tag, TagEnd};
-use crate::renderer::multipass::{Block, scan_iter};
+use crate::renderer::multipass::{ScanEvent, scan_iter};
 use crate::transform::code_fence::collect_root_imports;
 use crate::{DirectiveAdapter, HoistAdapter, MarkflowError, RewriteOptions, get_event_iterator};
 use std::cell::RefCell;
@@ -9,9 +9,7 @@ use std::fmt::Write as FmtWrite;
 use std::rc::Rc;
 
 mod components;
-pub use components::{
-    ComponentRegistry, JsxComponentPlugin, JsxElement, RenderContext, RenderOutcome,
-};
+pub use components::{ComponentRegistry, JsxComponentPlugin, RenderContext, RenderOutcome};
 
 /// Options for JSX rendering.
 #[derive(Default)]
@@ -37,9 +35,11 @@ pub fn render_to_jsx_with_options(
     let mut seen_imports = HashSet::new();
     let (root_imports, _body_lines) = collect_root_imports(input);
     let ctx = RenderContext::new(&rewrite_options, &components);
+    let mut renderer = JsxStreamRenderer::new(ctx);
     let mut body = String::with_capacity(input.len());
-    for block in scan_iter(input) {
-        render_block_into(&block, &ctx, &mut body)?;
+    let mut stream = scan_iter(input);
+    while let Some(event) = stream.next() {
+        renderer.render_event(event, &mut stream, &mut body)?;
     }
 
     let mut output = String::with_capacity(body.len() + input.len());
@@ -175,75 +175,81 @@ fn render_markdown_events(
     Ok(())
 }
 
-fn render_block_into(
-    block: &Block<'_>,
-    ctx: &RenderContext<'_>,
-    output: &mut String,
-) -> Result<(), MarkflowError> {
-    match block {
-        Block::Markdown(text) => render_markdown_events(text, ctx.rewrite_options, output),
-        Block::Code(text) => render_markdown_events(text, ctx.rewrite_options, output),
-        Block::JsxElement {
-            name,
-            attrs,
-            children,
-            is_self_closing,
-        } => {
-            let rendered_attrs = render_attrs(attrs, *is_self_closing);
-            let element = JsxElement {
+pub struct JsxStreamRenderer<'a> {
+    ctx: RenderContext<'a>,
+    depth: usize,
+}
+
+impl<'a> JsxStreamRenderer<'a> {
+    pub fn new(ctx: RenderContext<'a>) -> Self {
+        Self { ctx, depth: 0 }
+    }
+
+    pub fn child(&self) -> Self {
+        Self {
+            ctx: self.ctx,
+            depth: self.depth + 1,
+        }
+    }
+
+    pub fn require_import(&self, import: impl Into<String>) {
+        self.ctx.require_import(import);
+    }
+
+    pub fn render_markdown(&self, input: &str, output: &mut String) -> Result<(), MarkflowError> {
+        if self.depth == 0 {
+            return render_markdown_events(input, self.ctx.rewrite_options, output);
+        }
+
+        let mut dedented = input.to_string();
+        for _ in 0..self.depth {
+            dedented = dedent_one_level(&dedented);
+        }
+        render_markdown_events(&dedented, self.ctx.rewrite_options, output)
+    }
+
+    pub fn render_event(
+        &mut self,
+        event: ScanEvent<'a>,
+        stream: &mut dyn Iterator<Item = ScanEvent<'a>>,
+        output: &mut String,
+    ) -> Result<(), MarkflowError> {
+        match event {
+            ScanEvent::Markdown { text, .. } => self.render_markdown(text, output),
+            ScanEvent::Code { text, .. } => self.render_markdown(text, output),
+            ScanEvent::JsxOpen {
                 name,
                 attrs,
-                children,
-                is_self_closing: *is_self_closing,
-            };
-            if *is_self_closing {
-                let mut scratch = String::new();
-                let _ = ctx
-                    .components
-                    .render_children(&element, ctx, &mut scratch)?;
+                is_self_closing,
+                ..
+            } => {
+                let components = self.ctx.components;
+                if components.render_stream(&event, stream, self, output)? {
+                    return Ok(());
+                }
+                let rendered_attrs = render_attrs(attrs, is_self_closing);
                 output.push('<');
                 output.push_str(name);
                 output.push_str(&rendered_attrs);
-                output.push_str(" />");
-            } else {
-                output.push('<');
-                output.push_str(name);
-                output.push_str(&rendered_attrs);
-                output.push('>');
-                if !ctx.components.render_children(&element, ctx, output)? {
-                    render_jsx_children_into(children, ctx, output)?;
+                if is_self_closing {
+                    output.push_str(" />");
+                } else {
+                    output.push('>');
+                    self.depth = self.depth.saturating_add(1);
+                }
+                Ok(())
+            }
+            ScanEvent::JsxClose { name, .. } => {
+                if self.depth > 0 {
+                    self.depth -= 1;
                 }
                 output.push_str("</");
                 output.push_str(name);
                 output.push('>');
-            }
-            Ok(())
-        }
-    }
-}
-
-fn render_jsx_children_into(
-    children: &[Block<'_>],
-    ctx: &RenderContext<'_>,
-    output: &mut String,
-) -> Result<(), MarkflowError> {
-    for child in children {
-        match child {
-            Block::Markdown(text) => {
-                let dedented = dedent_one_level(text);
-                render_markdown_events(&dedented, ctx.rewrite_options, output)?;
-            }
-            Block::Code(text) => {
-                let dedented = dedent_one_level(text);
-                render_markdown_events(&dedented, ctx.rewrite_options, output)?;
-            }
-            _ => {
-                render_block_into(child, ctx, output)?;
+                Ok(())
             }
         }
     }
-
-    Ok(())
 }
 
 fn dedent_one_level(input: &str) -> String {

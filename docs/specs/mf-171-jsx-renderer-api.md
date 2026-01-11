@@ -11,6 +11,7 @@ Define the Rust/NAPI/WASM API surface and the escaping/serialization rules for t
   - `render_to_jsx_with_options(input: &str, options: JsxOptions) -> Result<String, MarkflowError>`
   - `JsxOptions { rewrite_options: RewriteOptions, components: ComponentRegistry }`
     - `ComponentRegistry` handles built-in JSX components (`Steps`, `FileTree`) plus optional plugins and import mappings.
+    - Plugins now receive a streaming `ScanEvent` iterator via `render_stream`.
 - NAPI:
   - `renderToJsx(input: string, options?: JsxRenderOptions): string`
   - `JsxRenderOptions { rewrite?: RewriteConfig, componentImports?: { name: string, import: string }[] }`
@@ -38,9 +39,10 @@ Define the Rust/NAPI/WASM API surface and the escaping/serialization rules for t
 \* Table cell alignment attributes are not yet emitted in JSX mode (future work).
 
 ## Multipass Integration (current)
-- `render_to_jsx` scans input with the multipass `Block` tree, renders `Block::Markdown` via the event pipeline, and emits `Block::JsxElement` directly.
-- `Block::Code` is rendered through the event pipeline so fenced code becomes `<pre><code>`, while still skipping JSX scanning inside fences.
-- `<Steps>` renders Markdown children first, then injects non-Markdown siblings before the last `</li>` (or appends if no list item exists).
+- `render_to_jsx` consumes a streaming `ScanEvent` iterator (`Markdown`, `Code`, `JsxOpen`, `JsxClose`) instead of building a `Block` tree.
+- `ScanEvent::Code` is rendered through the event pipeline so fenced code becomes `<pre><code>`, while still skipping JSX scanning inside fences.
+- `JsxOpen`/`JsxClose` events are streamed; component plugins can consume until their matching close tag.
+- `<Steps>` renders Markdown fragments first, then injects non-Markdown fragments before the last `</li>` (or appends if no list item exists).
 
 ## Escaping Policy (current)
 - Escape only text nodes: `& < > { }` → `&amp; &lt; &gt; &#123; &#125;`.
