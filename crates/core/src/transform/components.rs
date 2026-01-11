@@ -36,6 +36,12 @@ impl ComponentHandlers {
     }
 }
 
+impl Default for ComponentHandlers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Returns lol_html handlers for rewriting Astro docs components into plain HTML.
 pub fn component_handlers() -> Vec<(Cow<'static, Selector>, ElementContentHandlers<'static>)> {
     vec![
