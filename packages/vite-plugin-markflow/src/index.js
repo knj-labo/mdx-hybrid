@@ -19,11 +19,20 @@ const STARLIGHT_COMPONENTS = [
 const STARLIGHT_COMPONENTS_MODULE = "@astrojs/starlight/components";
 const ASTRO_COMPONENTS = ["Code", "Prism"];
 const ASTRO_COMPONENTS_MODULE = "astro/components";
+const EXPRESSIVE_CODE_COMPONENT = "ExpressiveCode";
+const EXPRESSIVE_CODE_MODULE = "astro-expressive-code/components";
 let bindingPromise;
 const VIRTUAL_PREFIX = "\0markflow:";
 const DEBUG_BINDING = process.env.MARKFLOW_DEBUG_BINDING === "1";
 const ENABLE_SHIKI = process.env.MARKFLOW_SHIKI === "1";
 const IS_MDAST = process.env.MARKFLOW_PIPELINE === "mdast";
+const IS_HARNESS_ENV = Object.keys(process.env).some((key) =>
+  key.startsWith("MARKFLOW_HARNESS_"),
+);
+const ENABLE_DEV_LAYER_ORDER_FIX =
+  IS_HARNESS_ENV && process.env.MARKFLOW_HARNESS_LAYER_ORDER_FIX !== "0";
+const STARLIGHT_LAYER_ORDER =
+  "@layer starlight.base, starlight.reset, starlight.core, starlight.content, starlight.components, starlight.utils;";
 
 const logBindingSource = (source) => {
   if (!DEBUG_BINDING) return;
@@ -140,6 +149,9 @@ export function markflowPlugin(userOptions = {}) {
   const compilerOptions = userOptions.compiler ?? null;
   const include = userOptions.include ?? shouldCompile;
   const starlightComponents = userOptions.starlightComponents ?? false;
+  const expressiveCode = resolveExpressiveCodeConfig(
+    userOptions.expressiveCode ?? false,
+  );
 const unwrapVirtual = (value) =>
     value && value.startsWith(VIRTUAL_PREFIX)
       ? value.slice(VIRTUAL_PREFIX.length)
@@ -181,6 +193,20 @@ const unwrapVirtual = (value) =>
         ? binding.createCompiler
         : (cfg) => new binding.MarkflowCompiler(cfg);
       compiler = createCompiler(compilerOptions);
+    },
+    transformIndexHtml() {
+      if (!ENABLE_DEV_LAYER_ORDER_FIX || resolvedConfig?.command !== "serve") {
+        return;
+      }
+      return {
+        tags: [
+          {
+            tag: "style",
+            children: STARLIGHT_LAYER_ORDER,
+            injectTo: "head-prepend",
+          },
+        ],
+      };
     },
     async resolveId(sourceId, importer) {
       if (sourceId.startsWith(VIRTUAL_PREFIX)) {
@@ -266,10 +292,23 @@ const unwrapVirtual = (value) =>
         } else {
           // Use original compiler for multipass pipeline
           result = compiler.compile(source, filename, fileOptions);
-          result.code = injectAstroComponents(result.code);
-          if (starlightComponents) {
-            result.code = injectStarlightComponents(result.code, starlightComponents);
+        }
+        if (expressiveCode) {
+          const rewritten = rewriteExpressiveCodeBlocks(
+            result.code,
+            expressiveCode.component,
+          );
+          result.code = rewritten.code;
+          if (rewritten.changed) {
+            result.code = injectExpressiveCodeComponent(
+              result.code,
+              expressiveCode,
+            );
           }
+        }
+        result.code = injectAstroComponents(result.code);
+        if (starlightComponents) {
+          result.code = injectStarlightComponents(result.code, starlightComponents);
         }
         const shiki = getShiki();
         if (shiki) {
@@ -319,6 +358,19 @@ function injectStarlightComponents(code, config) {
 
 function injectAstroComponents(code) {
   return injectComponentImports(code, ASTRO_COMPONENTS, ASTRO_COMPONENTS_MODULE);
+}
+
+function injectExpressiveCodeComponent(code, config) {
+  const importName = config.component;
+  const imported = collectImportedNames(code);
+  if (imported.has(importName)) {
+    return code;
+  }
+  const importLine =
+    importName === "Code"
+      ? `import { Code } from '${config.moduleId}';`
+      : `import { Code as ${importName} } from '${config.moduleId}';`;
+  return insertAfterImports(code, importLine);
 }
 
 function injectComponentImports(code, components, moduleId) {
@@ -395,6 +447,60 @@ function shouldBypassSource(source) {
     return "unclosed code fence";
   }
   return null;
+}
+
+function resolveExpressiveCodeConfig(config) {
+  if (!config) return null;
+  if (config === true) {
+    return {
+      component: EXPRESSIVE_CODE_COMPONENT,
+      moduleId: EXPRESSIVE_CODE_MODULE,
+    };
+  }
+  if (typeof config === "object") {
+    const component =
+      typeof config.component === "string" && config.component.length > 0
+        ? config.component
+        : EXPRESSIVE_CODE_COMPONENT;
+    const moduleId =
+      typeof config.module === "string" && config.module.length > 0
+        ? config.module
+        : EXPRESSIVE_CODE_MODULE;
+    return { component, moduleId };
+  }
+  return null;
+}
+
+function rewriteExpressiveCodeBlocks(code, componentName) {
+  const pattern =
+    /<pre><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
+  let changed = false;
+  const next = code.replace(pattern, (match, lang, raw) => {
+    changed = true;
+    const decoded = decodeHtmlEntities(raw);
+    const props = [`code={${JSON.stringify(decoded)}}`];
+    if (lang) {
+      props.push(`lang="${lang}"`);
+    }
+    return `<${componentName} ${props.join(" ")} />`;
+  });
+  return { code: next, changed };
+}
+
+function decodeHtmlEntities(value) {
+  if (!value || !value.includes("&")) return value;
+  return value
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) =>
+      String.fromCodePoint(Number.parseInt(hex, 16)),
+    )
+    .replace(/&#([0-9]+);/g, (_, num) =>
+      String.fromCodePoint(Number.parseInt(num, 10)),
+    )
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 }
 
 function hasUnclosedFence(source) {
