@@ -12,9 +12,188 @@ pub enum Block<'a> {
     },
 }
 
+pub struct ScanIter<'a> {
+    input: &'a str,
+    cursor: usize,
+    pending_start: Option<usize>,
+    pending_end: usize,
+}
+
+impl<'a> ScanIter<'a> {
+    pub fn new(input: &'a str) -> Self {
+        Self {
+            input,
+            cursor: 0,
+            pending_start: None,
+            pending_end: 0,
+        }
+    }
+
+    fn flush_markdown(&mut self) -> Option<Block<'a>> {
+        let start = self.pending_start?;
+        let end = self.pending_end;
+        self.pending_start = None;
+        self.pending_end = 0;
+        if start >= end {
+            return None;
+        }
+        Some(Block::Markdown(&self.input[start..end]))
+    }
+
+    fn extend_markdown(&mut self, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        match self.pending_start {
+            Some(_) => {
+                self.pending_end = end;
+            }
+            None => {
+                self.pending_start = Some(start);
+                self.pending_end = end;
+            }
+        }
+    }
+}
+
+impl<'a> Iterator for ScanIter<'a> {
+    type Item = Block<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let bytes = self.input.as_bytes();
+
+        loop {
+            if self.cursor >= bytes.len() {
+                return self.flush_markdown();
+            }
+
+            let prev_cursor = self.cursor;
+
+            let line_start = find_line_start(bytes, self.cursor);
+            if is_fence_start(bytes, line_start).is_some() && self.cursor != line_start {
+                self.cursor = line_start;
+            }
+
+            if let Some((marker, count)) = is_fence_start(bytes, self.cursor) {
+                if let Some(fence_end) = find_fence_end(bytes, self.cursor + 1, marker, count) {
+                    let end_pos = find_byte(bytes, fence_end, b'\n')
+                        .map(|newline| newline + 1)
+                        .unwrap_or_else(|| self.input.len());
+                    if let Some(block) = self.flush_markdown() {
+                        return Some(block);
+                    }
+                    let block = Block::Code(&self.input[self.cursor..end_pos]);
+                    self.cursor = end_pos;
+                    return Some(block);
+                }
+                self.extend_markdown(self.cursor, self.input.len());
+                self.cursor = self.input.len();
+                continue;
+            }
+
+            if bytes.get(self.cursor) == Some(&b'`') {
+                if let Some(end) = find_inline_code_end(bytes, self.cursor) {
+                    self.extend_markdown(self.cursor, end);
+                    self.cursor = end;
+                } else {
+                    self.extend_markdown(self.cursor, self.cursor + 1);
+                    self.cursor += 1;
+                }
+                continue;
+            }
+
+            let mut next_lt = find_byte(bytes, self.cursor, b'<');
+            while let Some(pos) = next_lt {
+                let line_start = find_line_start(bytes, pos);
+                if is_fence_start(bytes, line_start).is_some() {
+                    next_lt = find_byte(bytes, pos + 1, b'<');
+                    continue;
+                }
+                break;
+            }
+            let next_fence = find_fence_start(bytes, self.cursor);
+            let next_tick = find_byte(bytes, self.cursor, b'`');
+            let mut next_stop: Option<usize> = None;
+            for pos in [next_lt, next_fence, next_tick].into_iter().flatten() {
+                next_stop = Some(match next_stop {
+                    Some(current) => current.min(pos),
+                    None => pos,
+                });
+            }
+            if next_stop.is_none() {
+                self.extend_markdown(self.cursor, self.input.len());
+                self.cursor = self.input.len();
+                continue;
+            }
+
+            let pos = next_stop.unwrap();
+            if self.cursor < pos {
+                self.extend_markdown(self.cursor, pos);
+                self.cursor = pos;
+                continue;
+            }
+
+            if self.cursor < bytes.len() && bytes[self.cursor] == b'<' {
+                if let Some((name, attrs, open_end)) = parse_open_tag(self.input, self.cursor) {
+                    if !is_component_tag(name) {
+                        let end = open_end.saturating_add(1);
+                        self.extend_markdown(self.cursor, end);
+                        self.cursor = end;
+                        continue;
+                    }
+                    let is_self_closing = is_self_closing(bytes, self.cursor, open_end);
+                    if is_self_closing {
+                        if let Some(block) = self.flush_markdown() {
+                            return Some(block);
+                        }
+                        let block = Block::JsxElement {
+                            name,
+                            attrs,
+                            children: Vec::new(),
+                            is_self_closing: true,
+                        };
+                        self.cursor = open_end.saturating_add(1);
+                        return Some(block);
+                    }
+                    let (children, new_cursor, closed) =
+                        scan_nodes(self.input, open_end + 1, Some(name));
+                    if closed {
+                        if let Some(block) = self.flush_markdown() {
+                            return Some(block);
+                        }
+                        let block = Block::JsxElement {
+                            name,
+                            attrs,
+                            children,
+                            is_self_closing: false,
+                        };
+                        self.cursor = new_cursor;
+                        return Some(block);
+                    }
+                    self.extend_markdown(self.cursor, self.cursor + 1);
+                    self.cursor += 1;
+                    continue;
+                }
+                self.extend_markdown(self.cursor, self.cursor + 1);
+                self.cursor += 1;
+                continue;
+            }
+
+            if self.cursor == prev_cursor {
+                break;
+            }
+        }
+
+        self.flush_markdown()
+    }
+}
+
 pub fn scan(input: &str) -> Vec<Block<'_>> {
-    let (blocks, _cursor, _closed) = scan_nodes(input, 0, None);
-    blocks
+    ScanIter::new(input).collect()
+}
+
+pub fn scan_iter(input: &str) -> ScanIter<'_> {
+    ScanIter::new(input)
 }
 
 fn push_markdown<'a>(blocks: &mut Vec<Block<'a>>, input: &'a str, start: usize, end: usize) {

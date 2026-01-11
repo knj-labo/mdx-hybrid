@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 use crate::event::{CodeBlockKind, Event, HeadingLevel, Tag, TagEnd};
-use crate::renderer::multipass::{Block, scan};
+use crate::renderer::multipass::{Block, scan_iter};
 use crate::transform::code_fence::collect_root_imports;
 use crate::{DirectiveAdapter, HoistAdapter, MarkflowError, RewriteOptions, get_event_iterator};
 use std::cell::RefCell;
@@ -36,10 +36,11 @@ pub fn render_to_jsx_with_options(
     let components = options.components;
     let mut seen_imports = HashSet::new();
     let (root_imports, _body_lines) = collect_root_imports(input);
-    let blocks = scan(input);
     let ctx = RenderContext::new(&rewrite_options, &components);
     let mut body = String::with_capacity(input.len());
-    render_blocks_into(&blocks, &ctx, &mut body)?;
+    for block in scan_iter(input) {
+        render_block_into(&block, &ctx, &mut body)?;
+    }
 
     let mut output = String::with_capacity(body.len() + input.len());
     if rewrite_options.enable_hoist {
@@ -171,17 +172,6 @@ fn render_markdown_events(
         }
     }
 
-    Ok(())
-}
-
-fn render_blocks_into(
-    blocks: &[Block<'_>],
-    ctx: &RenderContext<'_>,
-    output: &mut String,
-) -> Result<(), MarkflowError> {
-    for block in blocks {
-        render_block_into(block, ctx, output)?;
-    }
     Ok(())
 }
 
