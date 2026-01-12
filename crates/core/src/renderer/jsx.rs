@@ -299,7 +299,7 @@ fn dedent_one_level(input: &str) -> String {
     output
 }
 
-fn render_attrs(attrs: &str, is_self_closing: bool) -> String {
+pub(super) fn render_attrs(attrs: &str, is_self_closing: bool) -> String {
     let mut normalized = attrs;
     if is_self_closing {
         let trimmed = normalized.trim_end();
