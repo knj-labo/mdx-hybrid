@@ -207,36 +207,15 @@ impl<'a> JsxStreamRenderer<'a> {
     }
 
     pub fn render_markdown(&self, input: &str, output: &mut String) -> Result<(), MarkflowError> {
-        self.render_markdown_with_jsx(input, output, true)
-    }
-
-    pub fn render_markdown_with_jsx(
-        &self,
-        input: &str,
-        output: &mut String,
-        enable_jsx: bool,
-    ) -> Result<(), MarkflowError> {
-        let parse_config = if enable_jsx {
-            crate::ParseConfig::mdx()
-        } else {
-            // Use markdown mode (jsx disabled) for code fence content
-            crate::ParseConfig::markdown()
-        };
-
         if self.depth == 0 {
-            return render_markdown_events_with_config(
-                input,
-                self.ctx.rewrite_options,
-                output,
-                parse_config,
-            );
+            return render_markdown_events(input, self.ctx.rewrite_options, output);
         }
 
         let mut dedented = input.to_string();
         for _ in 0..self.depth {
             dedented = dedent_one_level(&dedented);
         }
-        render_markdown_events_with_config(&dedented, self.ctx.rewrite_options, output, parse_config)
+        render_markdown_events(&dedented, self.ctx.rewrite_options, output)
     }
 
     pub fn render_event(
@@ -247,11 +226,7 @@ impl<'a> JsxStreamRenderer<'a> {
     ) -> Result<(), MarkflowError> {
         match event {
             ScanEvent::Markdown { text, .. } => self.render_markdown(text, output),
-            ScanEvent::Code { text, .. } => {
-                // Render code fences with JSX parsing disabled.
-                // This prevents tags like <Footer /> in code examples from being interpreted as JSX.
-                self.render_markdown_with_jsx(text, output, false)
-            }
+            ScanEvent::Code { text, .. } => self.render_markdown(text, output),
             ScanEvent::JsxOpen {
                 name,
                 attrs,

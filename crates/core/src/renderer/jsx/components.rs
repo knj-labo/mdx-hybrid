@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::renderer::multipass::ScanEvent;
 
-use super::{JsxStreamRenderer, MarkflowError, RewriteOptions, render_attrs};
+use super::{JsxStreamRenderer, MarkflowError, RewriteOptions};
 
 /// Shared context passed to JSX component plugins.
 #[derive(Clone, Copy)]
@@ -85,7 +85,6 @@ impl ComponentRegistry {
     ) -> Result<bool, MarkflowError> {
         let ScanEvent::JsxOpen {
             name,
-            attrs,
             is_self_closing,
             ..
         } = event
@@ -110,7 +109,7 @@ impl ComponentRegistry {
         match *name {
             "Steps" if !*is_self_closing => {
                 let mut child = renderer.child();
-                render_steps_stream(name, attrs, stream, &mut child, output)?;
+                render_steps_stream(stream, &mut child, output)?;
                 Ok(true)
             }
             "FileTree" if !*is_self_closing => {
@@ -124,8 +123,6 @@ impl ComponentRegistry {
 }
 
 fn render_steps_stream<'a>(
-    name: &str,
-    attrs: &str,
     stream: &mut dyn Iterator<Item = ScanEvent<'a>>,
     renderer: &mut JsxStreamRenderer<'a>,
     output: &mut String,
@@ -138,23 +135,15 @@ fn render_steps_stream<'a>(
             ScanEvent::Markdown { .. } => {
                 scratch.clear();
                 renderer.render_event(event, stream, &mut scratch)?;
-                append_steps_fragment(&mut inner, &scratch);
+                append_steps_fragment(output, &scratch);
             }
             _ => {
                 scratch.clear();
                 renderer.render_event(event, stream, &mut scratch)?;
-                insert_into_last_list_item(&mut inner, &scratch);
+                insert_into_last_list_item(output, &scratch);
             }
         }
     }
-    output.push('<');
-    output.push_str(name);
-    output.push_str(&render_attrs(attrs, false));
-    output.push('>');
-    output.push_str(&inner);
-    output.push_str("</");
-    output.push_str(name);
-    output.push('>');
     Ok(())
 }
 
