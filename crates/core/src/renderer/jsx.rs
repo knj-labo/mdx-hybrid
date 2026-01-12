@@ -2,7 +2,7 @@
 use crate::event::{CodeBlockKind, Event, HeadingLevel, Tag, TagEnd};
 use crate::renderer::multipass::{ScanEvent, scan_iter};
 use crate::transform::code_fence::collect_root_imports;
-use crate::{DirectiveAdapter, HoistAdapter, MarkflowError, RewriteOptions, get_event_iterator};
+use crate::{DirectiveAdapter, HoistAdapter, MarkflowError, RewriteOptions};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
