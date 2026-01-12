@@ -439,8 +439,56 @@ ${jsxContent}
 `;
 }
 
+const INLINE_COMPONENT_SAMPLE =
+  /`[^`\n]*<\s*(Code|Prism|FileTree)\b[^`\n]*`/;
+const COMPONENT_SAMPLE = /<\s*(Code|Prism|FileTree)\b/;
+
+function hasInlineComponentSample(source) {
+  if (INLINE_COMPONENT_SAMPLE.test(source)) {
+    return true;
+  }
+
+  const lines = source.split(/\r?\n/);
+  let fenceChar = null;
+  let fenceLength = 0;
+  let buffer = [];
+
+  for (const line of lines) {
+    const match = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (match) {
+      const fence = match[1];
+      const char = fence[0];
+      const length = fence.length;
+      if (!fenceChar) {
+        fenceChar = char;
+        fenceLength = length;
+        buffer = [];
+        continue;
+      }
+      if (char === fenceChar && length >= fenceLength) {
+        if (COMPONENT_SAMPLE.test(buffer.join("\n"))) {
+          return true;
+        }
+        fenceChar = null;
+        fenceLength = 0;
+        buffer = [];
+        continue;
+      }
+    }
+    if (fenceChar) {
+      buffer.push(line);
+    }
+  }
+
+  if (fenceChar && COMPONENT_SAMPLE.test(buffer.join("\n"))) {
+    return true;
+  }
+
+  return false;
+}
+
 function shouldBypassSource(source) {
-  if (/`<\s*(Code|Prism)\b/.test(source) || /<FileTree\b/.test(source)) {
+  if (hasInlineComponentSample(source)) {
     return "inline component code sample";
   }
   if (hasUnclosedFence(source)) {
