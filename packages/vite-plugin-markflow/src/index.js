@@ -440,7 +440,7 @@ ${jsxContent}
 }
 
 function shouldBypassSource(source) {
-  if (/`<\s*(Code|Prism)\b/.test(source) || /<FileTree\b/.test(source)) {
+  if (/`<\s*(Code|Prism)\b/.test(source)) {
     return "inline component code sample";
   }
   if (hasUnclosedFence(source)) {
