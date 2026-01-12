@@ -1,5 +1,6 @@
+use markflow_core::renderer::multipass::ScanEvent;
 use markflow_core::{
-    ComponentRegistry, JsxComponentPlugin, JsxElement, JsxOptions, MarkflowError, RenderContext,
+    ComponentRegistry, JsxComponentPlugin, JsxOptions, JsxStreamRenderer, MarkflowError,
     RenderOutcome, RewriteOptions, parse, parse_with_options, render_to_jsx,
     render_to_jsx_with_options,
 };
@@ -23,14 +24,26 @@ impl JsxComponentPlugin for BadgePlugin {
         name == "Badge"
     }
 
-    fn render_children(
+    fn render_stream<'a>(
         &self,
-        element: &JsxElement<'_>,
-        ctx: &RenderContext<'_>,
+        event: &ScanEvent<'a>,
+        stream: &mut dyn Iterator<Item = ScanEvent<'a>>,
+        renderer: &mut JsxStreamRenderer<'a>,
         output: &mut String,
     ) -> Result<RenderOutcome, MarkflowError> {
+        let ScanEvent::JsxOpen { name, .. } = event else {
+            return Ok(RenderOutcome::Skipped);
+        };
+        if *name != "Badge" {
+            return Ok(RenderOutcome::Skipped);
+        }
         output.push_str("<span class=\"badge\">");
-        ctx.render_children(element.children, output)?;
+        while let Some(event) = stream.next() {
+            match event {
+                ScanEvent::JsxClose { name: "Badge", .. } => break,
+                _ => renderer.render_event(event, stream, output)?,
+            }
+        }
         output.push_str("</span>");
         Ok(RenderOutcome::Handled)
     }
@@ -62,12 +75,20 @@ fn jsx_registry_allows_imports_and_plugins() {
         "import should be hoisted before the body. output: {output}"
     );
     assert!(
-        output.contains("<span class=\"badge\"><p>Hi</p>"),
-        "plugin output should wrap children. output: {output}"
+        output.contains("<span class=\"badge\">"),
+        "plugin output should include wrapper start. output: {output}"
     );
     assert!(
-        output.contains("</span></Badge>"),
-        "plugin output should remain inside the component. output: {output}"
+        output.contains("<p>Hi</p>"),
+        "plugin output should render children. output: {output}"
+    );
+    assert!(
+        output.contains("</span>"),
+        "plugin output should include wrapper end. output: {output}"
+    );
+    assert!(
+        !output.contains("<Badge>"),
+        "plugin output should replace the original component tag. output: {output}"
     );
 }
 

@@ -1,6 +1,7 @@
 # MF-170: Markdown → JSX renderer passthrough
 
 > Draft scaffold – fill in API, edge cases, and test plan.
+> Update (2026-01-11): multipass now streams `ScanEvent` (no `Block` tree). The Block/`scan_nodes` details below are historical; see MF-171 for current API notes.
 
 ## Scope
 - Preserve raw JSX/MDX nodes through the Markdown pipeline and emit JSX source suitable for downstream bundlers.
