@@ -55,7 +55,18 @@ function getText(node) {
  * @returns {Promise<string>} The HTML with highlighted code blocks
  */
 export async function highlightHtmlBlocks(html, highlight) {
-  const fragment = parseFragment(html);
+  // Suppress parse5 warnings for JSX components in HTML
+  // MDX allows JSX components inside HTML tags, but parse5 doesn't recognize them
+  const fragment = parseFragment(html, {
+    onParseError: (error) => {
+      // Silently ignore end-tag-mismatch errors (typically from JSX in <p> tags)
+      if (error.code === 'end-tag-mismatch') {
+        return;
+      }
+      // Log other parse errors for debugging
+      console.warn('[markflow] parse5 warning:', error);
+    }
+  });
   const tasks = [];
 
   walk(fragment, (node) => {
