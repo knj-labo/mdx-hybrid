@@ -2,7 +2,7 @@
 use crate::event::{CodeBlockKind, Event, HeadingLevel, Tag, TagEnd};
 use crate::renderer::multipass::{ScanEvent, scan_iter};
 use crate::transform::code_fence::collect_root_imports;
-use crate::{DirectiveAdapter, HoistAdapter, MarkflowError, RewriteOptions, get_event_iterator};
+use crate::{DirectiveAdapter, HoistAdapter, MarkflowError, RewriteOptions};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
@@ -66,8 +66,18 @@ fn render_markdown_events(
     rewrite_options: &RewriteOptions,
     output: &mut String,
 ) -> Result<(), MarkflowError> {
+    render_markdown_events_with_config(input, rewrite_options, output, crate::ParseConfig::mdx())
+}
+
+fn render_markdown_events_with_config(
+    input: &str,
+    rewrite_options: &RewriteOptions,
+    output: &mut String,
+    parse_config: crate::ParseConfig,
+) -> Result<(), MarkflowError> {
     let hoisted = Rc::new(RefCell::new(Vec::new()));
-    let mut events: Box<dyn Iterator<Item = Event<'static>>> = Box::new(get_event_iterator(input)?);
+    let mut events: Box<dyn Iterator<Item = Event<'static>>> =
+        Box::new(crate::get_event_iterator_with_config(input, parse_config)?);
     if rewrite_options.enable_hoist {
         events = Box::new(HoistAdapter::new(events, Rc::clone(&hoisted)));
     }
@@ -299,7 +309,7 @@ fn dedent_one_level(input: &str) -> String {
     output
 }
 
-fn render_attrs(attrs: &str, is_self_closing: bool) -> String {
+pub(super) fn render_attrs(attrs: &str, is_self_closing: bool) -> String {
     let mut normalized = attrs;
     if is_self_closing {
         let trimmed = normalized.trim_end();
