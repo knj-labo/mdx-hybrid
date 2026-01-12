@@ -324,9 +324,12 @@ fn skip_fence_indent(bytes: &[u8], pos: usize) -> Option<usize> {
     let mut i = pos;
     let mut spaces = 0usize;
 
+    // Allow up to 12 spaces of indentation to support code fences in nested contexts
+    // (e.g., list items, blockquotes). CommonMark allows 0-3 spaces, but in practice
+    // code fences in lists can be indented much more (4 spaces per list level + content indent).
     while i < bytes.len() {
         match bytes[i] {
-            b' ' if spaces < 4 => {
+            b' ' if spaces < 12 => {
                 spaces += 1;
                 i += 1;
             }

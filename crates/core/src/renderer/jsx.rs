@@ -66,8 +66,18 @@ fn render_markdown_events(
     rewrite_options: &RewriteOptions,
     output: &mut String,
 ) -> Result<(), MarkflowError> {
+    render_markdown_events_with_config(input, rewrite_options, output, crate::ParseConfig::mdx())
+}
+
+fn render_markdown_events_with_config(
+    input: &str,
+    rewrite_options: &RewriteOptions,
+    output: &mut String,
+    parse_config: crate::ParseConfig,
+) -> Result<(), MarkflowError> {
     let hoisted = Rc::new(RefCell::new(Vec::new()));
-    let mut events: Box<dyn Iterator<Item = Event<'static>>> = Box::new(get_event_iterator(input)?);
+    let mut events: Box<dyn Iterator<Item = Event<'static>>> =
+        Box::new(crate::get_event_iterator_with_config(input, parse_config)?);
     if rewrite_options.enable_hoist {
         events = Box::new(HoistAdapter::new(events, Rc::clone(&hoisted)));
     }
@@ -197,15 +207,36 @@ impl<'a> JsxStreamRenderer<'a> {
     }
 
     pub fn render_markdown(&self, input: &str, output: &mut String) -> Result<(), MarkflowError> {
+        self.render_markdown_with_jsx(input, output, true)
+    }
+
+    pub fn render_markdown_with_jsx(
+        &self,
+        input: &str,
+        output: &mut String,
+        enable_jsx: bool,
+    ) -> Result<(), MarkflowError> {
+        let parse_config = if enable_jsx {
+            crate::ParseConfig::mdx()
+        } else {
+            // Use markdown mode (jsx disabled) for code fence content
+            crate::ParseConfig::markdown()
+        };
+
         if self.depth == 0 {
-            return render_markdown_events(input, self.ctx.rewrite_options, output);
+            return render_markdown_events_with_config(
+                input,
+                self.ctx.rewrite_options,
+                output,
+                parse_config,
+            );
         }
 
         let mut dedented = input.to_string();
         for _ in 0..self.depth {
             dedented = dedent_one_level(&dedented);
         }
-        render_markdown_events(&dedented, self.ctx.rewrite_options, output)
+        render_markdown_events_with_config(&dedented, self.ctx.rewrite_options, output, parse_config)
     }
 
     pub fn render_event(
@@ -216,7 +247,11 @@ impl<'a> JsxStreamRenderer<'a> {
     ) -> Result<(), MarkflowError> {
         match event {
             ScanEvent::Markdown { text, .. } => self.render_markdown(text, output),
-            ScanEvent::Code { text, .. } => self.render_markdown(text, output),
+            ScanEvent::Code { text, .. } => {
+                // Render code fences with JSX parsing disabled.
+                // This prevents tags like <Footer /> in code examples from being interpreted as JSX.
+                self.render_markdown_with_jsx(text, output, false)
+            }
             ScanEvent::JsxOpen {
                 name,
                 attrs,
