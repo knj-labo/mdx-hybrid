@@ -439,15 +439,9 @@ ${jsxContent}
 `;
 }
 
-const INLINE_COMPONENT_SAMPLE =
-  /`[^`\n]*<\s*(Code|Prism|FileTree)\b[^`\n]*`/;
 const COMPONENT_SAMPLE = /<\s*(Code|Prism|FileTree)\b/;
 
 function hasInlineComponentSample(source) {
-  if (INLINE_COMPONENT_SAMPLE.test(source)) {
-    return true;
-  }
-
   const lines = source.split(/\r?\n/);
   let fenceChar = null;
   let fenceLength = 0;
