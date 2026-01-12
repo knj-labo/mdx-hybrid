@@ -1,162 +1,205 @@
 #![allow(missing_docs)]
 
+use crate::Span;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Block<'a> {
-    Markdown(&'a str),
-    Code(&'a str),
-    JsxElement {
+pub enum ScanEvent<'a> {
+    Markdown {
+        text: &'a str,
+        span: Span,
+    },
+    Code {
+        text: &'a str,
+        span: Span,
+    },
+    JsxOpen {
         name: &'a str,
         attrs: &'a str,
-        children: Vec<Block<'a>>,
         is_self_closing: bool,
+        span: Span,
+    },
+    JsxClose {
+        name: &'a str,
+        span: Span,
     },
 }
 
-pub fn scan(input: &str) -> Vec<Block<'_>> {
-    let (blocks, _cursor, _closed) = scan_nodes(input, 0, None);
-    blocks
+pub struct ScanIter<'a> {
+    input: &'a str,
+    cursor: usize,
+    pending_start: Option<usize>,
+    pending_end: usize,
 }
 
-fn push_markdown<'a>(blocks: &mut Vec<Block<'a>>, input: &'a str, start: usize, end: usize) {
-    if start >= end {
-        return;
+impl<'a> ScanIter<'a> {
+    pub fn new(input: &'a str) -> Self {
+        Self {
+            input,
+            cursor: 0,
+            pending_start: None,
+            pending_end: 0,
+        }
     }
 
-    // Merge adjacent markdown slices to avoid splitting paragraphs around inline spans.
-    if let Some(Block::Markdown(last)) = blocks.last_mut() {
-        let last_end_addr = last.as_ptr() as usize + last.len();
-        let new_start_addr = input.as_ptr() as usize + start;
+    fn flush_markdown(&mut self) -> Option<ScanEvent<'a>> {
+        let start = self.pending_start?;
+        let end = self.pending_end;
+        self.pending_start = None;
+        self.pending_end = 0;
+        if start >= end {
+            return None;
+        }
+        Some(ScanEvent::Markdown {
+            text: &self.input[start..end],
+            span: Span::new(start, end),
+        })
+    }
 
-        if last_end_addr == new_start_addr {
-            let input_start_addr = input.as_ptr() as usize;
-            let last_start_offset = last.as_ptr() as usize - input_start_addr;
-            *last = &input[last_start_offset..end];
+    fn extend_markdown(&mut self, start: usize, end: usize) {
+        if start >= end {
             return;
         }
+        match self.pending_start {
+            Some(_) => {
+                self.pending_end = end;
+            }
+            None => {
+                self.pending_start = Some(start);
+                self.pending_end = end;
+            }
+        }
     }
-
-    blocks.push(Block::Markdown(&input[start..end]));
 }
 
-fn scan_nodes<'a>(
-    input: &'a str,
-    mut cursor: usize,
-    until: Option<&'a str>,
-) -> (Vec<Block<'a>>, usize, bool) {
-    let mut blocks = Vec::new();
-    let bytes = input.as_bytes();
+impl<'a> Iterator for ScanIter<'a> {
+    type Item = ScanEvent<'a>;
 
-    while cursor < bytes.len() {
-        let prev_cursor = cursor;
-        let line_start = find_line_start(bytes, cursor);
-        if is_fence_start(bytes, line_start).is_some() && cursor != line_start {
-            cursor = line_start;
-        }
-        if let Some(tag_name) = until
-            && is_close_tag(bytes, cursor, tag_name.as_bytes())
-        {
-            if let Some(close_end) = find_tag_end(input, cursor + 2 + tag_name.len()) {
-                return (blocks, close_end.saturating_add(1), true);
+    fn next(&mut self) -> Option<Self::Item> {
+        let bytes = self.input.as_bytes();
+
+        loop {
+            if self.cursor >= bytes.len() {
+                return self.flush_markdown();
             }
-            return (blocks, cursor, false);
-        }
-        if let Some((marker, count)) = is_fence_start(bytes, cursor) {
-            if let Some(fence_end) = find_fence_end(bytes, cursor + 1, marker, count) {
-                let end_pos = find_byte(bytes, fence_end, b'\n')
-                    .map(|newline| newline + 1)
-                    .unwrap_or_else(|| input.len());
-                blocks.push(Block::Code(&input[cursor..end_pos]));
-                cursor = end_pos;
+
+            let prev_cursor = self.cursor;
+
+            let line_start = find_line_start(bytes, self.cursor);
+            if is_fence_start(bytes, line_start).is_some() && self.cursor != line_start {
+                self.cursor = line_start;
+            }
+
+            if let Some((marker, count)) = is_fence_start(bytes, self.cursor) {
+                if let Some(fence_end) = find_fence_end(bytes, self.cursor + 1, marker, count) {
+                    let end_pos = find_byte(bytes, fence_end, b'\n')
+                        .map(|newline| newline + 1)
+                        .unwrap_or_else(|| self.input.len());
+                    if let Some(event) = self.flush_markdown() {
+                        return Some(event);
+                    }
+                    let span = Span::new(self.cursor, end_pos);
+                    let event = ScanEvent::Code {
+                        text: &self.input[self.cursor..end_pos],
+                        span,
+                    };
+                    self.cursor = end_pos;
+                    return Some(event);
+                }
+                self.extend_markdown(self.cursor, self.input.len());
+                self.cursor = self.input.len();
                 continue;
             }
-            push_markdown(&mut blocks, input, cursor, cursor + 1);
-            cursor += 1;
-            if cursor < input.len() {
-                push_markdown(&mut blocks, input, cursor, input.len());
+
+            if bytes.get(self.cursor) == Some(&b'<') {
+                let remaining = &self.input[self.cursor..];
+                if let Some((name, consumed)) = parse_jsx_close(remaining) {
+                    if let Some(event) = self.flush_markdown() {
+                        return Some(event);
+                    }
+                    let start = self.cursor;
+                    let end = start + consumed;
+                    self.cursor = end;
+                    return Some(ScanEvent::JsxClose {
+                        name,
+                        span: Span::new(start, end),
+                    });
+                }
+                if let Some((name, attrs, is_self_closing, consumed)) = parse_jsx_open(remaining) {
+                    if let Some(event) = self.flush_markdown() {
+                        return Some(event);
+                    }
+                    let start = self.cursor;
+                    let end = start + consumed;
+                    self.cursor = end;
+                    return Some(ScanEvent::JsxOpen {
+                        name,
+                        attrs,
+                        is_self_closing,
+                        span: Span::new(start, end),
+                    });
+                }
             }
-            return (blocks, input.len(), false);
-        }
-        if bytes.get(cursor) == Some(&b'`') {
-            if let Some(end) = find_inline_code_end(bytes, cursor) {
-                push_markdown(&mut blocks, input, cursor, end);
-                cursor = end;
-            } else {
-                // Treat lone/unclosed backticks as literal text to avoid stalling the scanner.
-                push_markdown(&mut blocks, input, cursor, cursor + 1);
-                cursor += 1;
-            }
-            continue;
-        }
-        let mut next_lt = find_byte(bytes, cursor, b'<');
-        while let Some(pos) = next_lt {
-            let line_start = find_line_start(bytes, pos);
-            if is_fence_start(bytes, line_start).is_some() {
-                next_lt = find_byte(bytes, pos + 1, b'<');
+
+            if bytes.get(self.cursor) == Some(&b'`') {
+                if let Some(end) = find_inline_code_end(bytes, self.cursor) {
+                    self.extend_markdown(self.cursor, end);
+                    self.cursor = end;
+                } else {
+                    self.extend_markdown(self.cursor, self.cursor + 1);
+                    self.cursor += 1;
+                }
                 continue;
             }
-            break;
-        }
-        let next_fence = find_fence_start(bytes, cursor);
-        let next_tick = find_byte(bytes, cursor, b'`');
-        let mut next_stop: Option<usize> = None;
-        for pos in [next_lt, next_fence, next_tick].into_iter().flatten() {
-            next_stop = Some(match next_stop {
-                Some(current) => current.min(pos),
-                None => pos,
-            });
-        }
-        if next_stop.is_none() {
-            push_markdown(&mut blocks, input, cursor, input.len());
-            return (blocks, input.len(), false);
-        }
-        let pos = next_stop.unwrap();
-        if cursor < pos {
-            push_markdown(&mut blocks, input, cursor, pos);
-            cursor = pos;
-            continue;
-        }
-        if cursor < bytes.len() && bytes[cursor] == b'<' {
-            if let Some((name, attrs, open_end)) = parse_open_tag(input, cursor) {
-                if !is_component_tag(name) {
-                    let end = open_end.saturating_add(1);
-                    push_markdown(&mut blocks, input, cursor, end);
-                    cursor = end;
+
+            let mut next_lt = find_byte(bytes, self.cursor, b'<');
+            while let Some(pos) = next_lt {
+                let line_start = find_line_start(bytes, pos);
+                if is_fence_start(bytes, line_start).is_some() {
+                    next_lt = find_byte(bytes, pos + 1, b'<');
                     continue;
                 }
-                let is_self_closing = is_self_closing(bytes, cursor, open_end);
-                if is_self_closing {
-                    blocks.push(Block::JsxElement {
-                        name,
-                        attrs,
-                        children: Vec::new(),
-                        is_self_closing: true,
-                    });
-                    cursor = open_end.saturating_add(1);
-                    continue;
-                }
-                let (children, new_cursor, closed) = scan_nodes(input, open_end + 1, Some(name));
-                if closed {
-                    blocks.push(Block::JsxElement {
-                        name,
-                        attrs,
-                        children,
-                        is_self_closing: false,
-                    });
-                    cursor = new_cursor;
-                    continue;
-                }
-                push_markdown(&mut blocks, input, cursor, cursor + 1);
-                cursor += 1;
-            } else {
-                push_markdown(&mut blocks, input, cursor, cursor + 1);
-                cursor += 1;
+                break;
+            }
+            let next_fence = find_fence_start(bytes, self.cursor);
+            let next_tick = find_byte(bytes, self.cursor, b'`');
+            let mut next_stop: Option<usize> = None;
+            for pos in [next_lt, next_fence, next_tick].into_iter().flatten() {
+                next_stop = Some(match next_stop {
+                    Some(current) => current.min(pos),
+                    None => pos,
+                });
+            }
+            if next_stop.is_none() {
+                self.extend_markdown(self.cursor, self.input.len());
+                self.cursor = self.input.len();
+                continue;
+            }
+
+            let pos = next_stop.unwrap();
+            if self.cursor < pos {
+                self.extend_markdown(self.cursor, pos);
+                self.cursor = pos;
+                continue;
+            }
+
+            self.extend_markdown(self.cursor, self.cursor + 1);
+            self.cursor += 1;
+
+            if self.cursor == prev_cursor {
+                break;
             }
         }
-        if cursor == prev_cursor {
-            break;
-        }
+
+        self.flush_markdown()
     }
-    (blocks, cursor, false)
+}
+
+pub fn scan(input: &str) -> Vec<ScanEvent<'_>> {
+    ScanIter::new(input).collect()
+}
+
+pub fn scan_iter(input: &str) -> ScanIter<'_> {
+    ScanIter::new(input)
 }
 
 fn find_byte(bytes: &[u8], start: usize, target: u8) -> Option<usize> {
@@ -179,67 +222,6 @@ fn find_line_start(bytes: &[u8], pos: usize) -> usize {
         i -= 1;
     }
     i
-}
-
-fn find_tag_end(input: &str, start: usize) -> Option<usize> {
-    find_byte(input.as_bytes(), start, b'>')
-}
-
-fn is_self_closing(bytes: &[u8], open_start: usize, open_end: usize) -> bool {
-    let _ = open_start;
-    if open_end == 0 {
-        return false;
-    }
-    bytes.get(open_end.saturating_sub(1)) == Some(&b'/')
-}
-
-fn is_name_char(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b':' | b'_')
-}
-
-fn is_component_tag(name: &str) -> bool {
-    name.chars()
-        .next()
-        .is_some_and(|ch| ch.is_ascii_uppercase())
-}
-
-fn is_tag_terminator(byte: u8) -> bool {
-    matches!(byte, b' ' | b'\n' | b'\t' | b'\r' | b'/' | b'>')
-}
-
-fn parse_open_tag(input: &str, open_start: usize) -> Option<(&str, &str, usize)> {
-    let bytes = input.as_bytes();
-    let name_start = open_start + 1;
-    let mut name_end = name_start;
-
-    while name_end < bytes.len() && !is_tag_terminator(bytes[name_end]) {
-        if !is_name_char(bytes[name_end]) {
-            return None;
-        }
-        name_end += 1;
-    }
-
-    if name_end == name_start {
-        return None;
-    }
-
-    let open_end = find_tag_end(input, name_end)?;
-    let attrs = input[name_end..open_end].trim();
-    Some((&input[name_start..name_end], attrs, open_end))
-}
-
-fn is_close_tag(bytes: &[u8], pos: usize, name: &[u8]) -> bool {
-    if pos + 2 + name.len() > bytes.len() {
-        return false;
-    }
-    if bytes[pos] != b'<' || bytes[pos + 1] != b'/' {
-        return false;
-    }
-    if &bytes[pos + 2..pos + 2 + name.len()] != name {
-        return false;
-    }
-    let end = pos + 2 + name.len();
-    bytes.get(end).copied().is_some_and(is_tag_terminator)
 }
 
 fn is_line_start(bytes: &[u8], pos: usize) -> bool {
@@ -359,123 +341,185 @@ fn skip_fence_indent(bytes: &[u8], pos: usize) -> Option<usize> {
     Some(i)
 }
 
+fn is_name_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b':' | b'_')
+}
+
+fn is_component_tag(name: &str) -> bool {
+    name.chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_uppercase())
+}
+
+fn take_name(input: &str) -> Option<(&str, &str)> {
+    let bytes = input.as_bytes();
+    let mut end = 0usize;
+    while end < bytes.len() && is_name_char(bytes[end]) {
+        end += 1;
+    }
+    if end == 0 {
+        return None;
+    }
+    Some((&input[..end], &input[end..]))
+}
+
+fn parse_jsx_close(input: &str) -> Option<(&str, usize)> {
+    let rest = input.strip_prefix("</")?;
+    let (name, rest) = take_name(rest)?;
+    if !is_component_tag(name) {
+        return None;
+    }
+    let rest = rest.trim_start();
+    let rest = rest.strip_prefix('>')?;
+    let consumed = input.len() - rest.len();
+    Some((name, consumed))
+}
+
+fn parse_jsx_open(input: &str) -> Option<(&str, &str, bool, usize)> {
+    let rest = input.strip_prefix('<')?;
+    if rest.starts_with('/') {
+        return None;
+    }
+    let (name, rest) = take_name(rest)?;
+    if !is_component_tag(name) {
+        return None;
+    }
+    let end = rest.find('>')?;
+    let raw_attrs = &rest[..end];
+    let rest = &rest[end + 1..];
+    let trimmed = raw_attrs.trim();
+    let (attrs, is_self_closing) = if let Some(stripped) = trimmed.strip_suffix('/') {
+        (stripped.trim_end(), true)
+    } else {
+        (trimmed, false)
+    };
+    let consumed = input.len() - rest.len();
+    Some((name, attrs, is_self_closing, consumed))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Block, find_fence_end, is_fence_start, scan};
+    use super::{ScanEvent, find_fence_end, is_fence_start, scan};
 
     #[test]
     fn scan_returns_single_markdown_block() {
         let input = "hello";
-        let blocks = scan(input);
+        let events = scan(input);
 
-        assert_eq!(blocks, vec![Block::Markdown(input)]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ScanEvent::Markdown { text, .. } if text == input
+        ));
     }
 
     #[test]
     fn scan_coalesces_inline_code_fragments() {
         let input = "Click `button` now";
-        let blocks = scan(input);
+        let events = scan(input);
 
-        assert_eq!(blocks, vec![Block::Markdown(input)]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ScanEvent::Markdown { text, .. } if text == input
+        ));
     }
 
     #[test]
     fn scan_unclosed_inline_code_is_markdown() {
         let input = "Click `button now";
-        let blocks = scan(input);
+        let events = scan(input);
 
-        assert_eq!(blocks, vec![Block::Markdown(input)]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ScanEvent::Markdown { text, .. } if text == input
+        ));
     }
 
     #[test]
     fn scan_empty_returns_empty() {
-        let blocks = scan("");
+        let events = scan("");
 
-        assert!(blocks.is_empty());
+        assert!(events.is_empty());
     }
 
     #[test]
     fn scan_emits_self_closing_jsx_element() {
-        let blocks = scan("<Tabs />");
+        let events = scan("<Tabs />");
 
-        assert_eq!(
-            blocks,
-            vec![Block::JsxElement {
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ScanEvent::JsxOpen {
                 name: "Tabs",
-                attrs: "/",
-                children: Vec::new(),
+                attrs: "",
                 is_self_closing: true,
-            }]
-        );
+                ..
+            }
+        ));
     }
 
     #[test]
     fn scan_emits_jsx_element_with_children() {
-        let blocks = scan("<Steps>hello</Steps>");
+        let events = scan("<Steps>hello</Steps>");
 
-        assert_eq!(
-            blocks,
-            vec![Block::JsxElement {
-                name: "Steps",
-                attrs: "",
-                children: vec![Block::Markdown("hello")],
-                is_self_closing: false,
-            }]
-        );
+        assert!(matches!(
+            events.as_slice(),
+            [
+                ScanEvent::JsxOpen { name: "Steps", .. },
+                ScanEvent::Markdown { text: "hello", .. },
+                ScanEvent::JsxClose { name: "Steps", .. }
+            ]
+        ));
     }
 
     #[test]
     fn scan_keeps_lowercase_html_as_markdown() {
         let input = "<h3>Title</h3>";
-        let blocks = scan(input);
+        let events = scan(input);
 
-        assert_eq!(blocks, vec![Block::Markdown(input)]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ScanEvent::Markdown { text, .. } if text == input
+        ));
     }
 
     #[test]
     fn scan_handles_nested_same_tag() {
-        let blocks = scan("<Steps><Steps>inner</Steps>outer</Steps>");
+        let events = scan("<Steps><Steps>inner</Steps>outer</Steps>");
 
-        assert_eq!(
-            blocks,
-            vec![Block::JsxElement {
-                name: "Steps",
-                attrs: "",
-                children: vec![
-                    Block::JsxElement {
-                        name: "Steps",
-                        attrs: "",
-                        children: vec![Block::Markdown("inner")],
-                        is_self_closing: false,
-                    },
-                    Block::Markdown("outer"),
-                ],
-                is_self_closing: false,
-            }]
-        );
+        assert!(matches!(
+            events.as_slice(),
+            [
+                ScanEvent::JsxOpen { name: "Steps", .. },
+                ScanEvent::JsxOpen { name: "Steps", .. },
+                ScanEvent::Markdown { text: "inner", .. },
+                ScanEvent::JsxClose { name: "Steps", .. },
+                ScanEvent::Markdown { text: "outer", .. },
+                ScanEvent::JsxClose { name: "Steps", .. }
+            ]
+        ));
     }
 
     #[test]
     fn scan_ignores_self_closing_in_nested_match() {
-        let blocks = scan("<Steps><Steps />inner</Steps>");
+        let events = scan("<Steps><Steps />inner</Steps>");
 
-        assert_eq!(
-            blocks,
-            vec![Block::JsxElement {
-                name: "Steps",
-                attrs: "",
-                children: vec![
-                    Block::JsxElement {
-                        name: "Steps",
-                        attrs: "/",
-                        children: Vec::new(),
-                        is_self_closing: true,
-                    },
-                    Block::Markdown("inner"),
-                ],
-                is_self_closing: false,
-            }]
-        );
+        assert!(matches!(
+            events.as_slice(),
+            [
+                ScanEvent::JsxOpen { name: "Steps", .. },
+                ScanEvent::JsxOpen {
+                    name: "Steps",
+                    is_self_closing: true,
+                    ..
+                },
+                ScanEvent::Markdown { text: "inner", .. },
+                ScanEvent::JsxClose { name: "Steps", .. }
+            ]
+        ));
     }
 
     #[test]
@@ -504,51 +548,74 @@ mod tests {
     #[test]
     fn scan_emits_code_block_for_fence() {
         let input = "```\n<Steps>\n```";
-        let blocks = scan(input);
+        let events = scan(input);
 
-        assert_eq!(blocks, vec![Block::Code(input)]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ScanEvent::Code { text, .. } if text == input
+        ));
     }
 
     #[test]
     fn scan_does_not_parse_jsx_inside_fence() {
         let input = "```\n<Tabs />\n```\n";
-        let blocks = scan(input);
+        let events = scan(input);
 
-        assert_eq!(blocks, vec![Block::Code(input)]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ScanEvent::Code { text, .. } if text == input
+        ));
     }
 
     #[test]
     fn scan_continues_after_fence() {
         let input = "```\n<Steps>\n```\n<Tabs />";
-        let blocks = scan(input);
+        let events = scan(input);
 
-        assert_eq!(
-            blocks,
-            vec![
-                Block::Code("```\n<Steps>\n```\n"),
-                Block::JsxElement {
-                    name: "Tabs",
-                    attrs: "/",
-                    children: Vec::new(),
-                    is_self_closing: true,
+        assert!(matches!(
+            events.as_slice(),
+            [
+                ScanEvent::Code {
+                    text: "```\n<Steps>\n```\n",
+                    ..
                 },
+                ScanEvent::JsxOpen {
+                    name: "Tabs",
+                    is_self_closing: true,
+                    ..
+                }
             ]
-        );
+        ));
     }
 
     #[test]
     fn scan_falls_back_on_unclosed_fence() {
         let input = "```\n<Steps>";
-        let blocks = scan(input);
+        let events = scan(input);
 
-        assert_eq!(blocks, vec![Block::Markdown("```\n<Steps>")]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ScanEvent::Markdown { text, .. } if text == input
+        ));
     }
 
     #[test]
-    fn scan_falls_back_on_missing_close_tag() {
+    fn scan_emits_open_when_missing_close_tag() {
         let input = "<Steps>no close";
-        let blocks = scan(input);
+        let events = scan(input);
 
-        assert_eq!(blocks, vec![Block::Markdown("<Steps>no close")]);
+        assert!(matches!(
+            events.as_slice(),
+            [
+                ScanEvent::JsxOpen { name: "Steps", .. },
+                ScanEvent::Markdown {
+                    text: "no close",
+                    ..
+                }
+            ]
+        ));
     }
 }
