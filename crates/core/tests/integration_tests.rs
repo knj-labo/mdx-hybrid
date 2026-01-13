@@ -307,7 +307,8 @@ fn jsx_code_sample_components_preserve_raw_children() {
         components,
         ..JsxOptions::default()
     };
-    let output = render_to_jsx_with_options(input, options).expect("render_to_jsx_with_options succeeds");
+    let output =
+        render_to_jsx_with_options(input, options).expect("render_to_jsx_with_options succeeds");
 
     assert!(
         output.contains("<Code>**raw**</Code>"),
@@ -329,7 +330,8 @@ fn jsx_code_sample_components_handle_nested_components() {
         components,
         ..JsxOptions::default()
     };
-    let output = render_to_jsx_with_options(input, options).expect("render_to_jsx_with_options succeeds");
+    let output =
+        render_to_jsx_with_options(input, options).expect("render_to_jsx_with_options succeeds");
 
     assert!(
         output.contains("<Code><Badge>**test**</Badge></Code>"),

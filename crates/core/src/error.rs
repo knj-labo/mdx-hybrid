@@ -47,7 +47,11 @@ pub enum ParseWarning {
 impl std::fmt::Display for ParseWarning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseWarning::UnclosedCodeFence { line, marker, context } => {
+            ParseWarning::UnclosedCodeFence {
+                line,
+                marker,
+                context,
+            } => {
                 write!(
                     f,
                     "Unclosed code fence ({}): line {}, near '{}'",

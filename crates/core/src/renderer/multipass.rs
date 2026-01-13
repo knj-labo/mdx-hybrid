@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use crate::{error::ParseDiagnostics, Span};
+use crate::{Span, error::ParseDiagnostics};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -39,7 +39,10 @@ impl<'a> ScanIter<'a> {
         Self::new_with_diagnostics(input, Rc::new(RefCell::new(ParseDiagnostics::new())))
     }
 
-    pub fn new_with_diagnostics(input: &'a str, diagnostics: Rc<RefCell<ParseDiagnostics>>) -> Self {
+    pub fn new_with_diagnostics(
+        input: &'a str,
+        diagnostics: Rc<RefCell<ParseDiagnostics>>,
+    ) -> Self {
         Self {
             input,
             cursor: 0,
@@ -123,11 +126,13 @@ impl<'a> Iterator for ScanIter<'a> {
                     let context_end = (self.cursor + 40).min(self.input.len());
                     let context = &self.input[self.cursor..context_end];
 
-                    self.diagnostics.borrow_mut().add_warning(ParseWarning::UnclosedCodeFence {
-                        line: line_num,
-                        marker: marker as char,
-                        context: context.to_string(),
-                    });
+                    self.diagnostics
+                        .borrow_mut()
+                        .add_warning(ParseWarning::UnclosedCodeFence {
+                            line: line_num,
+                            marker: marker as char,
+                            context: context.to_string(),
+                        });
                 }
                 self.extend_markdown(self.cursor, self.input.len());
                 self.cursor = self.input.len();
@@ -699,7 +704,11 @@ mod tests {
         assert_eq!(diag.warnings.len(), 1);
 
         match &diag.warnings[0] {
-            crate::error::ParseWarning::UnclosedCodeFence { line, marker, context } => {
+            crate::error::ParseWarning::UnclosedCodeFence {
+                line,
+                marker,
+                context,
+            } => {
                 // Line numbers are 1-indexed for user-friendly error messages
                 assert_eq!(line, &1);
                 assert_eq!(marker, &'`');

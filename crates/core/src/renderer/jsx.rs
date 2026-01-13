@@ -436,7 +436,12 @@ fn collect_raw_children_until_close<'a>(
 
     while let Some(event) = stream.next() {
         match event {
-            ScanEvent::JsxOpen { name, attrs, is_self_closing, .. } => {
+            ScanEvent::JsxOpen {
+                name,
+                attrs,
+                is_self_closing,
+                ..
+            } => {
                 if name == target_name {
                     depth += 1;
                 }
@@ -466,8 +471,7 @@ fn collect_raw_children_until_close<'a>(
                 output.push_str(name);
                 output.push('>');
             }
-            ScanEvent::Markdown { text, .. }
-            | ScanEvent::Code { text, .. } => {
+            ScanEvent::Markdown { text, .. } | ScanEvent::Code { text, .. } => {
                 // Append raw text without processing
                 output.push_str(text);
             }
