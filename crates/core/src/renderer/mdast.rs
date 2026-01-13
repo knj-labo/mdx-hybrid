@@ -542,8 +542,10 @@ fn render_node(node: &Node, ctx: &mut Context) {
         }
 
         // Code block node - render as <pre><code>
+        // astro-code class for Starlight CSS compatibility
+        // tabindex="0" for keyboard accessibility when horizontally scrolling
         Node::Code(code) => {
-            ctx.push_raw("<pre>");
+            ctx.push_raw(r#"<pre class="astro-code" tabindex="0">"#);
 
             // Language class for syntax highlighting
             if let Some(lang) = &code.lang {

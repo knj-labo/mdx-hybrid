@@ -371,7 +371,8 @@ mod tests {
             result.code
         );
         assert!(
-            result.code.contains("<pre><code") && result.code.contains("import Y from './y'"),
+            result.code.contains(r#"<pre class="astro-code""#)
+                && result.code.contains("import Y from './y'"),
             "fenced import should stay in rendered JSX: {}",
             result.code
         );
@@ -474,7 +475,8 @@ mod tests {
             result.code
         );
         assert!(
-            result.code.contains("<pre><code") && result.code.contains("export const no = true"),
+            result.code.contains(r#"<pre class="astro-code""#)
+                && result.code.contains("export const no = true"),
             "fenced export should stay in rendered JSX: {}",
             result.code
         );
