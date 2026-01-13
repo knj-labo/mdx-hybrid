@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "globby": "16.0.0",
-    "markflow-napi": "npm:markflow@file:../../crates/napi"
+    "markflow-napi": "file:../../crates/napi"
   },
   "devDependencies": {
     "tsdown": "0.15.0",

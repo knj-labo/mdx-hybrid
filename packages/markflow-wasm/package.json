@@ -1,0 +1,33 @@
+{
+  "name": "markflow-wasm",
+  "version": "0.0.1",
+  "description": "High-performance streaming Markdown to HTML parser built with Rust for Astro (WASM bindings)",
+  "type": "module",
+  "main": "./pkg/markflow_wasm.js",
+  "types": "./pkg/markflow_wasm.d.ts",
+  "exports": {
+    ".": {
+      "import": "./pkg/markflow_wasm.js",
+      "types": "./pkg/markflow_wasm.d.ts"
+    }
+  },
+  "files": [
+    "pkg"
+  ],
+  "keywords": [
+    "markdown",
+    "parser",
+    "rust",
+    "wasm",
+    "webassembly",
+    "streaming",
+    "performance",
+    "html"
+  ],
+  "author": "jp-knj",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/knj-labo/markflow"
+  }
+}

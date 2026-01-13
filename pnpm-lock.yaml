@@ -55,8 +55,8 @@ importers:
         specifier: 16.0.0
         version: 16.0.0
       markflow-napi:
-        specifier: npm:markflow@file:../../crates/napi
-        version: link:crates/napi
+        specifier: file:../../crates/napi
+        version: link:../../crates/napi
     devDependencies:
       tsdown:
         specifier: 0.15.0
@@ -74,11 +74,23 @@ importers:
         specifier: workspace:*
         version: link:../vite-plugin-markflow
 
+  packages/markflow:
+    dependencies:
+      markflow-napi:
+        specifier: workspace:*
+        version: link:../../crates/napi
+    optionalDependencies:
+      markflow-wasm:
+        specifier: workspace:*
+        version: link:../markflow-wasm
+
+  packages/markflow-wasm: {}
+
   packages/vite-plugin-markflow:
     dependencies:
       markflow-napi:
-        specifier: npm:markflow@file:../../crates/napi
-        version: link:crates/napi
+        specifier: file:../../crates/napi
+        version: link:../../crates/napi
       parse5:
         specifier: ^7.1.2
         version: 7.3.0

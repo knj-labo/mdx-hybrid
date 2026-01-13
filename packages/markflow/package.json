@@ -1,0 +1,42 @@
+{
+  "name": "markflow",
+  "version": "0.0.1",
+  "description": "High-performance streaming Markdown to HTML parser built with Rust for Astro",
+  "type": "module",
+  "exports": {
+    ".": {
+      "node": "./src/node.js",
+      "browser": "./src/browser.js",
+      "edge-light": "./src/browser.js",
+      "workerd": "./src/browser.js",
+      "default": "./src/browser.js"
+    }
+  },
+  "main": "./src/node.js",
+  "types": "./src/index.d.ts",
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "markdown",
+    "parser",
+    "rust",
+    "streaming",
+    "performance",
+    "html",
+    "astro",
+    "mdx"
+  ],
+  "author": "jp-knj",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/knj-labo/markflow"
+  },
+  "dependencies": {
+    "markflow-napi": "workspace:*"
+  },
+  "optionalDependencies": {
+    "markflow-wasm": "workspace:*"
+  }
+}
