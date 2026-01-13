@@ -181,6 +181,14 @@ impl<'a> Context<'a> {
         self.stack.last().unwrap_or(&Scope::Root)
     }
 
+    /// Returns true if currently inside a list scope.
+    ///
+    /// This is used to determine whether JSX components should be embedded
+    /// as custom elements (preserving list structure) or output as separate blocks.
+    pub fn is_in_list(&self) -> bool {
+        self.stack.iter().any(|s| matches!(s, Scope::List))
+    }
+
     /// Enters a new scope by pushing it onto the stack.
     pub fn enter(&mut self, scope: Scope) {
         self.stack.push(scope);
@@ -243,15 +251,29 @@ impl<'a> Context<'a> {
             match block {
                 RenderBlock::Html { content } => result.push_str(&content),
                 RenderBlock::Component {
-                    name, slot_html, ..
+                    name,
+                    props,
+                    slot_html,
                 } => {
                     // Nested components are rendered as custom elements (fallback)
                     use std::fmt::Write;
-                    let _ = write!(
-                        result,
-                        r#"<starlight-{} data-component>{}</starlight-{}>"#,
-                        name, slot_html, name
-                    );
+                    write!(result, "<starlight-{}", name).ok();
+                    result.push_str(" data-component=\"true\"");
+
+                    // Output props as attributes
+                    for (key, value) in props {
+                        write!(result, " {}=\"", key).ok();
+                        // Escape attribute values
+                        let escaped = value
+                            .replace('&', "&amp;")
+                            .replace('"', "&quot;")
+                            .replace('<', "&lt;")
+                            .replace('>', "&gt;");
+                        result.push_str(&escaped);
+                        result.push('"');
+                    }
+
+                    write!(result, ">{}</starlight-{}>", slot_html, name).ok();
                 }
             }
         }
@@ -320,8 +342,11 @@ fn preprocess_directives(input: &str) -> String {
         if let Some(opening) = parse_opening_directive(line) {
             directive_stack.push(opening.name.clone());
 
-            // Convert to JSX tag
-            write!(output, "<mf-directive-start name=\"{}\"", opening.name).ok();
+            // Preserve leading whitespace for list context
+            let leading_ws: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+
+            // Convert to JSX tag with preserved indentation
+            write!(output, "{}<mf-directive-start name=\"{}\"", leading_ws, opening.name).ok();
 
             if let Some(title) = &opening.bracket_title {
                 // Escape quotes in title
@@ -345,7 +370,9 @@ fn preprocess_directives(input: &str) -> String {
         // Check for directive closer
         if is_directive_closer(line) && !directive_stack.is_empty() {
             directive_stack.pop();
-            writeln!(output, "<mf-directive-end />").ok();
+            // Preserve leading whitespace for list context
+            let leading_ws: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+            writeln!(output, "{}<mf-directive-end />", leading_ws).ok();
             continue;
         }
 
@@ -742,9 +769,6 @@ fn render_jsx(
 
     // Opening marker: <mf-directive-start name="..." title="..." />
     if tag_name == "mf-directive-start" {
-        // Flush any pending HTML before starting directive capture
-        ctx.flush_html();
-
         let mut meta = DirectiveMeta {
             name: "note".to_string(),
             title: None,
@@ -771,14 +795,39 @@ fn render_jsx(
             }
         }
 
+        // Inside a list: output opening custom element tag directly
+        if ctx.is_in_list() {
+            use std::fmt::Write;
+            write!(ctx.current_html, "<starlight-{}", meta.name).ok();
+            ctx.current_html.push_str(" data-component=\"true\"");
+            if let Some(title) = &meta.title {
+                ctx.current_html.push_str(" title=\"");
+                ctx.push_attr_value(title);
+                ctx.current_html.push('"');
+            }
+            ctx.current_html.push('>');
+            // Push to stack for closing tag
+            ctx.directive_stack.push(meta);
+            return;
+        }
+
+        // Outside list: use block capture approach
+        ctx.flush_html();
         ctx.directive_stack.push(meta);
-        return; // Don't output anything to HTML
+        return;
     }
 
     // Closing marker: <mf-directive-end />
     if tag_name == "mf-directive-end" {
         if let Some(meta) = ctx.directive_stack.pop() {
-            // Extract slot HTML from current buffer
+            // Inside a list: just close the custom element tag
+            if ctx.is_in_list() {
+                use std::fmt::Write;
+                write!(ctx.current_html, "</starlight-{}>", meta.name).ok();
+                return;
+            }
+
+            // Outside list: extract slot and emit Component block
             let slot_html = std::mem::take(&mut ctx.current_html);
 
             // Build props from directive metadata
@@ -791,7 +840,7 @@ fn render_jsx(
             // Emit Component block
             ctx.push_component(&meta.name, props, slot_html);
         }
-        return; // Don't output anything to HTML
+        return;
     }
 
     // 3. Extract props from JSX attributes
@@ -822,7 +871,28 @@ fn render_jsx(
     // Headings found in children are automatically bubbled up to ctx for TOC.
     let slot_html = ctx.render_children_to_string(children);
 
-    // 5. Push as component block (unified with directive rendering)
+    // 5. Check if inside a list - if so, embed as custom element to preserve list structure
+    if ctx.is_in_list() {
+        // Render as custom element string instead of separate block
+        // This prevents the list from being fragmented by flush_html()
+        use std::fmt::Write;
+        write!(ctx.current_html, "<starlight-{}", tag_name).ok();
+        ctx.current_html.push_str(" data-component=\"true\"");
+
+        // Serialize props as attributes
+        for (key, value) in &props {
+            write!(ctx.current_html, " {}=\"", key).ok();
+            ctx.push_attr_value(value);
+            ctx.current_html.push('"');
+        }
+
+        ctx.current_html.push('>');
+        ctx.current_html.push_str(&slot_html);
+        write!(ctx.current_html, "</starlight-{}>", tag_name).ok();
+        return;
+    }
+
+    // 6. Push as component block (unified with directive rendering)
     ctx.push_component(tag_name, props, slot_html);
 }
 

@@ -7,28 +7,56 @@ use std::path::Path;
 
 const ASTRO_DEFAULT_RUNTIME: &str = "astro/runtime/server/index.js";
 
-fn split_leading_imports(input: &str) -> (Vec<String>, String) {
+/// Extracts import/export statements from anywhere in the document.
+/// MDX allows imports to be placed anywhere for readability, so we need
+/// to hoist them all to the top of the generated module.
+///
+/// This function is careful to NOT extract imports from inside code fences,
+/// which contain example code snippets.
+fn extract_all_imports(input: &str) -> (Vec<String>, String) {
     let mut hoisted = Vec::new();
-    let mut lines = Vec::new();
-    let mut collecting = true;
+    let mut body_lines = Vec::new();
+    let mut in_code_fence = false;
 
     for line in input.lines() {
-        if collecting {
-            let trimmed = line.trim_start();
-            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("/*") {
-                lines.push(line);
-                continue;
+        let trimmed = line.trim_start();
+
+        // Track code fence state (``` or ~~~)
+        // Opening fence: starts with ``` or ~~~ followed by optional info string
+        // Closing fence: starts with ``` or ~~~ followed by ONLY whitespace
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            let fence_marker = if trimmed.starts_with("```") { "```" } else { "~~~" };
+            let after_marker = &trimmed[fence_marker.len()..];
+
+            if in_code_fence {
+                // Inside a fence - only close if there's no info string (just whitespace)
+                if after_marker.trim().is_empty() {
+                    in_code_fence = false;
+                }
+                // Otherwise it's content inside the fence
+            } else {
+                // Outside a fence - this opens a new fence
+                in_code_fence = true;
             }
-            if trimmed.starts_with("import ") || trimmed.starts_with("export ") {
-                hoisted.push(line.to_string());
-                continue;
-            }
-            collecting = false;
+            body_lines.push(line);
+            continue;
         }
-        lines.push(line);
+
+        // Only extract imports when NOT inside a code fence
+        if !in_code_fence {
+            // Check if this line is an import or export statement
+            if trimmed.starts_with("import ") || trimmed.starts_with("export ") {
+                // Skip re-exporting default since we handle that separately
+                if !trimmed.contains("export default") {
+                    hoisted.push(line.to_string());
+                    continue;
+                }
+            }
+        }
+        body_lines.push(line);
     }
 
-    let body = lines.join("\n");
+    let body = body_lines.join("\n");
     (hoisted, body)
 }
 
@@ -69,6 +97,9 @@ impl MarkflowCompiler {
     /// Internally this delegates to `compile_ir` for parsing/rewriting, then
     /// formats the legacy Astro module code. A future adapter hook can replace
     /// the codegen step without changing the JS-facing signature.
+    ///
+    /// When parsing fails, this returns a fallback error page instead of an error,
+    /// allowing the build to continue. The error is logged to stderr.
     #[napi(js_name = "compile")]
     pub fn compile_mdx(
         &self,
@@ -77,7 +108,7 @@ impl MarkflowCompiler {
         options: Option<FileOptions>,
     ) -> napi::Result<CompileResult> {
         // Parse to IR first (framework-agnostic data).
-        let ir = compile_ir(
+        let ir_result = compile_ir(
             source.clone(),
             filepath.clone(),
             options.clone(),
@@ -85,9 +116,69 @@ impl MarkflowCompiler {
                 jsx_import_source: Some(self.config.jsx_import_source.clone()),
                 ..CompilerConfig::default()
             }),
-        )?;
+        );
 
-        compile_document_from_ir(ir)
+        match ir_result {
+            Ok(ir) => compile_document_from_ir(ir),
+            Err(err) => {
+                // Log error but return fallback page
+                eprintln!("[markflow] Parse error in {}: {}", filepath, err);
+                Ok(generate_error_fallback(&filepath, &err.to_string()))
+            }
+        }
+    }
+}
+
+/// Generates a fallback CompileResult that displays the parse error.
+/// This allows the build to continue even when parsing fails.
+fn generate_error_fallback(filepath: &str, error_message: &str) -> CompileResult {
+    let escaped_error = error_message
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "");
+
+    let escaped_filepath = filepath
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+
+    let code = format!(
+        r##"import {{ Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs }} from "astro/jsx-runtime";
+
+export const frontmatter = {{}};
+export function getHeadings() {{
+  return [];
+}}
+
+export default function MarkflowError() {{
+  return _jsxs("div", {{
+    style: {{ border: "2px solid #dc2626", padding: "1.5rem", margin: "1rem", backgroundColor: "#fef2f2", borderRadius: "0.5rem" }},
+    children: [
+      _jsx("h3", {{
+        style: {{ color: "#dc2626", marginTop: 0, marginBottom: "0.5rem" }},
+        children: "Markflow Parse Error"
+      }}),
+      _jsx("p", {{
+        style: {{ color: "#991b1b", fontSize: "0.875rem", marginBottom: "0.5rem" }},
+        children: "{escaped_filepath}"
+      }}),
+      _jsx("pre", {{
+        style: {{ whiteSpace: "pre-wrap", backgroundColor: "#fee2e2", padding: "1rem", borderRadius: "0.25rem", overflow: "auto", fontSize: "0.875rem", color: "#7f1d1d" }},
+        children: "{escaped_error}"
+      }})
+    ]
+  }});
+}}
+"##
+    );
+
+    CompileResult {
+        code,
+        map: None,
+        frontmatter_json: "{}".to_string(),
+        headings: vec![],
+        imports: vec![],
+        diagnostics: Diagnostics { warnings: vec![] },
     }
 }
 
@@ -163,9 +254,9 @@ pub fn compile_ir(
     let frontmatter = frontmatter_extraction.value;
     let raw_body = source[frontmatter_extraction.body_start..].to_string();
 
-    // Extract leading imports/exports before mdast processing
-    // mdast doesn't handle ESM imports yet, so we extract them manually
-    let (leading_imports, body_without_imports) = split_leading_imports(&raw_body);
+    // Extract import/export statements from anywhere in the document
+    // MDX allows imports to be placed near where they're used for readability
+    let (hoisted_imports, body_without_imports) = extract_all_imports(&raw_body);
 
     // Use mdast pipeline to generate blocks
     let mdast_options = MdastOptions {
@@ -183,7 +274,7 @@ pub fn compile_ir(
     let jsx_body = blocks_to_jsx_string(&blocks_result.blocks);
 
     // Merge leading imports with any imports found in the JSX body
-    let hoisted = leading_imports;
+    let hoisted = hoisted_imports;
     let jsx = jsx_body;
 
     // mdast doesn't produce diagnostics yet - return empty warnings

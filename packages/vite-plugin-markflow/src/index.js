@@ -357,7 +357,9 @@ const unwrapVirtual = (value) =>
           );
           return createFallbackModule(filename);
         }
-        throw new Error(`[markflow] Compile failed for ${filename}: ${message}`);
+        // Generate error fallback page instead of failing the build
+        console.error(`[markflow] Parse/transform error in ${filename}: ${message}`);
+        return createErrorFallbackModule(filename, message);
       }
     },
   };
@@ -513,6 +515,54 @@ function createFallbackModule(filename) {
       filename,
     )};\nexport * from ${JSON.stringify(filename)};`,
   };
+}
+
+function createErrorFallbackModule(filename, errorMessage) {
+  const escapedError = errorMessage
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "");
+  const escapedFilepath = filename.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+  // Error fallback module matching Astro content collection structure
+  const code = `
+import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "astro/jsx-runtime";
+import { createComponent } from "astro/runtime/server/index.js";
+
+export const file = "${escapedFilepath}";
+export const url = undefined;
+export const frontmatter = {};
+export const headings = [];
+export function getHeadings() {
+  return headings;
+}
+
+function _MarkflowError(props) {
+  return _jsxs("div", {
+    style: { border: "2px solid #dc2626", padding: "1.5rem", margin: "1rem", backgroundColor: "#fef2f2", borderRadius: "0.5rem" },
+    children: [
+      _jsx("h3", {
+        style: { color: "#dc2626", marginTop: 0, marginBottom: "0.5rem" },
+        children: "Markflow Parse Error"
+      }),
+      _jsx("p", {
+        style: { color: "#991b1b", fontSize: "0.875rem", marginBottom: "0.5rem" },
+        children: "${escapedFilepath}"
+      }),
+      _jsx("pre", {
+        style: { whiteSpace: "pre-wrap", backgroundColor: "#fee2e2", padding: "1rem", borderRadius: "0.25rem", overflow: "auto", fontSize: "0.875rem", color: "#7f1d1d" },
+        children: "${escapedError}"
+      })
+    ]
+  });
+}
+
+export const Content = createComponent(_MarkflowError);
+export default Content;
+`;
+
+  return { code };
 }
 
 function resolveStarlightConfig(config) {
