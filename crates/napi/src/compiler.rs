@@ -1,41 +1,11 @@
 //! The stateful compiler and its configuration.
 
 use crate::types::*;
-use markflow_core::{MarkflowError, render_to_jsx, render_to_jsx_with_options_full};
+use markflow_core::{MarkflowError, MdastOptions, RenderBlock, to_blocks};
 use napi_derive::napi;
 use std::path::Path;
 
 const ASTRO_DEFAULT_RUNTIME: &str = "astro/runtime/server/index.js";
-
-fn convert_diagnostics(diag: markflow_core::error::ParseDiagnostics) -> Diagnostics {
-    Diagnostics {
-        warnings: diag
-            .warnings
-            .iter()
-            .map(|w| {
-                let (warning_type, line, message) = match w {
-                    markflow_core::error::ParseWarning::UnclosedCodeFence {
-                        line,
-                        marker,
-                        context,
-                    } => (
-                        "unclosed_code_fence",
-                        *line as u32,
-                        format!("Unclosed {} fence near '{}'", marker, context),
-                    ),
-                    markflow_core::error::ParseWarning::SuspiciousMarkup { line, message } => {
-                        ("suspicious_markup", *line as u32, message.clone())
-                    }
-                };
-                ParseWarningEntry {
-                    warning_type: warning_type.to_string(),
-                    line,
-                    message,
-                }
-            })
-            .collect(),
-    }
-}
 
 fn split_leading_imports(input: &str) -> (Vec<String>, String) {
     let mut hoisted = Vec::new();
@@ -132,6 +102,55 @@ pub fn create_compiler(config: Option<CompilerConfig>) -> MarkflowCompiler {
     MarkflowCompiler::new(config)
 }
 
+/// Converts mdast RenderBlocks to a JSX string format.
+///
+/// Html blocks are output directly. Component blocks are rendered as
+/// JSX component syntax: <Name {...props}>{slotHtml}</Name>
+fn blocks_to_jsx_string(blocks: &[RenderBlock]) -> String {
+    let mut result = String::new();
+    for block in blocks {
+        match block {
+            RenderBlock::Html { content } => {
+                result.push_str(content);
+            }
+            RenderBlock::Component {
+                name,
+                props,
+                slot_html,
+            } => {
+                result.push('<');
+                result.push_str(name);
+
+                // Render props as {...{key: "value", ...}}
+                if !props.is_empty() {
+                    result.push_str(" {...{");
+                    let mut first = true;
+                    for (key, value) in props {
+                        if !first {
+                            result.push_str(", ");
+                        }
+                        first = false;
+                        // Escape the key and value for JavaScript
+                        result.push('"');
+                        result.push_str(&key.replace('"', "\\\""));
+                        result.push_str("\": \"");
+                        result.push_str(&value.replace('"', "\\\"").replace('\n', "\\n"));
+                        result.push('"');
+                    }
+                    result.push_str("}}");
+                }
+
+                result.push('>');
+                result.push_str(slot_html);
+                result.push_str("</");
+                result.push_str(name);
+                result.push('>');
+            }
+        }
+    }
+    result
+}
+
 /// Compiles Markdown/MDX and returns a neutral IR.
 #[napi(js_name = "compileIr")]
 pub fn compile_ir(
@@ -143,27 +162,39 @@ pub fn compile_ir(
     let internal = InternalCompilerConfig::new(config);
     let options = options.unwrap_or_default();
     let effective_path = options.file.clone().unwrap_or_else(|| filepath.clone());
-    let file_type = options
-        .file_type
-        .map(super::FileType::from)
-        .unwrap_or_else(|| super::FileType::from_path(Path::new(&effective_path)));
 
     let frontmatter_extraction = markflow_core::extract_frontmatter(&source)
         .map_err(|err| super::convert_error(MarkflowError::MarkdownAdapter(err.to_string())))?;
     let frontmatter = frontmatter_extraction.value;
     let raw_body = source[frontmatter_extraction.body_start..].to_string();
 
-    let render_result = if let Some(options) = internal.jsx_render_options.clone() {
-        render_to_jsx_with_options_full(&raw_body, options.into())
-    } else {
-        render_to_jsx_with_options_full(&raw_body, Default::default())
-    }
-    .map_err(|err| super::convert_error(with_path(err, &effective_path)))?;
-    let (hoisted, jsx) = split_leading_imports(&render_result.jsx);
-    let diagnostics = convert_diagnostics(render_result.diagnostics);
+    // Use mdast pipeline to generate blocks
+    let mdast_options = MdastOptions {
+        inject_starlight_css: false,
+        enable_directives: true,
+    };
+    let blocks_result = to_blocks(&raw_body, &mdast_options)
+        .map_err(|err| super::convert_error(with_path(MarkflowError::MarkdownAdapter(err), &effective_path)))?;
 
-    let headings =
-        super::collect_headings(&raw_body, file_type, &effective_path).unwrap_or_default();
+    // Convert blocks to JSX module string
+    let jsx_body = blocks_to_jsx_string(&blocks_result.blocks);
+    let (hoisted, jsx) = split_leading_imports(&jsx_body);
+
+    // mdast doesn't produce diagnostics yet - return empty warnings
+    let diagnostics = Diagnostics {
+        warnings: vec![],
+    };
+
+    // Use headings from mdast blocks_result
+    let headings: Vec<_> = blocks_result
+        .headings
+        .into_iter()
+        .map(|h| super::HeadingEntry {
+            depth: h.depth,
+            slug: h.slug,
+            text: h.text,
+        })
+        .collect();
     let layout_import: Option<String> = frontmatter
         .get("layout")
         .and_then(|value| value.as_str())

@@ -10,4 +10,5 @@ pub use jsx::{
     RenderContext, RenderOutcome, render_to_jsx, render_to_jsx_with_options,
     render_to_jsx_with_options_full,
 };
+pub use mdast::{BlocksResult, HeadingEntry, Options as MdastOptions, RenderBlock, to_blocks};
 pub use streaming_rewriter::{RewriteOptions, StreamingRewriter};
