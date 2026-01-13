@@ -61,7 +61,8 @@ pub fn apply_component_transformers(node: &mut Node) {
         if let Some(name) = &elem.name {
             match name.as_str() {
                 "Tabs" => transform_tabs(node),
-                // Future: "Steps", "FileTree", etc.
+                "Steps" => transform_steps(node),
+                "FileTree" => transform_file_tree(node),
                 _ => {}
             }
         }
@@ -240,6 +241,157 @@ fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// Transforms a `<Steps>` element into Starlight-compatible structure.
+///
+/// Input:
+/// ```jsx
+/// <Steps>
+///   <Step>First step content</Step>
+///   <Step>Second step content</Step>
+/// </Steps>
+/// ```
+///
+/// Output (as HTML nodes):
+/// ```html
+/// <ol class="steps">
+///   <li class="steps__item">First step content</li>
+///   <li class="steps__item">Second step content</li>
+/// </ol>
+/// ```
+fn transform_steps(node: &mut Node) {
+    let Node::MdxJsxFlowElement(steps_elem) = node else {
+        return;
+    };
+
+    // Extract <Step> children
+    let mut step_items: Vec<Vec<Node>> = Vec::new();
+    for child in &steps_elem.children {
+        if let Node::MdxJsxFlowElement(child_elem) = child {
+            if child_elem.name.as_deref() == Some("Step") {
+                step_items.push(child_elem.children.clone());
+            }
+        }
+    }
+
+    if step_items.is_empty() {
+        return;
+    }
+
+    // Build new children: <ol class="steps"> with <li class="steps__item"> items
+    let mut new_children: Vec<Node> = Vec::new();
+
+    // Opening <ol class="steps">
+    new_children.push(Node::Html(markdown::mdast::Html {
+        value: "<ol class=\"steps\">".to_string(),
+        position: None,
+    }));
+
+    // Add each step item
+    for item_children in step_items {
+        // Opening <li class="steps__item">
+        new_children.push(Node::Html(markdown::mdast::Html {
+            value: "<li class=\"steps__item\">".to_string(),
+            position: None,
+        }));
+
+        // Add the step's children (content)
+        new_children.extend(item_children);
+
+        // Closing </li>
+        new_children.push(Node::Html(markdown::mdast::Html {
+            value: "</li>".to_string(),
+            position: None,
+        }));
+    }
+
+    // Closing </ol>
+    new_children.push(Node::Html(markdown::mdast::Html {
+        value: "</ol>".to_string(),
+        position: None,
+    }));
+
+    // Replace the Steps element - convert to a fragment-like structure
+    // We use a generic container div that won't affect styling
+    steps_elem.name = None; // Fragment (no wrapper element)
+    steps_elem.attributes.clear();
+    steps_elem.children = new_children;
+}
+
+/// Transforms a `<FileTree>` element into Starlight-compatible structure.
+///
+/// Input:
+/// ```jsx
+/// <FileTree>
+///   <File>src</File>
+///   <File>README.md</File>
+/// </FileTree>
+/// ```
+///
+/// Output (as HTML nodes):
+/// ```html
+/// <ul class="filetree">
+///   <li class="filetree__item">src</li>
+///   <li class="filetree__item">README.md</li>
+/// </ul>
+/// ```
+fn transform_file_tree(node: &mut Node) {
+    let Node::MdxJsxFlowElement(filetree_elem) = node else {
+        return;
+    };
+
+    // Extract <File> children
+    let mut file_items: Vec<Vec<Node>> = Vec::new();
+    for child in &filetree_elem.children {
+        if let Node::MdxJsxFlowElement(child_elem) = child {
+            if child_elem.name.as_deref() == Some("File") {
+                file_items.push(child_elem.children.clone());
+            }
+        }
+    }
+
+    if file_items.is_empty() {
+        return;
+    }
+
+    // Build new children: <ul class="filetree"> with <li class="filetree__item"> items
+    let mut new_children: Vec<Node> = Vec::new();
+
+    // Opening <ul class="filetree">
+    new_children.push(Node::Html(markdown::mdast::Html {
+        value: "<ul class=\"filetree\">".to_string(),
+        position: None,
+    }));
+
+    // Add each file item
+    for item_children in file_items {
+        // Opening <li class="filetree__item">
+        new_children.push(Node::Html(markdown::mdast::Html {
+            value: "<li class=\"filetree__item\">".to_string(),
+            position: None,
+        }));
+
+        // Add the file's children (content)
+        new_children.extend(item_children);
+
+        // Closing </li>
+        new_children.push(Node::Html(markdown::mdast::Html {
+            value: "</li>".to_string(),
+            position: None,
+        }));
+    }
+
+    // Closing </ul>
+    new_children.push(Node::Html(markdown::mdast::Html {
+        value: "</ul>".to_string(),
+        position: None,
+    }));
+
+    // Replace the FileTree element - convert to a fragment-like structure
+    filetree_elem.name = None; // Fragment (no wrapper element)
+    filetree_elem.attributes.clear();
+    filetree_elem.children = new_children;
 }
 
 #[cfg(test)]
