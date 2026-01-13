@@ -38,6 +38,8 @@ pub struct JsxRenderOptions {
     pub rewrite: Option<RewriteConfig>,
     /// Component import mappings to hoist into the output.
     pub component_imports: Option<Vec<JsxComponentImport>>,
+    /// Component names whose children should NOT be markdown-processed (e.g., Code, Prism).
+    pub code_sample_components: Option<Vec<String>>,
 }
 
 /// Parse result with HTML output and processing statistics
@@ -272,6 +274,11 @@ impl From<JsxRenderOptions> for JsxOptions {
         if let Some(imports) = options.component_imports {
             for entry in imports {
                 components.register_import(entry.name, entry.import);
+            }
+        }
+        if let Some(code_sample_comps) = options.code_sample_components {
+            for name in code_sample_comps {
+                components.register_code_sample_component(name);
             }
         }
         JsxOptions {

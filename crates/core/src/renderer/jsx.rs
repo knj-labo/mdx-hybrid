@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 use crate::error::ParseDiagnostics;
 use crate::event::{CodeBlockKind, Event, HeadingLevel, Tag, TagEnd};
-use crate::renderer::multipass::{ScanEvent, scan_iter};
+use crate::renderer::multipass::ScanEvent;
 use crate::transform::code_fence::collect_root_imports;
 use crate::{DirectiveAdapter, HoistAdapter, MarkflowError, RewriteOptions};
 use std::cell::RefCell;
@@ -372,11 +372,6 @@ impl<'a> JsxStreamRenderer<'a> {
         match event {
             ScanEvent::Markdown { text, .. } => self.render_markdown(text, output),
             ScanEvent::Code { text, .. } => self.render_markdown(text, output),
-            ScanEvent::InlineCode { text, .. } => {
-                // Render inline code as-is without markdown processing
-                output.push_str(text);
-                Ok(())
-            }
             ScanEvent::JsxOpen {
                 name,
                 attrs,
@@ -384,18 +379,36 @@ impl<'a> JsxStreamRenderer<'a> {
                 ..
             } => {
                 let components = self.ctx.components;
+
+                // Check if component is registered as code sample component
+                let is_code_sample = components.is_code_sample_component(name);
+
+                // Let plugins handle first
                 if components.render_stream(&event, stream, self, output)? {
                     return Ok(());
                 }
+
                 let rendered_attrs = render_attrs(attrs, is_self_closing);
                 output.push('<');
                 output.push_str(name);
                 output.push_str(&rendered_attrs);
+
                 if is_self_closing {
                     output.push_str(" />");
                 } else {
                     output.push('>');
-                    self.depth = self.depth.saturating_add(1);
+
+                    // If code sample component, collect children as raw text
+                    if is_code_sample {
+                        let raw_children = collect_raw_children_until_close(name, stream);
+                        output.push_str(&raw_children);
+                        // Write closing tag since we consumed it from the stream
+                        output.push_str("</");
+                        output.push_str(name);
+                        output.push('>');
+                    } else {
+                        self.depth = self.depth.saturating_add(1);
+                    }
                 }
                 Ok(())
             }
@@ -410,6 +423,58 @@ impl<'a> JsxStreamRenderer<'a> {
             }
         }
     }
+}
+
+/// Collects raw children text until the matching close tag without markdown processing.
+/// Handles nested components with the same name by tracking depth.
+fn collect_raw_children_until_close<'a>(
+    target_name: &str,
+    stream: &mut dyn Iterator<Item = ScanEvent<'a>>,
+) -> String {
+    let mut output = String::new();
+    let mut depth = 0usize;
+
+    while let Some(event) = stream.next() {
+        match event {
+            ScanEvent::JsxOpen { name, attrs, is_self_closing, .. } => {
+                if name == target_name {
+                    depth += 1;
+                }
+                // Reconstruct JSX syntax
+                output.push('<');
+                output.push_str(name);
+                if !attrs.is_empty() {
+                    output.push(' ');
+                    output.push_str(attrs);
+                }
+                if is_self_closing {
+                    output.push_str(" />");
+                } else {
+                    output.push('>');
+                }
+            }
+            ScanEvent::JsxClose { name, .. } => {
+                if name == target_name {
+                    if depth == 0 {
+                        // Found matching close tag
+                        break;
+                    }
+                    depth -= 1;
+                }
+                // Reconstruct closing tag
+                output.push_str("</");
+                output.push_str(name);
+                output.push('>');
+            }
+            ScanEvent::Markdown { text, .. }
+            | ScanEvent::Code { text, .. } => {
+                // Append raw text without processing
+                output.push_str(text);
+            }
+        }
+    }
+
+    output
 }
 
 fn dedent_one_level(input: &str) -> String {

@@ -296,3 +296,59 @@ fn test_mdx_esm_import_preserved() {
         "imports should be hoisted into the imports list"
     );
 }
+
+#[test]
+fn jsx_code_sample_components_preserve_raw_children() {
+    // Test that Code/Prism components don't process their children as markdown
+    let input = "<Code>**raw**</Code>";
+    let mut components = ComponentRegistry::new();
+    components.register_code_sample_component("Code");
+    let options = JsxOptions {
+        components,
+        ..JsxOptions::default()
+    };
+    let output = render_to_jsx_with_options(input, options).expect("render_to_jsx_with_options succeeds");
+
+    assert!(
+        output.contains("<Code>**raw**</Code>"),
+        "Code component should preserve raw markdown without processing. output: {output}"
+    );
+    assert!(
+        !output.contains("<strong>"),
+        "markdown should not be processed inside Code component. output: {output}"
+    );
+}
+
+#[test]
+fn jsx_code_sample_components_handle_nested_components() {
+    // Test that nested components are preserved as JSX
+    let input = "<Code><Badge>**test**</Badge></Code>";
+    let mut components = ComponentRegistry::new();
+    components.register_code_sample_component("Code");
+    let options = JsxOptions {
+        components,
+        ..JsxOptions::default()
+    };
+    let output = render_to_jsx_with_options(input, options).expect("render_to_jsx_with_options succeeds");
+
+    assert!(
+        output.contains("<Code><Badge>**test**</Badge></Code>"),
+        "nested components should be preserved as JSX. output: {output}"
+    );
+    assert!(
+        !output.contains("<strong>"),
+        "markdown should not be processed inside Code component. output: {output}"
+    );
+}
+
+#[test]
+fn jsx_regular_components_still_process_markdown() {
+    // Test that non-code-sample components still process markdown normally
+    let input = "<Note>**bold**</Note>";
+    let output = render_to_jsx(input).expect("render_to_jsx succeeds");
+
+    assert!(
+        output.contains("<strong>bold</strong>"),
+        "regular components should still process markdown. output: {output}"
+    );
+}

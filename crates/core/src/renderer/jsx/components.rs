@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::renderer::multipass::ScanEvent;
 
@@ -58,6 +58,7 @@ pub trait JsxComponentPlugin {
 pub struct ComponentRegistry {
     plugins: Vec<Box<dyn JsxComponentPlugin>>,
     import_map: HashMap<String, String>,
+    code_sample_components: HashSet<String>,
 }
 
 impl ComponentRegistry {
@@ -74,6 +75,17 @@ impl ComponentRegistry {
     /// Registers a component import mapping (tag name -> import statement).
     pub fn register_import(&mut self, name: impl Into<String>, import: impl Into<String>) {
         self.import_map.insert(name.into(), import.into());
+    }
+
+    /// Register a component whose children should NOT be markdown-processed.
+    /// (e.g., Code, Prism - their children are literal code)
+    pub fn register_code_sample_component(&mut self, name: impl Into<String>) {
+        self.code_sample_components.insert(name.into());
+    }
+
+    /// Check if a component's children should skip markdown processing.
+    pub fn is_code_sample_component(&self, name: &str) -> bool {
+        self.code_sample_components.contains(name)
     }
 
     pub(crate) fn render_stream<'a>(

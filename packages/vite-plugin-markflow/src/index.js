@@ -146,7 +146,17 @@ export function markflowPlugin(userOptions = {}) {
   const fallbackFiles = new Set();
 
   const providedBinding = userOptions.binding ?? null;
-  const compilerOptions = userOptions.compiler ?? null;
+
+  // Build compiler options with default code_sample_components
+  const compilerOptions = {
+    ...(userOptions.compiler ?? {}),
+    jsx: {
+      ...(userOptions.compiler?.jsx ?? {}),
+      code_sample_components:
+        userOptions.compiler?.jsx?.code_sample_components ?? ["Code", "Prism"],
+    },
+  };
+
   const include = userOptions.include ?? shouldCompile;
   const starlightComponents = userOptions.starlightComponents ?? false;
   const expressiveCode = resolveExpressiveCodeConfig(

@@ -14,10 +14,6 @@ pub enum ScanEvent<'a> {
         text: &'a str,
         span: Span,
     },
-    InlineCode {
-        text: &'a str,
-        span: Span,
-    },
     JsxOpen {
         name: &'a str,
         attrs: &'a str,
@@ -170,17 +166,9 @@ impl<'a> Iterator for ScanIter<'a> {
 
             if bytes.get(self.cursor) == Some(&b'`') {
                 if let Some(end) = find_inline_code_end(bytes, self.cursor) {
-                    // Flush any pending markdown before emitting InlineCode
-                    if let Some(event) = self.flush_markdown() {
-                        return Some(event);
-                    }
-                    let span = Span::new(self.cursor, end);
-                    let event = ScanEvent::InlineCode {
-                        text: &self.input[self.cursor..end],
-                        span,
-                    };
+                    // Keep inline code as part of markdown flow to preserve paragraph structure
+                    self.extend_markdown(self.cursor, end);
                     self.cursor = end;
-                    return Some(event);
                 } else {
                     // Unclosed backtick - treat as markdown
                     self.extend_markdown(self.cursor, self.cursor + 1);
@@ -459,18 +447,11 @@ mod tests {
         let input = "Click `button` now";
         let events = scan(input);
 
-        // InlineCode events are now emitted separately
-        assert_eq!(events.len(), 3);
+        // Inline code is kept as part of markdown flow
+        assert_eq!(events.len(), 1);
         assert!(matches!(
-            events.as_slice(),
-            [
-                ScanEvent::Markdown { text: "Click ", .. },
-                ScanEvent::InlineCode {
-                    text: "`button`",
-                    ..
-                },
-                ScanEvent::Markdown { text: " now", .. }
-            ]
+            events[0],
+            ScanEvent::Markdown { text, .. } if text == input
         ));
     }
 
@@ -673,16 +654,11 @@ mod tests {
         let input = "Click `button` now";
         let events = scan(input);
 
+        // Inline code is kept as part of markdown flow
+        assert_eq!(events.len(), 1);
         assert!(matches!(
-            events.as_slice(),
-            [
-                ScanEvent::Markdown { text: "Click ", .. },
-                ScanEvent::InlineCode {
-                    text: "`button`",
-                    ..
-                },
-                ScanEvent::Markdown { text: " now", .. }
-            ]
+            events[0],
+            ScanEvent::Markdown { text, .. } if text == input
         ));
     }
 
@@ -691,19 +667,11 @@ mod tests {
         let input = "Use `<Code>` component";
         let events = scan(input);
 
+        // Inline code with JSX-like content is kept as markdown (not parsed as JSX)
+        assert_eq!(events.len(), 1);
         assert!(matches!(
-            events.as_slice(),
-            [
-                ScanEvent::Markdown { text: "Use ", .. },
-                ScanEvent::InlineCode {
-                    text: "`<Code>`",
-                    ..
-                },
-                ScanEvent::Markdown {
-                    text: " component",
-                    ..
-                }
-            ]
+            events[0],
+            ScanEvent::Markdown { text, .. } if text == input
         ));
     }
 
