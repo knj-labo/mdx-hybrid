@@ -1,10 +1,6 @@
 use js_sys::Function;
 use markflow_core::code_fence::collect_root_imports;
-use markflow_core::{
-    ComponentRegistry, JsxOptions, MarkdownStream, RewriteOptions, StreamingRewriter,
-    get_event_iterator, render_to_jsx, render_to_jsx_with_options,
-};
-use serde::Deserialize;
+use markflow_core::{MarkdownStream, RewriteOptions, StreamingRewriter, get_event_iterator};
 use std::io::{self, Write};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
@@ -48,89 +44,6 @@ pub fn render_html(
         .into_inner()
         .map_err(|err| JsError::new(&err.to_string()))?;
     String::from_utf8(output).map_err(to_js_error)
-}
-
-/// Renders markdown/MDX to JSX while preserving raw JSX nodes.
-#[wasm_bindgen(js_name = render_jsx)]
-pub fn render_jsx(
-    input: &str,
-    enable_directives: Option<bool>,
-    enable_hoist: Option<bool>,
-    enable_smartypants: Option<bool>,
-    enable_components: Option<bool>,
-) -> Result<String, JsError> {
-    let enable_directives = enable_directives.unwrap_or(true);
-    let enable_hoist = enable_hoist.unwrap_or(true);
-    let enable_smartypants = enable_smartypants.unwrap_or(true);
-    let enable_components = enable_components.unwrap_or(true);
-
-    if enable_directives && enable_hoist {
-        // Preserve original behavior (imports + JSX preserved).
-        return render_to_jsx(input).map_err(to_js_error);
-    }
-
-    let options = RewriteOptions {
-        enable_directives,
-        enable_hoist,
-        enable_smartypants,
-        enable_components,
-        ..RewriteOptions::default()
-    };
-
-    let parse_result = markflow_core::parse_with_options(input, options).map_err(to_js_error)?;
-    Ok(parse_result.html)
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct JsxComponentImport {
-    name: String,
-    import: String,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct JsxRenderOptions {
-    enforce_img_loading_lazy: Option<bool>,
-    enable_directives: Option<bool>,
-    enable_hoist: Option<bool>,
-    enable_smartypants: Option<bool>,
-    enable_components: Option<bool>,
-    component_imports: Option<Vec<JsxComponentImport>>,
-}
-
-fn build_jsx_options(options: JsxRenderOptions) -> JsxOptions {
-    let rewrite_options = RewriteOptions {
-        enforce_img_loading_lazy: options.enforce_img_loading_lazy.unwrap_or(true),
-        enable_directives: options.enable_directives.unwrap_or(true),
-        enable_hoist: options.enable_hoist.unwrap_or(true),
-        enable_smartypants: options.enable_smartypants.unwrap_or(true),
-        enable_components: options.enable_components.unwrap_or(true),
-        ..RewriteOptions::default()
-    };
-    let mut components = ComponentRegistry::new();
-    if let Some(imports) = options.component_imports {
-        for entry in imports {
-            components.register_import(entry.name, entry.import);
-        }
-    }
-    JsxOptions {
-        rewrite_options,
-        components,
-    }
-}
-
-/// Renders markdown/MDX to JSX with component import mappings.
-#[wasm_bindgen(js_name = render_jsx_with_options)]
-pub fn render_jsx_with_options_wasm(input: &str, opts: JsValue) -> Result<String, JsError> {
-    let options: JsxRenderOptions = if opts.is_undefined() || opts.is_null() {
-        JsxRenderOptions::default()
-    } else {
-        serde_wasm_bindgen::from_value(opts)
-            .map_err(|e| JsError::new(&format!("Invalid options: {}", e)))?
-    };
-    let jsx_options = build_jsx_options(options);
-    render_to_jsx_with_options(input, jsx_options).map_err(to_js_error)
 }
 
 /// Streams rendered HTML chunks into the provided JavaScript callback.
@@ -299,14 +212,6 @@ mod tests {
             "import should not appear in rendered HTML"
         );
         assert!(html.contains("<h1 id=\"hi\">Hi</h1>"));
-    }
-
-    #[test]
-    fn render_jsx_preserves_raw_jsx() {
-        let input = "import X from './x'\n\n<Component />\n";
-        let jsx = render_jsx(input, None, None, None, None).expect("render_jsx success");
-        assert!(jsx.starts_with("import X from './x'"));
-        assert!(jsx.contains("<Component />"));
     }
 
     #[test]
