@@ -950,14 +950,17 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
         ..markdown::ParseOptions::default()
     };
 
-    let tree = markdown::to_mdast(&preprocessed, &parse_options)
+    let mut tree = markdown::to_mdast(&preprocessed, &parse_options)
         .map_err(|e| format!("Markdown parse error: {}", e))?;
 
-    // 2. Traverse the AST and render to blocks
+    // 2. Apply AST-level component transformers (Tabs, Steps, etc.)
+    crate::transform::apply_component_transformers(&mut tree);
+
+    // 3. Traverse the AST and render to blocks
     let mut ctx = Context::new(options);
     render_node(&tree, &mut ctx);
 
-    // 3. Finish and return blocks
+    // 4. Finish and return blocks
     Ok(ctx.finish())
 }
 
