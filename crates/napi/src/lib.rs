@@ -381,8 +381,8 @@ mod tests {
     fn compile_document_hoists_multiline_leading_exports() {
         let config = InternalCompilerConfig::new(None);
         // Test multi-line arrow function export at document start
-        let source = "export const foo = () => {\n  return 1\n}\n\nexport { foo };\n\n# Title"
-            .to_string();
+        let source =
+            "export const foo = () => {\n  return 1\n}\n\nexport { foo };\n\n# Title".to_string();
 
         let result =
             crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())

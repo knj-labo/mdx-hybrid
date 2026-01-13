@@ -22,7 +22,12 @@ fn count_braces(line: &str) -> i32 {
             continue;
         }
 
-        if c == '/' && chars.peek() == Some(&'/') && !in_single_quote && !in_double_quote && !in_template {
+        if c == '/'
+            && chars.peek() == Some(&'/')
+            && !in_single_quote
+            && !in_double_quote
+            && !in_template
+        {
             in_line_comment = true;
             chars.next();
             continue;
@@ -32,7 +37,9 @@ fn count_braces(line: &str) -> i32 {
             '\'' if !in_double_quote && !in_template => in_single_quote = !in_single_quote,
             '"' if !in_single_quote && !in_template => in_double_quote = !in_double_quote,
             '`' if !in_single_quote && !in_double_quote => in_template = !in_template,
-            '\\' if in_single_quote || in_double_quote || in_template => { chars.next(); }
+            '\\' if in_single_quote || in_double_quote || in_template => {
+                chars.next();
+            }
             '{' if !in_single_quote && !in_double_quote && !in_template => count += 1,
             '}' if !in_single_quote && !in_double_quote && !in_template => count -= 1,
             _ => {}
