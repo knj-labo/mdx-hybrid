@@ -32,8 +32,8 @@ pub use error::MarkflowError;
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
 pub use parser::{ParseConfig, ParseConstructs};
 pub use renderer::{
-    BlocksResult, HeadingEntry, MdastOptions, RenderBlock, RewriteOptions, StreamingRewriter,
-    to_blocks,
+    BlocksResult, HeadingEntry, MdastOptions, PropValue, RenderBlock, RewriteOptions,
+    StreamingRewriter, to_blocks,
 };
 pub use slug::{Slugger, slugify};
 pub use span::Span;

@@ -272,48 +272,6 @@ const unwrapVirtual = (value) =>
       try {
         const source = await readFile(filename, "utf8");
 
-        // Detect problematic patterns that cause runtime errors
-        // Template literals inside inline code blocks (backtick followed by ${...})
-        if (/`[^`\n]*\$\{[^`\n]*\}[^`\n]*`/.test(source)) {
-          fallbackFiles.add(filename);
-          this.warn(
-            `[markflow] Falling back to Astro MDX for ${filename}: Contains template literals in inline code blocks`,
-          );
-          return createFallbackModule(filename);
-        }
-
-        // Explicit fallback for known problematic files
-        const problematicFiles = [
-          "astro-syntax.mdx",
-          "directives-reference.mdx",
-        ];
-        if (problematicFiles.some((f) => filename.endsWith(f))) {
-          fallbackFiles.add(filename);
-          this.warn(
-            `[markflow] Falling back to Astro MDX for ${filename}: Known problematic file`,
-          );
-          return createFallbackModule(filename);
-        }
-
-        // Fallback for files with custom component imports (not yet supported)
-        if (/import\s+\w+\s+from\s+['"]~\/components\//.test(source)) {
-          fallbackFiles.add(filename);
-          this.warn(
-            `[markflow] Falling back to Astro MDX for ${filename}: Contains custom component imports`,
-          );
-          return createFallbackModule(filename);
-        }
-
-        // Fallback for files with fenced code blocks containing imports/exports
-        // These cause runtime errors as code is executed instead of displayed
-        if (/```[\s\S]*?(import|export|const\s+\w+\s*=\s*await)[\s\S]*?```/.test(source)) {
-          fallbackFiles.add(filename);
-          this.warn(
-            `[markflow] Falling back to Astro MDX for ${filename}: Contains code blocks with imports/exports`,
-          );
-          return createFallbackModule(filename);
-        }
-
         const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
 
         let result;
