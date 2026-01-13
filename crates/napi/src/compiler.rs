@@ -51,12 +51,15 @@ fn count_braces(line: &str) -> i32 {
 
 /// Splits leading import/export statements from the document body.
 /// Supports multi-line statements via brace tracking.
-fn split_leading_imports(input: &str) -> (Vec<String>, String) {
+/// Returns (hoisted_statements, body, has_user_default_export).
+fn split_leading_imports(input: &str) -> (Vec<String>, String, bool) {
     let mut hoisted = Vec::new();
     let mut lines = Vec::new();
     let mut collecting = true;
     let mut pending_statement: Option<String> = None;
     let mut brace_depth = 0i32;
+    let mut has_user_default_export = false;
+    let mut pending_is_default = false;
 
     for line in input.lines() {
         // Continue collecting multi-line statement
@@ -66,7 +69,11 @@ fn split_leading_imports(input: &str) -> (Vec<String>, String) {
             brace_depth += count_braces(line);
 
             if brace_depth <= 0 {
+                if pending_is_default {
+                    has_user_default_export = true;
+                }
                 hoisted.push(pending_statement.take().unwrap());
+                pending_is_default = false;
             }
             continue;
         }
@@ -78,13 +85,18 @@ fn split_leading_imports(input: &str) -> (Vec<String>, String) {
                 continue;
             }
             if trimmed.starts_with("import ") || trimmed.starts_with("export ") {
+                let is_default = trimmed.starts_with("export default");
                 brace_depth = count_braces(line);
 
                 if brace_depth > 0 {
                     // Multi-line statement - start collecting
                     pending_statement = Some(line.to_string());
+                    pending_is_default = is_default;
                 } else {
                     // Single-line statement
+                    if is_default {
+                        has_user_default_export = true;
+                    }
                     hoisted.push(line.to_string());
                 }
                 continue;
@@ -104,7 +116,7 @@ fn split_leading_imports(input: &str) -> (Vec<String>, String) {
         lines.join("\n")
     };
 
-    (hoisted, body)
+    (hoisted, body, has_user_default_export)
 }
 
 #[derive(Debug, Clone)]
@@ -240,7 +252,8 @@ pub fn compile_ir(
 
     // Extract leading imports/exports before mdast processing
     // mdast doesn't handle ESM imports yet, so we extract them manually
-    let (leading_imports, body_without_imports) = split_leading_imports(&raw_body);
+    let (leading_imports, body_without_imports, has_user_default_export) =
+        split_leading_imports(&raw_body);
 
     // Use mdast pipeline to generate blocks
     let mdast_options = MdastOptions {
@@ -297,6 +310,7 @@ pub fn compile_ir(
         layout_import,
         runtime_import: internal.jsx_import_source,
         diagnostics,
+        has_user_default_export,
     })
 }
 
