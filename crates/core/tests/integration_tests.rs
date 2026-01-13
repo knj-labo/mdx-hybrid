@@ -124,6 +124,26 @@ fn jsx_inline_code_preserves_paragraph() {
 }
 
 #[test]
+fn jsx_allows_html_wrapper_with_component_children() {
+    let input = "<p><Since v=\"4.10.3\" /></p>";
+    let output = render_to_jsx(input).expect("render_to_jsx succeeds");
+    assert!(
+        output.contains("<p><Since v=\"4.10.3\" /></p>"),
+        "HTML wrappers around components should be preserved. output: {output}"
+    );
+}
+
+#[test]
+fn jsx_allows_multiline_html_wrapper_with_component_children() {
+    let input = "<p>\n<Since v=\"4.10.3\" />\n</p>";
+    let output = render_to_jsx(input).expect("render_to_jsx succeeds");
+    assert!(
+        output.contains("<p><Since v=\"4.10.3\" /></p>"),
+        "Multiline HTML wrappers around components should be preserved. output: {output}"
+    );
+}
+
+#[test]
 fn test_parse() {
     let input = "# Hello, World!";
     let output = parse(input).unwrap().html;

@@ -108,6 +108,11 @@ impl ComponentRegistry {
         }
 
         match *name {
+            "MfP" if !*is_self_closing => {
+                let mut child = renderer.child();
+                render_mf_p_stream(attrs, stream, &mut child, output)?;
+                Ok(true)
+            }
             "Steps" if !*is_self_closing => {
                 let mut child = renderer.child();
                 render_steps_stream(name, attrs, stream, &mut child, output)?;
@@ -121,6 +126,44 @@ impl ComponentRegistry {
             _ => Ok(false),
         }
     }
+}
+
+fn render_mf_p_stream<'a>(
+    attrs: &str,
+    stream: &mut dyn Iterator<Item = ScanEvent<'a>>,
+    renderer: &mut JsxStreamRenderer<'a>,
+    output: &mut String,
+) -> Result<(), MarkflowError> {
+    let mut inner = String::new();
+    while let Some(event) = stream.next() {
+        match event {
+            ScanEvent::JsxClose { name: "MfP", .. } => break,
+            _ => renderer.render_event(event, stream, &mut inner)?,
+        }
+    }
+
+    let stripped = strip_outer_paragraph(&inner);
+    output.push_str("<p");
+    output.push_str(&render_attrs(attrs, false));
+    output.push('>');
+    output.push_str(&stripped);
+    output.push_str("</p>");
+    Ok(())
+}
+
+fn strip_outer_paragraph(value: &str) -> String {
+    let trimmed = value.trim();
+    if let Some(rest) = trimmed.strip_prefix("<p>") {
+        if let Some(close_idx) = rest.find("</p>") {
+            let before = &rest[..close_idx];
+            let after = &rest[close_idx + "</p>".len()..];
+            let mut out = String::new();
+            out.push_str(before);
+            out.push_str(after.trim_start());
+            return out;
+        }
+    }
+    trimmed.to_string()
 }
 
 fn render_steps_stream<'a>(
