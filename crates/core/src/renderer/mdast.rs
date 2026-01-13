@@ -148,13 +148,15 @@ impl<'a> Context<'a> {
 
     /// Writes HTML-escaped text to the current HTML buffer (internal use).
     ///
-    /// Escapes `<`, `>`, and `&` characters for safe text node rendering.
+    /// Escapes `<`, `>`, `&`, and `` ` `` characters for safe text node rendering.
+    /// Backticks are escaped to prevent template literal injection in JSX contexts.
     fn push_escaped(&mut self, s: &str) {
         for c in s.chars() {
             match c {
                 '<' => self.current_html.push_str("&lt;"),
                 '>' => self.current_html.push_str("&gt;"),
                 '&' => self.current_html.push_str("&amp;"),
+                '`' => self.current_html.push_str("&#96;"),
                 _ => self.current_html.push(c),
             }
         }
