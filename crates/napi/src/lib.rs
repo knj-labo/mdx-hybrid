@@ -512,4 +512,36 @@ mod tests {
             result.code
         );
     }
+
+    #[test]
+    fn compile_document_hoists_mid_document_imports() {
+        let config = InternalCompilerConfig::new(None);
+        // Import appears AFTER some markdown content - should still be hoisted
+        let source = "# Title\n\nSome content here.\n\nimport { Badge } from './Badge.astro';\n\nMore content with Badge."
+            .to_string();
+
+        let result =
+            crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
+        let content_pos = result.code.find("function MarkflowContent").unwrap();
+        let hoist_pos = result
+            .code
+            .find("import { Badge } from './Badge.astro';")
+            .unwrap();
+
+        assert!(
+            hoist_pos < content_pos,
+            "mid-document import should be hoisted before JSX content: {}",
+            result.code
+        );
+        assert_eq!(
+            result
+                .code
+                .matches("import { Badge } from './Badge.astro';")
+                .count(),
+            1,
+            "hoisted import should not appear in JSX body: {}",
+            result.code
+        );
+    }
 }
