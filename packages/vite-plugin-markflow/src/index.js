@@ -146,7 +146,17 @@ export function markflowPlugin(userOptions = {}) {
   const fallbackFiles = new Set();
 
   const providedBinding = userOptions.binding ?? null;
-  const compilerOptions = userOptions.compiler ?? null;
+
+  // Build compiler options with default code_sample_components
+  const compilerOptions = {
+    ...(userOptions.compiler ?? {}),
+    jsx: {
+      ...(userOptions.compiler?.jsx ?? {}),
+      code_sample_components:
+        userOptions.compiler?.jsx?.code_sample_components ?? ["Code", "Prism"],
+    },
+  };
+
   const include = userOptions.include ?? shouldCompile;
   const starlightComponents = userOptions.starlightComponents ?? false;
   const expressiveCode = resolveExpressiveCodeConfig(
@@ -261,14 +271,6 @@ const unwrapVirtual = (value) =>
         stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ""));
       try {
         const source = await readFile(filename, "utf8");
-        const bypassReason = shouldBypassSource(source);
-        if (bypassReason) {
-          fallbackFiles.add(filename);
-          this.warn(
-            `[markflow] Falling back to Astro MDX for ${filename}: ${bypassReason}`,
-          );
-          return createFallbackModule(filename);
-        }
         const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
 
         let result;
@@ -293,6 +295,16 @@ const unwrapVirtual = (value) =>
           // Use original compiler for multipass pipeline
           result = compiler.compile(source, filename, fileOptions);
         }
+
+        // Log warnings from Rust diagnostics
+        if (result.diagnostics?.warnings?.length > 0) {
+          for (const warning of result.diagnostics.warnings) {
+            this.warn(
+              `[markflow] ${filename}:${warning.line}: ${warning.message}`,
+            );
+          }
+        }
+
         if (expressiveCode) {
           const rewritten = rewriteExpressiveCodeBlocks(
             result.code,
@@ -337,13 +349,15 @@ const unwrapVirtual = (value) =>
           },
         };
       } catch (error) {
-        fallbackFiles.add(filename);
-        this.warn(
-          `[markflow] Falling back to Astro MDX for ${filename}: ${
-            error?.message || error
-          }`,
-        );
-        return createFallbackModule(filename);
+        const message = error?.message || String(error);
+        if (message.includes("Vite module runner has been closed")) {
+          fallbackFiles.add(filename);
+          this.warn(
+            `[markflow] Falling back to Astro MDX for ${filename}: ${message}`,
+          );
+          return createFallbackModule(filename);
+        }
+        throw new Error(`[markflow] Compile failed for ${filename}: ${message}`);
       }
     },
   };
@@ -439,16 +453,6 @@ ${jsxContent}
 `;
 }
 
-function shouldBypassSource(source) {
-  if (/`<\s*(Code|Prism)\b/.test(source)) {
-    return "inline component code sample";
-  }
-  if (hasUnclosedFence(source)) {
-    return "unclosed code fence";
-  }
-  return null;
-}
-
 function resolveExpressiveCodeConfig(config) {
   if (!config) return null;
   if (config === true) {
@@ -501,29 +505,6 @@ function decodeHtmlEntities(value) {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
-}
-
-function hasUnclosedFence(source) {
-  const lines = source.split(/\r?\n/);
-  let fenceChar = null;
-  let fenceLength = 0;
-  for (const line of lines) {
-    const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
-    if (!match) continue;
-    const fence = match[1];
-    const char = fence[0];
-    const length = fence.length;
-    if (!fenceChar) {
-      fenceChar = char;
-      fenceLength = length;
-      continue;
-    }
-    if (char === fenceChar && length >= fenceLength) {
-      fenceChar = null;
-      fenceLength = 0;
-    }
-  }
-  return Boolean(fenceChar);
 }
 
 function createFallbackModule(filename) {

@@ -1,5 +1,7 @@
 //! NAPI-exposed data structures.
 
+#![allow(deprecated)]
+
 use napi_derive::napi;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -20,7 +22,10 @@ pub struct RewriteConfig {
     pub enable_components: Option<bool>,
 }
 
-/// JSX component import mapping entry.
+/// DEPRECATED: JSX component imports are no longer used with mdast pipeline.
+/// This type will be removed in a future version.
+#[deprecated(note = "Component imports are handled by mdast pipeline. This type is unused.")]
+#[allow(deprecated)]
 #[napi(object)]
 #[derive(Debug, Clone)]
 pub struct JsxComponentImport {
@@ -30,7 +35,10 @@ pub struct JsxComponentImport {
     pub import: String,
 }
 
-/// Options for JSX rendering (component imports + rewrite options).
+/// DEPRECATED: JSX rendering options are no longer used with mdast pipeline.
+/// This type will be removed in a future version.
+#[deprecated(note = "JSX rendering is handled by mdast pipeline. This type is unused.")]
+#[allow(deprecated)]
 #[napi(object)]
 #[derive(Debug, Clone, Default)]
 pub struct JsxRenderOptions {
@@ -38,6 +46,8 @@ pub struct JsxRenderOptions {
     pub rewrite: Option<RewriteConfig>,
     /// Component import mappings to hoist into the output.
     pub component_imports: Option<Vec<JsxComponentImport>>,
+    /// Component names whose children should NOT be markdown-processed (e.g., Code, Prism).
+    pub code_sample_components: Option<Vec<String>>,
 }
 
 /// Parse result with HTML output and processing statistics
@@ -61,6 +71,7 @@ pub struct FrontmatterResult {
 }
 
 /// Options passed to the compiler constructor.
+#[allow(deprecated)]
 #[napi(object)]
 #[derive(Debug, Clone, Default)]
 pub struct CompilerConfig {
@@ -72,9 +83,9 @@ pub struct CompilerConfig {
     pub syntax_highlighting: Option<bool>,
     /// Overrides the module used for JSX runtime helpers.
     pub jsx_import_source: Option<String>,
-    /// Optional JSX render options (component imports + rewrite options).
-    pub jsx: Option<JsxRenderOptions>,
-    /// Selects the rendering pipeline ("multipass" or "mdast").
+    /// DEPRECATED: Pipeline selection removed. mdast is the only pipeline.
+    /// This field is ignored and will be removed in a future version.
+    #[deprecated(note = "Only mdast pipeline is supported. This field is ignored.")]
     pub pipeline: Option<String>,
 }
 
@@ -122,6 +133,26 @@ pub struct ImportedModule {
     pub kind: String,
 }
 
+/// Parse warning returned from Rust
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct ParseWarningEntry {
+    /// Warning type (e.g., "unclosed_code_fence")
+    pub warning_type: String,
+    /// Line number where warning occurred
+    pub line: u32,
+    /// Human-readable message
+    pub message: String,
+}
+
+/// Diagnostics returned with compilation result
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct Diagnostics {
+    /// Non-fatal warnings
+    pub warnings: Vec<ParseWarningEntry>,
+}
+
 /// Result returned by the streaming compiler.
 #[napi(object)]
 #[derive(Debug, Clone)]
@@ -136,6 +167,8 @@ pub struct CompileResult {
     pub headings: Vec<HeadingEntry>,
     /// Dependencies referenced while compiling (layouts/imports).
     pub imports: Vec<ImportedModule>,
+    /// Parse diagnostics (warnings, not errors)
+    pub diagnostics: Diagnostics,
 }
 
 /// Neutral IR returned when Astro-compat codegen is disabled.
@@ -158,6 +191,8 @@ pub struct CompileIrResult {
     pub layout_import: Option<String>,
     /// JSX runtime import source to be used by JS adapters.
     pub runtime_import: String,
+    /// Parse diagnostics (warnings, not errors)
+    pub diagnostics: Diagnostics,
 }
 
 /// Structured import returned by the compiler IR.
@@ -223,7 +258,7 @@ pub struct ParseBlocksResult {
     pub headings: Vec<HeadingEntry>,
 }
 
-use markflow_core::{ComponentRegistry, JsxOptions, RewriteOptions};
+use markflow_core::RewriteOptions;
 
 impl From<RewriteConfig> for RewriteOptions {
     fn from(config: RewriteConfig) -> Self {
@@ -234,25 +269,6 @@ impl From<RewriteConfig> for RewriteOptions {
             enable_smartypants: config.enable_smartypants.unwrap_or(true),
             enable_components: config.enable_components.unwrap_or(true),
             ..RewriteOptions::default()
-        }
-    }
-}
-
-impl From<JsxRenderOptions> for JsxOptions {
-    fn from(options: JsxRenderOptions) -> Self {
-        let rewrite_options = options
-            .rewrite
-            .map(RewriteOptions::from)
-            .unwrap_or_default();
-        let mut components = ComponentRegistry::new();
-        if let Some(imports) = options.component_imports {
-            for entry in imports {
-                components.register_import(entry.name, entry.import);
-            }
-        }
-        JsxOptions {
-            rewrite_options,
-            components,
         }
     }
 }

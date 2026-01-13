@@ -268,3 +268,6 @@
 | 2026-01-03 00:00 | #241 | mdast_renderer のタグ境界検出は TagScanner に統一する | タグ境界判定の重複実装を避け、ビルドエラーを防ぐため | crates/core/src/renderer/mdast_renderer.rs |
 | 2026-01-04 00:00 | #248 | Tabs 系コンポーネントを Starlight の tablist/tabpanel 構造に揃えて出力する | Tabs が「羅列」に見える問題を解消し、Starlight の CSS/JS 互換を維持するため | crates/core/src/renderer/mdast_renderer.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
 | 2026-01-04 00:00 | #249 | mdast の注入 CSS を Starlight/Docs の公式コンポーネント CSS に置換する | 独自CSSで見た目がズレる問題を避け、Docs 本来のスタイルに合わせるため | crates/core/src/renderer/starlight_components.css, crates/core/src/renderer/mdast_renderer.rs, docs/specs/mf-172-mdast-lolhtml-pipeline.md |
+| 2026-01-13 00:00 | #250 | Single Pipeline Strategy: Consolidate on mdast exclusively | multipass 保守コスト削減とコード複雑性解消のため | docs/*, crates/core/src/renderer/*, crates/napi/src/compiler.rs |
+| 2026-01-13 00:00 | #251 | multipass/jsx ストリーミングパイプラインを削除し mdast に一本化 | Decision #240 で性能問題なしを確認済みのため | crates/core/src/renderer/{multipass.rs,jsx.rs,jsx/,streaming_rewriter.rs} |
+| 2026-01-13 00:00 | #252 | compiler.rs を mdast blocks (`parse_blocks`) 専用に切り替え | multipass fallback を除去し単一パスにするため | crates/napi/src/compiler.rs |

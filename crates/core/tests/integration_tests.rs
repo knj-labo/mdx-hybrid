@@ -1,9 +1,4 @@
-use markflow_core::renderer::multipass::ScanEvent;
-use markflow_core::{
-    ComponentRegistry, JsxComponentPlugin, JsxOptions, JsxStreamRenderer, MarkflowError,
-    RenderOutcome, RewriteOptions, parse, parse_with_options, render_to_jsx,
-    render_to_jsx_with_options,
-};
+use markflow_core::{RewriteOptions, parse, parse_with_options};
 use std::fs;
 use std::path::PathBuf;
 
@@ -15,112 +10,6 @@ fn fixtures_dir() -> PathBuf {
 // This helper was also in the original lib.rs test module.
 fn read_fixture(path: &str) -> String {
     fs::read_to_string(fixtures_dir().join(path)).unwrap()
-}
-
-struct BadgePlugin;
-
-impl JsxComponentPlugin for BadgePlugin {
-    fn matches(&self, name: &str) -> bool {
-        name == "Badge"
-    }
-
-    fn render_stream<'a>(
-        &self,
-        event: &ScanEvent<'a>,
-        stream: &mut dyn Iterator<Item = ScanEvent<'a>>,
-        renderer: &mut JsxStreamRenderer<'a>,
-        output: &mut String,
-    ) -> Result<RenderOutcome, MarkflowError> {
-        let ScanEvent::JsxOpen { name, .. } = event else {
-            return Ok(RenderOutcome::Skipped);
-        };
-        if *name != "Badge" {
-            return Ok(RenderOutcome::Skipped);
-        }
-        output.push_str("<span class=\"badge\">");
-        while let Some(event) = stream.next() {
-            match event {
-                ScanEvent::JsxClose { name: "Badge", .. } => break,
-                _ => renderer.render_event(event, stream, output)?,
-            }
-        }
-        output.push_str("</span>");
-        Ok(RenderOutcome::Handled)
-    }
-}
-
-#[test]
-fn jsx_renderer_preserves_raw_jsx() {
-    let input = "import X from './x'\n\n<MyComponent />\n";
-    let result = render_to_jsx(input).expect("render_to_jsx succeeds");
-    assert!(result.starts_with("import X from './x'"));
-    assert!(result.contains("<MyComponent />"));
-}
-
-#[test]
-fn jsx_registry_allows_imports_and_plugins() {
-    let input = "<Badge>Hi</Badge>";
-    let mut components = ComponentRegistry::new();
-    components.register_import("Badge", "import Badge from './Badge.astro';");
-    components.register_plugin(BadgePlugin);
-    let options = JsxOptions {
-        components,
-        ..JsxOptions::default()
-    };
-    let output =
-        render_to_jsx_with_options(input, options).expect("render_to_jsx_with_options succeeds");
-
-    assert!(
-        output.starts_with("import Badge from './Badge.astro';\n"),
-        "import should be hoisted before the body. output: {output}"
-    );
-    assert!(
-        output.contains("<span class=\"badge\">"),
-        "plugin output should include wrapper start. output: {output}"
-    );
-    assert!(
-        output.contains("<p>Hi</p>"),
-        "plugin output should render children. output: {output}"
-    );
-    assert!(
-        output.contains("</span>"),
-        "plugin output should include wrapper end. output: {output}"
-    );
-    assert!(
-        !output.contains("<Badge>"),
-        "plugin output should replace the original component tag. output: {output}"
-    );
-}
-
-#[test]
-fn jsx_steps_nested_tabs_stays_in_list_item() {
-    let input =
-        "<Steps>\n1. First\n   <Tabs>\n     <Tab title=\"A\">A</Tab>\n   </Tabs>\n</Steps>\n";
-    let output = render_to_jsx(input).expect("render_to_jsx succeeds");
-    let li_start = output.find("<li").expect("li should exist");
-    let li_close = output[li_start..]
-        .find("</li>")
-        .map(|idx| li_start + idx)
-        .expect("li should close");
-    let tabs_pos = output.find("<Tabs>").expect("tabs should exist");
-    assert!(
-        tabs_pos > li_start && tabs_pos < li_close,
-        "Tabs should be nested inside the list item. output: {output}"
-    );
-}
-
-#[test]
-fn jsx_inline_code_preserves_paragraph() {
-    let input = "Click `button` now";
-    let output = render_to_jsx(input).expect("render_to_jsx succeeds");
-    assert!(
-        output.contains("<p>Click <code>button</code> now</p>"),
-        "inline code should stay inside a single paragraph. output: {output}"
-    );
-    assert!(
-        !output.contains("</p><code>button</code><p>"),
-        "inline code should not split paragraphs. output: {output}"
-    );
 }
 
 #[test]
@@ -191,17 +80,6 @@ fn test_reference_link_resolves_definition() {
     assert!(output.contains("<a href=\"https://example.com\""));
     assert!(output.contains("title=\"Example Site\""));
 }
-
-/*
-// This test calls a private function `apply_smartypants`, which is not public from an integration test.
-// This should be a unit test in the `transform/smartypants.rs` module.
-#[test]
-fn test_smartypants_enabled() {
-    let input = "Hello -- \"world\" ...";
-    let out = apply_smartypants(input);
-    assert_eq!(out, "Hello – “world” …");
-}
-*/
 
 #[test]
 fn test_smartypants_disabled() {

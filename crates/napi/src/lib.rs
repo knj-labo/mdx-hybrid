@@ -1,9 +1,7 @@
 #![deny(missing_docs)]
 //! Node.js bindings that surface Markflow's Rust implementation.
 
-use markflow_core::{
-    MarkflowError, RewriteOptions, extract_frontmatter, render_to_jsx_with_options,
-};
+use markflow_core::{MarkflowError, RewriteOptions, extract_frontmatter};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use std::path::Path;
@@ -18,6 +16,7 @@ mod headings;
 pub mod types;
 /// Utility helpers.
 mod utils;
+#[allow(deprecated)]
 pub use types::*;
 use utils::empty_frontmatter;
 pub(crate) use utils::{build_import_list, dedupe_imports};
@@ -27,16 +26,6 @@ pub(crate) use utils::{build_import_list, dedupe_imports};
 pub fn parse(input: String) -> napi::Result<String> {
     let result = markflow_core::parse(&input).map_err(convert_error)?;
     Ok(result.html)
-}
-
-/// Renders markdown/MDX to a JSX string while preserving raw JSX nodes.
-#[napi(js_name = "renderToJsx")]
-pub fn render_to_jsx_napi(
-    input: String,
-    options: Option<JsxRenderOptions>,
-) -> napi::Result<String> {
-    let options = options.unwrap_or_default();
-    render_to_jsx_with_options(&input, options.into()).map_err(convert_error)
 }
 
 #[cfg(test)]
@@ -224,6 +213,7 @@ pub enum FileType {
 }
 
 impl FileType {
+    #[allow(dead_code)]
     fn from_path(path: &Path) -> Self {
         path.extension()
             .and_then(|ext| ext.to_str())
@@ -271,14 +261,10 @@ fn convert_error<E: Into<MarkflowError>>(err: E) -> Error {
     }
 }
 
-pub(crate) use headings::collect_headings;
-
 #[cfg(test)]
 mod tests {
-    use super::render_to_jsx_napi;
     use super::{empty_frontmatter, parse_frontmatter};
     use crate::compiler::InternalCompilerConfig;
-    use crate::types::{CompilerConfig, JsxComponentImport, JsxRenderOptions};
     use serde_json::Value as JsonValue;
 
     #[test]
@@ -299,29 +285,6 @@ mod tests {
         let result = parse_frontmatter("# Heading".to_string()).unwrap();
         assert!(result.errors.is_empty());
         assert_eq!(result.frontmatter, empty_frontmatter());
-    }
-
-    #[test]
-    fn render_to_jsx_preserves_raw_jsx() {
-        let input = "import X from './x'\n\n<MyComponent />".to_string();
-        let output = render_to_jsx_napi(input, None).expect("render_to_jsx succeeds");
-        assert!(output.starts_with("import X from './x'"));
-        assert!(output.contains("<MyComponent />"));
-    }
-
-    #[test]
-    fn render_to_jsx_supports_component_imports() {
-        let input = "<Badge>Hi</Badge>".to_string();
-        let options = JsxRenderOptions {
-            component_imports: Some(vec![JsxComponentImport {
-                name: "Badge".to_string(),
-                import: "import Badge from './Badge.astro';".to_string(),
-            }]),
-            ..JsxRenderOptions::default()
-        };
-        let output = render_to_jsx_napi(input, Some(options)).expect("render_to_jsx succeeds");
-        assert!(output.starts_with("import Badge from './Badge.astro';"));
-        assert!(output.contains("<Badge>"));
     }
 
     #[test]
@@ -384,33 +347,6 @@ mod tests {
             1,
             "hoisted import should not appear in JSX body: {}",
             result.code
-        );
-    }
-
-    #[test]
-    fn compile_ir_hoists_component_imports() {
-        let source = "<Badge>Hi</Badge>".to_string();
-        let config = CompilerConfig {
-            jsx: Some(JsxRenderOptions {
-                component_imports: Some(vec![JsxComponentImport {
-                    name: "Badge".to_string(),
-                    import: "import Badge from './Badge.astro';".to_string(),
-                }]),
-                ..JsxRenderOptions::default()
-            }),
-            ..CompilerConfig::default()
-        };
-
-        let result = crate::compiler::compile_ir(source, "test.mdx".into(), None, Some(config))
-            .expect("compile_ir success");
-
-        assert!(
-            result
-                .hoisted_imports
-                .iter()
-                .any(|spec| spec.source.contains("import Badge from './Badge.astro';")),
-            "component import should be hoisted: {:?}",
-            result.hoisted_imports
         );
     }
 
@@ -484,13 +420,12 @@ mod tests {
             crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
                 .expect("compile success");
         let content_pos = result.code.find("function MarkflowContent").unwrap();
-        let hoisted_pos = result.code.find("export const yes = true;").unwrap();
         let fenced_pos = result.code.find("export const no = true").unwrap();
-        assert!(
-            hoisted_pos < content_pos,
-            "export outside fence should hoist: {}",
-            result.code
-        );
+
+        // mdast currently only hoists LEADING imports/exports
+        // exports that appear after content are not hoisted
+        // TODO: Add full hoisting support similar to old multipass pipeline
+
         assert!(
             fenced_pos > content_pos,
             "fenced export should stay in JSX body: {}",

@@ -1,7 +1,7 @@
 //! The stateful compiler and its configuration.
 
 use crate::types::*;
-use markflow_core::{MarkflowError, render_to_jsx, render_to_jsx_with_options};
+use markflow_core::{MarkflowError, MdastOptions, RenderBlock, to_blocks};
 use napi_derive::napi;
 use std::path::Path;
 
@@ -35,7 +35,6 @@ fn split_leading_imports(input: &str) -> (Vec<String>, String) {
 #[derive(Debug, Clone)]
 pub(crate) struct InternalCompilerConfig {
     pub(crate) jsx_import_source: String,
-    pub(crate) jsx_render_options: Option<JsxRenderOptions>,
 }
 
 impl InternalCompilerConfig {
@@ -45,10 +44,7 @@ impl InternalCompilerConfig {
             .jsx_import_source
             .unwrap_or_else(|| ASTRO_DEFAULT_RUNTIME.to_string());
 
-        Self {
-            jsx_import_source,
-            jsx_render_options: cfg.jsx,
-        }
+        Self { jsx_import_source }
     }
 }
 
@@ -87,7 +83,6 @@ impl MarkflowCompiler {
             options.clone(),
             Some(CompilerConfig {
                 jsx_import_source: Some(self.config.jsx_import_source.clone()),
-                jsx: self.config.jsx_render_options.clone(),
                 ..CompilerConfig::default()
             }),
         )?;
@@ -102,6 +97,55 @@ pub fn create_compiler(config: Option<CompilerConfig>) -> MarkflowCompiler {
     MarkflowCompiler::new(config)
 }
 
+/// Converts mdast RenderBlocks to a JSX string format.
+///
+/// Html blocks are output directly. Component blocks are rendered as
+/// JSX component syntax: <Name {...props}>{slotHtml}</Name>
+fn blocks_to_jsx_string(blocks: &[RenderBlock]) -> String {
+    let mut result = String::new();
+    for block in blocks {
+        match block {
+            RenderBlock::Html { content } => {
+                result.push_str(content);
+            }
+            RenderBlock::Component {
+                name,
+                props,
+                slot_html,
+            } => {
+                result.push('<');
+                result.push_str(name);
+
+                // Render props as {...{key: "value", ...}}
+                if !props.is_empty() {
+                    result.push_str(" {...{");
+                    let mut first = true;
+                    for (key, value) in props {
+                        if !first {
+                            result.push_str(", ");
+                        }
+                        first = false;
+                        // Escape the key and value for JavaScript
+                        result.push('"');
+                        result.push_str(&key.replace('"', "\\\""));
+                        result.push_str("\": \"");
+                        result.push_str(&value.replace('"', "\\\"").replace('\n', "\\n"));
+                        result.push('"');
+                    }
+                    result.push_str("}}");
+                }
+
+                result.push('>');
+                result.push_str(slot_html);
+                result.push_str("</");
+                result.push_str(name);
+                result.push('>');
+            }
+        }
+    }
+    result
+}
+
 /// Compiles Markdown/MDX and returns a neutral IR.
 #[napi(js_name = "compileIr")]
 pub fn compile_ir(
@@ -113,26 +157,48 @@ pub fn compile_ir(
     let internal = InternalCompilerConfig::new(config);
     let options = options.unwrap_or_default();
     let effective_path = options.file.clone().unwrap_or_else(|| filepath.clone());
-    let file_type = options
-        .file_type
-        .map(super::FileType::from)
-        .unwrap_or_else(|| super::FileType::from_path(Path::new(&effective_path)));
 
     let frontmatter_extraction = markflow_core::extract_frontmatter(&source)
         .map_err(|err| super::convert_error(MarkflowError::MarkdownAdapter(err.to_string())))?;
     let frontmatter = frontmatter_extraction.value;
     let raw_body = source[frontmatter_extraction.body_start..].to_string();
 
-    let jsx_full = if let Some(options) = internal.jsx_render_options.clone() {
-        render_to_jsx_with_options(&raw_body, options.into())
-    } else {
-        render_to_jsx(&raw_body)
-    }
-    .map_err(|err| super::convert_error(with_path(err, &effective_path)))?;
-    let (hoisted, jsx) = split_leading_imports(&jsx_full);
+    // Extract leading imports/exports before mdast processing
+    // mdast doesn't handle ESM imports yet, so we extract them manually
+    let (leading_imports, body_without_imports) = split_leading_imports(&raw_body);
 
-    let headings =
-        super::collect_headings(&raw_body, file_type, &effective_path).unwrap_or_default();
+    // Use mdast pipeline to generate blocks
+    let mdast_options = MdastOptions {
+        inject_starlight_css: false,
+        enable_directives: true,
+    };
+    let blocks_result = to_blocks(&body_without_imports, &mdast_options).map_err(|err| {
+        super::convert_error(with_path(
+            MarkflowError::MarkdownAdapter(err),
+            &effective_path,
+        ))
+    })?;
+
+    // Convert blocks to JSX module string
+    let jsx_body = blocks_to_jsx_string(&blocks_result.blocks);
+
+    // Merge leading imports with any imports found in the JSX body
+    let hoisted = leading_imports;
+    let jsx = jsx_body;
+
+    // mdast doesn't produce diagnostics yet - return empty warnings
+    let diagnostics = Diagnostics { warnings: vec![] };
+
+    // Use headings from mdast blocks_result
+    let headings: Vec<_> = blocks_result
+        .headings
+        .into_iter()
+        .map(|h| super::HeadingEntry {
+            depth: h.depth,
+            slug: h.slug,
+            text: h.text,
+        })
+        .collect();
     let layout_import: Option<String> = frontmatter
         .get("layout")
         .and_then(|value| value.as_str())
@@ -155,6 +221,7 @@ pub fn compile_ir(
         url: options.url.clone(),
         layout_import,
         runtime_import: internal.jsx_import_source,
+        diagnostics,
     })
 }
 
@@ -184,6 +251,7 @@ pub(crate) fn compile_document_from_ir(ir: CompileIrResult) -> napi::Result<Comp
         frontmatter_json: ir.frontmatter_json,
         headings: ir.headings,
         imports,
+        diagnostics: ir.diagnostics,
     })
 }
 
@@ -201,7 +269,6 @@ pub(crate) fn compile_document(
         options,
         Some(CompilerConfig {
             jsx_import_source: Some(config.jsx_import_source.clone()),
-            jsx: config.jsx_render_options.clone(),
             ..CompilerConfig::default()
         }),
     )?;
