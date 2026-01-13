@@ -27,7 +27,7 @@ export function hasUnclosedFence(source) {
   let fenceChar = null;
   let fenceLength = 0;
   for (const line of lines) {
-    const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    const match = line.match(/^ {0,12}(`{3,}|~{3,})(.*)$/);
     if (!match) continue;
     const fence = match[1];
     const char = fence[0];
@@ -52,11 +52,5 @@ export function hasUnclosedFence(source) {
  * @returns {string|null} Bypass reason or null if should not bypass
  */
 export function shouldBypassSource(source) {
-  if (/`<\s*(Code|Prism)\b/.test(source)) {
-    return "inline component code sample";
-  }
-  if (hasUnclosedFence(source)) {
-    return "unclosed code fence";
-  }
   return null;
 }

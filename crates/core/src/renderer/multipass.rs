@@ -12,6 +12,10 @@ pub enum ScanEvent<'a> {
         text: &'a str,
         span: Span,
     },
+    InlineCode {
+        text: &'a str,
+        span: Span,
+    },
     JsxOpen {
         name: &'a str,
         attrs: &'a str,
@@ -142,9 +146,19 @@ impl<'a> Iterator for ScanIter<'a> {
 
             if bytes.get(self.cursor) == Some(&b'`') {
                 if let Some(end) = find_inline_code_end(bytes, self.cursor) {
-                    self.extend_markdown(self.cursor, end);
+                    // Flush any pending markdown before emitting InlineCode
+                    if let Some(event) = self.flush_markdown() {
+                        return Some(event);
+                    }
+                    let span = Span::new(self.cursor, end);
+                    let event = ScanEvent::InlineCode {
+                        text: &self.input[self.cursor..end],
+                        span,
+                    };
                     self.cursor = end;
+                    return Some(event);
                 } else {
+                    // Unclosed backtick - treat as markdown
                     self.extend_markdown(self.cursor, self.cursor + 1);
                     self.cursor += 1;
                 }
@@ -421,10 +435,18 @@ mod tests {
         let input = "Click `button` now";
         let events = scan(input);
 
-        assert_eq!(events.len(), 1);
+        // InlineCode events are now emitted separately
+        assert_eq!(events.len(), 3);
         assert!(matches!(
-            events[0],
-            ScanEvent::Markdown { text, .. } if text == input
+            events.as_slice(),
+            [
+                ScanEvent::Markdown { text: "Click ", .. },
+                ScanEvent::InlineCode {
+                    text: "`button`",
+                    ..
+                },
+                ScanEvent::Markdown { text: " now", .. }
+            ]
         ));
     }
 
@@ -619,6 +641,57 @@ mod tests {
                     ..
                 }
             ]
+        ));
+    }
+
+    #[test]
+    fn scan_emits_inline_code_event() {
+        let input = "Click `button` now";
+        let events = scan(input);
+
+        assert!(matches!(
+            events.as_slice(),
+            [
+                ScanEvent::Markdown { text: "Click ", .. },
+                ScanEvent::InlineCode {
+                    text: "`button`",
+                    ..
+                },
+                ScanEvent::Markdown { text: " now", .. }
+            ]
+        ));
+    }
+
+    #[test]
+    fn scan_emits_inline_code_with_jsx_like_content() {
+        let input = "Use `<Code>` component";
+        let events = scan(input);
+
+        assert!(matches!(
+            events.as_slice(),
+            [
+                ScanEvent::Markdown { text: "Use ", .. },
+                ScanEvent::InlineCode {
+                    text: "`<Code>`",
+                    ..
+                },
+                ScanEvent::Markdown {
+                    text: " component",
+                    ..
+                }
+            ]
+        ));
+    }
+
+    #[test]
+    fn scan_treats_unclosed_backtick_as_markdown() {
+        let input = "Click `button now";
+        let events = scan(input);
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ScanEvent::Markdown { text, .. } if text == input
         ));
     }
 }

@@ -34,10 +34,11 @@ pub fn render_to_jsx_with_options(
     let components = options.components;
     let mut seen_imports = HashSet::new();
     let (root_imports, _body_lines) = collect_root_imports(input);
+    let preprocessed = rewrite_html_wrapper_components(input);
     let ctx = RenderContext::new(&rewrite_options, &components);
     let mut renderer = JsxStreamRenderer::new(ctx);
-    let mut body = String::with_capacity(input.len());
-    let mut stream = scan_iter(input);
+    let mut body = String::with_capacity(preprocessed.len());
+    let mut stream = scan_iter(&preprocessed);
     while let Some(event) = stream.next() {
         renderer.render_event(event, &mut stream, &mut body)?;
     }
@@ -58,8 +59,123 @@ pub fn render_to_jsx_with_options(
         }
     }
     output.push_str(&body);
-    Ok(output)
+    Ok(restore_html_wrapper_components(output))
 }
+
+const HTML_WRAPPER_TAG: &str = "MfP";
+
+fn rewrite_html_wrapper_components(input: &str) -> String {
+    if !input.contains("<p") {
+        return input.to_string();
+    }
+
+    let mut output = String::with_capacity(input.len());
+    let mut in_fence = false;
+    let mut fence_marker: Option<char> = None;
+    let mut pending_wrapper: Option<WrapperBlock> = None;
+
+    for line in input.split_inclusive('\n') {
+        let (line_body, line_ending) = if let Some(stripped) = line.strip_suffix('\n') {
+            let stripped = stripped.strip_suffix('\r').unwrap_or(stripped);
+            (stripped, &line[stripped.len()..])
+        } else {
+            (line, "")
+        };
+
+        let trimmed_start = line_body.trim_start();
+        let is_fence = trimmed_start.starts_with("```") || trimmed_start.starts_with("~~~");
+        if is_fence {
+            let marker = trimmed_start.chars().next();
+            if in_fence {
+                if marker == fence_marker {
+                    in_fence = false;
+                    fence_marker = None;
+                }
+            } else {
+                in_fence = true;
+                fence_marker = marker;
+            }
+            output.push_str(line_body);
+            output.push_str(line_ending);
+            continue;
+        }
+
+        if let Some(wrapper) = pending_wrapper.as_mut() {
+            wrapper.lines.push(format!("{line_body}{line_ending}"));
+            if line_body.contains("</p>") {
+                let mut lines = wrapper.lines.clone();
+                if let Some(first) = lines.get_mut(0) {
+                    *first = first.replacen("<p", "<MfP", 1);
+                }
+                for line in &mut lines {
+                    if line.contains("</p>") {
+                        *line = line.replace("</p>", "</MfP>");
+                    }
+                }
+                for line in lines {
+                    output.push_str(&line);
+                }
+                pending_wrapper = None;
+            }
+            continue;
+        }
+
+        if !in_fence {
+            if is_p_open_tag(trimmed_start) {
+                let line_text = format!("{line_body}{line_ending}");
+                if line_body.contains("</p>") {
+                    let replaced = line_body
+                        .replacen("<p", "<MfP", 1)
+                        .replace("</p>", "</MfP>");
+                    output.push_str(&replaced);
+                    output.push_str(line_ending);
+                } else {
+                    pending_wrapper = Some(WrapperBlock {
+                        lines: vec![line_text],
+                    });
+                }
+                continue;
+            }
+        }
+
+        output.push_str(line_body);
+        output.push_str(line_ending);
+    }
+
+    if let Some(wrapper) = pending_wrapper.take() {
+        for line in wrapper.lines {
+            output.push_str(&line);
+        }
+    }
+
+    output
+}
+
+fn restore_html_wrapper_components(output: String) -> String {
+    if !output.contains(HTML_WRAPPER_TAG) {
+        return output;
+    }
+    output.replace("</MfP>", "</p>").replace("<MfP", "<p")
+}
+
+struct WrapperBlock {
+    lines: Vec<String>,
+}
+
+fn is_p_open_tag(trimmed: &str) -> bool {
+    if !trimmed.starts_with("<p") {
+        return false;
+    }
+    if trimmed.starts_with("</p") {
+        return false;
+    }
+    matches!(
+        trimmed.as_bytes().get(2),
+        Some(b'>') | Some(b' ') | Some(b'\t') | Some(b'/') | None
+    )
+}
+
+// Intentionally left empty: previously used to gate wrapper rewrites.
 
 fn render_markdown_events(
     input: &str,
@@ -227,6 +343,11 @@ impl<'a> JsxStreamRenderer<'a> {
         match event {
             ScanEvent::Markdown { text, .. } => self.render_markdown(text, output),
             ScanEvent::Code { text, .. } => self.render_markdown(text, output),
+            ScanEvent::InlineCode { text, .. } => {
+                // Render inline code as-is without markdown processing
+                output.push_str(text);
+                Ok(())
+            }
             ScanEvent::JsxOpen {
                 name,
                 attrs,
