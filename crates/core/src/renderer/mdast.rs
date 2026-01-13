@@ -301,15 +301,37 @@ impl<'a> Context<'a> {
             match block {
                 RenderBlock::Html { content } => result.push_str(&content),
                 RenderBlock::Component {
-                    name, slot_html, ..
+                    name,
+                    props,
+                    slot_html,
                 } => {
-                    // Nested components are rendered as custom elements (fallback)
-                    use std::fmt::Write;
-                    let _ = write!(
-                        result,
-                        r#"<starlight-{} data-component>{}</starlight-{}>"#,
-                        name, slot_html, name
-                    );
+                    // Render nested components as JSX with props preserved
+                    result.push('<');
+                    result.push_str(&name);
+
+                    // Render props as JSX: key={"value"} or key={expression}
+                    for (key, prop_value) in &props {
+                        result.push(' ');
+                        result.push_str(key);
+                        result.push_str("={");
+                        match prop_value {
+                            PropValue::Literal { value } => {
+                                result.push('"');
+                                result.push_str(&value.replace('"', "\\\""));
+                                result.push('"');
+                            }
+                            PropValue::Expression { value } => {
+                                result.push_str(value);
+                            }
+                        }
+                        result.push('}');
+                    }
+
+                    result.push('>');
+                    result.push_str(&slot_html);
+                    result.push_str("</");
+                    result.push_str(&name);
+                    result.push('>');
                 }
             }
         }
