@@ -170,6 +170,9 @@ crates/napi/markflow.*.node
 
 # workspace dependencies
 packages/*/node_modules/
+
+# WASM build artifacts
+packages/markflow-wasm/pkg/
 web/node_modules/
 web/dist/
 web/.astro/

@@ -1,7 +1,7 @@
 {
-  "name": "markflow",
+  "name": "markflow-napi",
   "version": "0.0.1",
-  "description": "High-performance streaming Markdown to HTML parser built with Rust for Astro",
+  "description": "High-performance streaming Markdown to HTML parser built with Rust for Astro (Node.js NAPI bindings)",
   "type": "module",
   "main": "index.js",
   "types": "index.d.ts",
