@@ -65,17 +65,14 @@ importers:
         specifier: 5.7.2
         version: 5.7.2
 
-  packages/markflow:
+  packages/astro-markflow:
     dependencies:
-      markflow-napi:
+      astro:
+        specifier: '>=4.0.0'
+        version: 5.16.6(@types/node@25.0.3)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.7.2)
+      vite-plugin-markflow:
         specifier: workspace:*
-        version: link:../../crates/napi
-    optionalDependencies:
-      markflow-wasm:
-        specifier: workspace:*
-        version: link:../markflow-wasm
-
-  packages/markflow-wasm: {}
+        version: link:../vite-plugin-markflow
 
   packages/vite-plugin-markflow:
     dependencies:
