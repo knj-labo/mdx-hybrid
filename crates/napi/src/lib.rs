@@ -377,7 +377,50 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Pre-existing issue - export hoisting not working correctly
+    fn compile_document_hoists_multiline_exports() {
+        let config = InternalCompilerConfig::new(None);
+        // Test multi-line arrow function export
+        let source = "export const foo = () => {\n  return 1\n}\n\nexport { foo };\n\n# Title"
+            .to_string();
+
+        let result =
+            crate::compiler::compile_document(&config, source, "test.mdx".into(), None, Vec::new())
+                .expect("compile success");
+        let content_pos = result.code.find("function MarkflowContent").unwrap();
+
+        // Multi-line export should be hoisted completely
+        let hoist_pos = result.code.find("export const foo = () => {").unwrap();
+        assert!(
+            hoist_pos < content_pos,
+            "multi-line export should be hoisted before JSX content: {}",
+            result.code
+        );
+
+        // The closing brace should also be hoisted (part of the same statement)
+        assert!(
+            result.code[..content_pos].contains("return 1"),
+            "multi-line export body should be hoisted: {}",
+            result.code
+        );
+
+        // Should not appear in JSX body
+        assert!(
+            !result.code[content_pos..].contains("return 1"),
+            "multi-line export should not appear in JSX body: {}",
+            result.code
+        );
+
+        // Re-export should also work
+        let reexport_pos = result.code.find("export { foo };").unwrap();
+        assert!(
+            reexport_pos < content_pos,
+            "re-export should be hoisted: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    #[ignore] // TODO: export default conflicts with generated `export default MarkflowContent`
     fn compile_document_hoists_exports_variants() {
         let config = InternalCompilerConfig::new(None);
         let source = "\nexport const foo = () => {\n  return 1\n}\n\nexport default function bar()\n{\n  return foo();\n}\n\nexport { foo };\n\n\n# Title"
@@ -438,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Pre-existing issue - export * hoisting not working correctly
+    #[ignore] // TODO: export default conflicts with generated `export default MarkflowContent`
     fn compile_document_hoists_export_edge_cases() {
         let config = InternalCompilerConfig::new(None);
         let source = "\nexport default async () => {\n  return 1\n}\n\nexport * from './mod';\n\nexport const foo = 1 // inline\n\n\n# Title"

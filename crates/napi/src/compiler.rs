@@ -7,16 +7,72 @@ use std::path::Path;
 
 const ASTRO_DEFAULT_RUNTIME: &str = "astro/runtime/server/index.js";
 
+/// Counts unbalanced braces in a line, ignoring braces inside strings and comments.
+/// Returns positive for excess `{`, negative for excess `}`.
+fn count_braces(line: &str) -> i32 {
+    let mut count = 0i32;
+    let mut chars = line.chars().peekable();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_template = false;
+    let mut in_line_comment = false;
+
+    while let Some(c) = chars.next() {
+        // Skip line comments entirely
+        if in_line_comment {
+            continue;
+        }
+
+        // Check for line comment start
+        if c == '/' && chars.peek() == Some(&'/') && !in_single_quote && !in_double_quote && !in_template {
+            in_line_comment = true;
+            chars.next(); // consume second /
+            continue;
+        }
+
+        // Track string state
+        match c {
+            '\'' if !in_double_quote && !in_template => {
+                in_single_quote = !in_single_quote;
+            }
+            '"' if !in_single_quote && !in_template => {
+                in_double_quote = !in_double_quote;
+            }
+            '`' if !in_single_quote && !in_double_quote => {
+                in_template = !in_template;
+            }
+            '\\' if in_single_quote || in_double_quote || in_template => {
+                // Skip escaped character
+                chars.next();
+            }
+            '{' if !in_single_quote && !in_double_quote && !in_template => {
+                count += 1;
+            }
+            '}' if !in_single_quote && !in_double_quote && !in_template => {
+                count -= 1;
+            }
+            _ => {}
+        }
+    }
+
+    count
+}
+
 /// Extracts import/export statements from anywhere in the document.
 /// MDX allows imports to be placed anywhere for readability, so we need
 /// to hoist them all to the top of the generated module.
 ///
 /// This function is careful to NOT extract imports from inside code fences,
 /// which contain example code snippets.
+///
+/// Multi-line exports are tracked via brace counting to ensure complete
+/// statements are hoisted (e.g., `export const fn = () => { ... }`).
 fn extract_all_imports(input: &str) -> (Vec<String>, String) {
     let mut hoisted = Vec::new();
     let mut body_lines = Vec::new();
     let mut in_code_fence = false;
+    let mut pending_statement: Option<String> = None;
+    let mut brace_depth = 0i32;
 
     for line in input.lines() {
         let trimmed = line.trim_start();
@@ -42,18 +98,52 @@ fn extract_all_imports(input: &str) -> (Vec<String>, String) {
             continue;
         }
 
-        // Only extract imports when NOT inside a code fence
-        if !in_code_fence {
-            // Check if this line is an import or export statement
-            if trimmed.starts_with("import ") || trimmed.starts_with("export ") {
-                // Skip re-exporting default since we handle that separately
-                if !trimmed.contains("export default") {
+        // Inside code fence - always add to body
+        if in_code_fence {
+            body_lines.push(line);
+            continue;
+        }
+
+        // Continue collecting multi-line statement
+        if let Some(ref mut stmt) = pending_statement {
+            stmt.push('\n');
+            stmt.push_str(line);
+            brace_depth += count_braces(line);
+
+            if brace_depth <= 0 {
+                // Statement complete
+                hoisted.push(pending_statement.take().unwrap());
+            }
+            continue;
+        }
+
+        // Check for new import/export statement
+        if trimmed.starts_with("import ") || trimmed.starts_with("export ") {
+            // Skip re-exporting default since we handle that separately
+            if !trimmed.contains("export default") {
+                brace_depth = count_braces(line);
+
+                if brace_depth > 0 {
+                    // Multi-line statement - start collecting
+                    pending_statement = Some(line.to_string());
+                } else {
+                    // Single-line statement
                     hoisted.push(line.to_string());
-                    continue;
                 }
+                continue;
             }
         }
+
         body_lines.push(line);
+    }
+
+    // Handle unclosed statement (edge case - treat as body)
+    let unclosed_lines: Vec<&str>;
+    if let Some(ref stmt) = pending_statement {
+        unclosed_lines = stmt.lines().collect();
+        for stmt_line in &unclosed_lines {
+            body_lines.push(stmt_line);
+        }
     }
 
     let body = body_lines.join("\n");
