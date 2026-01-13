@@ -1,123 +1,11 @@
 //! The stateful compiler and its configuration.
 
 use crate::types::*;
-use markflow_core::{MarkflowError, MdastOptions, RenderBlock, to_blocks};
+use markflow_core::{MarkflowError, MdastOptions, RenderBlock, code_fence, to_blocks};
 use napi_derive::napi;
 use std::path::Path;
 
 const ASTRO_DEFAULT_RUNTIME: &str = "astro/runtime/server/index.js";
-
-/// Counts unbalanced braces in a line, ignoring braces inside strings and comments.
-/// Returns positive for excess `{`, negative for excess `}`.
-fn count_braces(line: &str) -> i32 {
-    let mut count = 0i32;
-    let mut chars = line.chars().peekable();
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let mut in_template = false;
-    let mut in_line_comment = false;
-
-    while let Some(c) = chars.next() {
-        if in_line_comment {
-            continue;
-        }
-
-        if c == '/'
-            && chars.peek() == Some(&'/')
-            && !in_single_quote
-            && !in_double_quote
-            && !in_template
-        {
-            in_line_comment = true;
-            chars.next();
-            continue;
-        }
-
-        match c {
-            '\'' if !in_double_quote && !in_template => in_single_quote = !in_single_quote,
-            '"' if !in_single_quote && !in_template => in_double_quote = !in_double_quote,
-            '`' if !in_single_quote && !in_double_quote => in_template = !in_template,
-            '\\' if in_single_quote || in_double_quote || in_template => {
-                chars.next();
-            }
-            '{' if !in_single_quote && !in_double_quote && !in_template => count += 1,
-            '}' if !in_single_quote && !in_double_quote && !in_template => count -= 1,
-            _ => {}
-        }
-    }
-
-    count
-}
-
-/// Splits leading import/export statements from the document body.
-/// Supports multi-line statements via brace tracking.
-/// Returns (hoisted_statements, body, has_user_default_export).
-fn split_leading_imports(input: &str) -> (Vec<String>, String, bool) {
-    let mut hoisted = Vec::new();
-    let mut lines = Vec::new();
-    let mut collecting = true;
-    let mut pending_statement: Option<String> = None;
-    let mut brace_depth = 0i32;
-    let mut has_user_default_export = false;
-    let mut pending_is_default = false;
-
-    for line in input.lines() {
-        // Continue collecting multi-line statement
-        if let Some(ref mut stmt) = pending_statement {
-            stmt.push('\n');
-            stmt.push_str(line);
-            brace_depth += count_braces(line);
-
-            if brace_depth <= 0 {
-                if pending_is_default {
-                    has_user_default_export = true;
-                }
-                hoisted.push(pending_statement.take().unwrap());
-                pending_is_default = false;
-            }
-            continue;
-        }
-
-        if collecting {
-            let trimmed = line.trim_start();
-            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("/*") {
-                lines.push(line);
-                continue;
-            }
-            if trimmed.starts_with("import ") || trimmed.starts_with("export ") {
-                let is_default = trimmed.starts_with("export default");
-                brace_depth = count_braces(line);
-
-                if brace_depth > 0 {
-                    // Multi-line statement - start collecting
-                    pending_statement = Some(line.to_string());
-                    pending_is_default = is_default;
-                } else {
-                    // Single-line statement
-                    if is_default {
-                        has_user_default_export = true;
-                    }
-                    hoisted.push(line.to_string());
-                }
-                continue;
-            }
-            collecting = false;
-        }
-        lines.push(line);
-    }
-
-    // Handle unclosed statement (edge case - treat as body)
-    let body = if let Some(stmt) = pending_statement {
-        // Prepend unclosed statement lines to body
-        let mut body_parts = vec![stmt];
-        body_parts.push(lines.join("\n"));
-        body_parts.join("\n")
-    } else {
-        lines.join("\n")
-    };
-
-    (hoisted, body, has_user_default_export)
-}
 
 #[derive(Debug, Clone)]
 pub(crate) struct InternalCompilerConfig {
@@ -250,10 +138,14 @@ pub fn compile_ir(
     let frontmatter = frontmatter_extraction.value;
     let raw_body = source[frontmatter_extraction.body_start..].to_string();
 
-    // Extract leading imports/exports before mdast processing
-    // mdast doesn't handle ESM imports yet, so we extract them manually
-    let (leading_imports, body_without_imports, has_user_default_export) =
-        split_leading_imports(&raw_body);
+    // Extract all imports/exports from the document (not just leading ones)
+    // Uses code fence tracking to avoid extracting imports inside code blocks
+    let (hoisted_statements, body_lines) = code_fence::collect_root_imports(&raw_body);
+    let body_without_imports = body_lines.join("\n");
+    let has_user_default_export = hoisted_statements
+        .iter()
+        .any(|s| s.trim_start().starts_with("export default"));
+    let leading_imports = hoisted_statements;
 
     // Use mdast pipeline to generate blocks
     let mdast_options = MdastOptions {
