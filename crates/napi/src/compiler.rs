@@ -172,8 +172,12 @@ pub fn compile_ir(
         inject_starlight_css: false,
         enable_directives: true,
     };
-    let blocks_result = to_blocks(&body_without_imports, &mdast_options)
-        .map_err(|err| super::convert_error(with_path(MarkflowError::MarkdownAdapter(err), &effective_path)))?;
+    let blocks_result = to_blocks(&body_without_imports, &mdast_options).map_err(|err| {
+        super::convert_error(with_path(
+            MarkflowError::MarkdownAdapter(err),
+            &effective_path,
+        ))
+    })?;
 
     // Convert blocks to JSX module string
     let jsx_body = blocks_to_jsx_string(&blocks_result.blocks);
@@ -183,9 +187,7 @@ pub fn compile_ir(
     let jsx = jsx_body;
 
     // mdast doesn't produce diagnostics yet - return empty warnings
-    let diagnostics = Diagnostics {
-        warnings: vec![],
-    };
+    let diagnostics = Diagnostics { warnings: vec![] };
 
     // Use headings from mdast blocks_result
     let headings: Vec<_> = blocks_result

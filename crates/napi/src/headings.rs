@@ -1,4 +1,9 @@
 //! Heading extraction helpers.
+//!
+//! This module is currently unused as mdast extracts headings directly.
+//! It is kept for potential future use or backwards compatibility.
+
+#![allow(dead_code)]
 
 use crate::types::HeadingEntry;
 use crate::{FileType, convert_error};

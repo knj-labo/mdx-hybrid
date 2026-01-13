@@ -1,5 +1,7 @@
 //! NAPI-exposed data structures.
 
+#![allow(deprecated)]
+
 use napi_derive::napi;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -23,6 +25,7 @@ pub struct RewriteConfig {
 /// DEPRECATED: JSX component imports are no longer used with mdast pipeline.
 /// This type will be removed in a future version.
 #[deprecated(note = "Component imports are handled by mdast pipeline. This type is unused.")]
+#[allow(deprecated)]
 #[napi(object)]
 #[derive(Debug, Clone)]
 pub struct JsxComponentImport {
@@ -35,6 +38,7 @@ pub struct JsxComponentImport {
 /// DEPRECATED: JSX rendering options are no longer used with mdast pipeline.
 /// This type will be removed in a future version.
 #[deprecated(note = "JSX rendering is handled by mdast pipeline. This type is unused.")]
+#[allow(deprecated)]
 #[napi(object)]
 #[derive(Debug, Clone, Default)]
 pub struct JsxRenderOptions {
@@ -67,6 +71,7 @@ pub struct FrontmatterResult {
 }
 
 /// Options passed to the compiler constructor.
+#[allow(deprecated)]
 #[napi(object)]
 #[derive(Debug, Clone, Default)]
 pub struct CompilerConfig {

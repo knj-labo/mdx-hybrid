@@ -16,6 +16,7 @@ mod headings;
 pub mod types;
 /// Utility helpers.
 mod utils;
+#[allow(deprecated)]
 pub use types::*;
 use utils::empty_frontmatter;
 pub(crate) use utils::{build_import_list, dedupe_imports};
@@ -212,6 +213,7 @@ pub enum FileType {
 }
 
 impl FileType {
+    #[allow(dead_code)]
     fn from_path(path: &Path) -> Self {
         path.extension()
             .and_then(|ext| ext.to_str())
@@ -258,8 +260,6 @@ fn convert_error<E: Into<MarkflowError>>(err: E) -> Error {
         MarkflowError::InternalError(msg) => Error::from_reason(format!("Internal error: {}", msg)),
     }
 }
-
-pub(crate) use headings::collect_headings;
 
 #[cfg(test)]
 mod tests {
