@@ -76,7 +76,9 @@ pub struct CompilerConfig {
     pub jsx_import_source: Option<String>,
     /// Optional JSX render options (component imports + rewrite options).
     pub jsx: Option<JsxRenderOptions>,
-    /// Selects the rendering pipeline ("multipass" or "mdast").
+    /// DEPRECATED: Pipeline selection removed. mdast is the only pipeline.
+    /// This field is ignored and will be removed in a future version.
+    #[deprecated(note = "Only mdast pipeline is supported. This field is ignored.")]
     pub pipeline: Option<String>,
 }
 
