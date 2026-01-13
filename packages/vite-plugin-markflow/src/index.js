@@ -272,6 +272,12 @@ const unwrapVirtual = (value) =>
       try {
         const source = await readFile(filename, "utf8");
 
+        // Check for problematic patterns that cause runtime errors in Starlight components
+        const validationError = validateStarlightComponents(source);
+        if (validationError) {
+          throw new Error(`Markdown parser error: ${validationError}`);
+        }
+
         const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
 
         let result;
@@ -715,4 +721,39 @@ function getText(node) {
     }
   }
   return text;
+}
+
+/**
+ * Validate that Starlight components don't contain problematic patterns.
+ * Returns an error message if a problem is found, null otherwise.
+ * @param {string} source - The markdown source
+ * @returns {string|null} Error message or null
+ */
+function validateStarlightComponents(source) {
+  // Check for directives inside Steps blocks - these break list structure
+  const stepsPattern = /<Steps\s*>[\s\S]*?<\/Steps>/gi;
+  const stepsMatches = source.match(stepsPattern);
+  if (stepsMatches) {
+    for (const block of stepsMatches) {
+      // Allow for leading whitespace (indented directives in list items)
+      if (/^\s*:::[a-z]/im.test(block)) {
+        return "Directive syntax (:::) inside <Steps> breaks list structure";
+      }
+    }
+  }
+
+  // Check for bold/emphasis markers inside FileTree blocks
+  // FileTree expects plain unordered list, markdown formatting breaks it
+  const fileTreePattern = /<FileTree[^>]*>[\s\S]*?<\/FileTree>/gi;
+  const fileTreeMatches = source.match(fileTreePattern);
+  if (fileTreeMatches) {
+    for (const block of fileTreeMatches) {
+      // Check for **bold** or *italic* markers
+      if (/\*\*[^*]+\*\*|\*[^*]+\*/.test(block)) {
+        return "Bold/italic markers inside <FileTree> break component structure";
+      }
+    }
+  }
+
+  return null;
 }
