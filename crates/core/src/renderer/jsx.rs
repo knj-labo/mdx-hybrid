@@ -1,4 +1,5 @@
 #![allow(missing_docs)]
+use crate::error::ParseDiagnostics;
 use crate::event::{CodeBlockKind, Event, HeadingLevel, Tag, TagEnd};
 use crate::renderer::multipass::{ScanEvent, scan_iter};
 use crate::transform::code_fence::collect_root_imports;
@@ -20,6 +21,14 @@ pub struct JsxOptions {
     pub components: ComponentRegistry,
 }
 
+/// Result of JSX rendering with diagnostics
+pub struct JsxRenderResult {
+    /// The rendered JSX string
+    pub jsx: String,
+    /// Parse diagnostics (warnings)
+    pub diagnostics: ParseDiagnostics,
+}
+
 /// Render Markdown input into a raw JSX-like string, preserving JSX nodes.
 pub fn render_to_jsx(input: &str) -> Result<String, MarkflowError> {
     render_to_jsx_with_options(input, JsxOptions::default())
@@ -30,6 +39,15 @@ pub fn render_to_jsx_with_options(
     input: &str,
     options: JsxOptions,
 ) -> Result<String, MarkflowError> {
+    let result = render_to_jsx_with_options_full(input, options)?;
+    Ok(result.jsx)
+}
+
+/// Render Markdown input into a raw JSX-like string with custom options and diagnostics.
+pub fn render_to_jsx_with_options_full(
+    input: &str,
+    options: JsxOptions,
+) -> Result<JsxRenderResult, MarkflowError> {
     let rewrite_options = options.rewrite_options;
     let components = options.components;
     let mut seen_imports = HashSet::new();
@@ -38,7 +56,11 @@ pub fn render_to_jsx_with_options(
     let ctx = RenderContext::new(&rewrite_options, &components);
     let mut renderer = JsxStreamRenderer::new(ctx);
     let mut body = String::with_capacity(preprocessed.len());
-    let mut stream = scan_iter(&preprocessed);
+    let diagnostics = Rc::new(RefCell::new(ParseDiagnostics::new()));
+    let mut stream = crate::renderer::multipass::ScanIter::new_with_diagnostics(
+        &preprocessed,
+        Rc::clone(&diagnostics),
+    );
     while let Some(event) = stream.next() {
         renderer.render_event(event, &mut stream, &mut body)?;
     }
@@ -59,7 +81,14 @@ pub fn render_to_jsx_with_options(
         }
     }
     output.push_str(&body);
-    Ok(restore_html_wrapper_components(output))
+    let jsx = restore_html_wrapper_components(output);
+    let diagnostics_result = Rc::try_unwrap(diagnostics)
+        .map(|cell| cell.into_inner())
+        .unwrap_or_else(|rc| rc.borrow().clone());
+    Ok(JsxRenderResult {
+        jsx,
+        diagnostics: diagnostics_result,
+    })
 }
 
 const HTML_WRAPPER_TAG: &str = "MfP";

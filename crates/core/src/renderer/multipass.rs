@@ -1,6 +1,8 @@
 #![allow(missing_docs)]
 
-use crate::Span;
+use crate::{error::ParseDiagnostics, Span};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScanEvent<'a> {
@@ -33,16 +35,26 @@ pub struct ScanIter<'a> {
     cursor: usize,
     pending_start: Option<usize>,
     pending_end: usize,
+    diagnostics: Rc<RefCell<ParseDiagnostics>>,
 }
 
 impl<'a> ScanIter<'a> {
     pub fn new(input: &'a str) -> Self {
+        Self::new_with_diagnostics(input, Rc::new(RefCell::new(ParseDiagnostics::new())))
+    }
+
+    pub fn new_with_diagnostics(input: &'a str, diagnostics: Rc<RefCell<ParseDiagnostics>>) -> Self {
         Self {
             input,
             cursor: 0,
             pending_start: None,
             pending_end: 0,
+            diagnostics,
         }
+    }
+
+    pub fn diagnostics(&self) -> Rc<RefCell<ParseDiagnostics>> {
+        Rc::clone(&self.diagnostics)
     }
 
     fn flush_markdown(&mut self) -> Option<ScanEvent<'a>> {
@@ -108,6 +120,18 @@ impl<'a> Iterator for ScanIter<'a> {
                     };
                     self.cursor = end_pos;
                     return Some(event);
+                } else {
+                    // Unclosed fence - add warning
+                    use crate::error::ParseWarning;
+                    let line_num = self.input[..self.cursor].lines().count() + 1;
+                    let context_end = (self.cursor + 40).min(self.input.len());
+                    let context = &self.input[self.cursor..context_end];
+
+                    self.diagnostics.borrow_mut().add_warning(ParseWarning::UnclosedCodeFence {
+                        line: line_num,
+                        marker: marker as char,
+                        context: context.to_string(),
+                    });
                 }
                 self.extend_markdown(self.cursor, self.input.len());
                 self.cursor = self.input.len();
@@ -693,5 +717,39 @@ mod tests {
             events[0],
             ScanEvent::Markdown { text, .. } if text == input
         ));
+    }
+
+    #[test]
+    fn scan_emits_warning_for_unclosed_fence() {
+        use super::ScanIter;
+        let input = "```rust\nfn main() {\n";
+        let mut iter = ScanIter::new(input);
+        let _events: Vec<_> = iter.by_ref().collect();
+
+        let diagnostics = iter.diagnostics();
+        let diag = diagnostics.borrow();
+        assert_eq!(diag.warnings.len(), 1);
+
+        match &diag.warnings[0] {
+            crate::error::ParseWarning::UnclosedCodeFence { line, marker, context } => {
+                // Line numbers are 1-indexed for user-friendly error messages
+                assert_eq!(line, &1);
+                assert_eq!(marker, &'`');
+                assert!(context.starts_with("```rust"));
+            }
+            _ => panic!("Expected UnclosedCodeFence warning"),
+        }
+    }
+
+    #[test]
+    fn scan_no_warning_for_closed_fence() {
+        use super::ScanIter;
+        let input = "```rust\nfn main() {}\n```\n";
+        let mut iter = ScanIter::new(input);
+        let _events: Vec<_> = iter.by_ref().collect();
+
+        let diagnostics = iter.diagnostics();
+        let diag = diagnostics.borrow();
+        assert_eq!(diag.warnings.len(), 0);
     }
 }

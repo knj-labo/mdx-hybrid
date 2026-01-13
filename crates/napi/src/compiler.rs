@@ -1,11 +1,41 @@
 //! The stateful compiler and its configuration.
 
 use crate::types::*;
-use markflow_core::{MarkflowError, render_to_jsx, render_to_jsx_with_options};
+use markflow_core::{MarkflowError, render_to_jsx, render_to_jsx_with_options_full};
 use napi_derive::napi;
 use std::path::Path;
 
 const ASTRO_DEFAULT_RUNTIME: &str = "astro/runtime/server/index.js";
+
+fn convert_diagnostics(diag: markflow_core::error::ParseDiagnostics) -> Diagnostics {
+    Diagnostics {
+        warnings: diag
+            .warnings
+            .iter()
+            .map(|w| {
+                let (warning_type, line, message) = match w {
+                    markflow_core::error::ParseWarning::UnclosedCodeFence {
+                        line,
+                        marker,
+                        context,
+                    } => (
+                        "unclosed_code_fence",
+                        *line as u32,
+                        format!("Unclosed {} fence near '{}'", marker, context),
+                    ),
+                    markflow_core::error::ParseWarning::SuspiciousMarkup { line, message } => {
+                        ("suspicious_markup", *line as u32, message.clone())
+                    }
+                };
+                ParseWarningEntry {
+                    warning_type: warning_type.to_string(),
+                    line,
+                    message,
+                }
+            })
+            .collect(),
+    }
+}
 
 fn split_leading_imports(input: &str) -> (Vec<String>, String) {
     let mut hoisted = Vec::new();
@@ -123,13 +153,14 @@ pub fn compile_ir(
     let frontmatter = frontmatter_extraction.value;
     let raw_body = source[frontmatter_extraction.body_start..].to_string();
 
-    let jsx_full = if let Some(options) = internal.jsx_render_options.clone() {
-        render_to_jsx_with_options(&raw_body, options.into())
+    let render_result = if let Some(options) = internal.jsx_render_options.clone() {
+        render_to_jsx_with_options_full(&raw_body, options.into())
     } else {
-        render_to_jsx(&raw_body)
+        render_to_jsx_with_options_full(&raw_body, Default::default())
     }
     .map_err(|err| super::convert_error(with_path(err, &effective_path)))?;
-    let (hoisted, jsx) = split_leading_imports(&jsx_full);
+    let (hoisted, jsx) = split_leading_imports(&render_result.jsx);
+    let diagnostics = convert_diagnostics(render_result.diagnostics);
 
     let headings =
         super::collect_headings(&raw_body, file_type, &effective_path).unwrap_or_default();
@@ -155,6 +186,7 @@ pub fn compile_ir(
         url: options.url.clone(),
         layout_import,
         runtime_import: internal.jsx_import_source,
+        diagnostics,
     })
 }
 
@@ -184,6 +216,7 @@ pub(crate) fn compile_document_from_ir(ir: CompileIrResult) -> napi::Result<Comp
         frontmatter_json: ir.frontmatter_json,
         headings: ir.headings,
         imports,
+        diagnostics: ir.diagnostics,
     })
 }
 

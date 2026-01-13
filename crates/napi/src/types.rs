@@ -122,6 +122,26 @@ pub struct ImportedModule {
     pub kind: String,
 }
 
+/// Parse warning returned from Rust
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct ParseWarningEntry {
+    /// Warning type (e.g., "unclosed_code_fence")
+    pub warning_type: String,
+    /// Line number where warning occurred
+    pub line: u32,
+    /// Human-readable message
+    pub message: String,
+}
+
+/// Diagnostics returned with compilation result
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct Diagnostics {
+    /// Non-fatal warnings
+    pub warnings: Vec<ParseWarningEntry>,
+}
+
 /// Result returned by the streaming compiler.
 #[napi(object)]
 #[derive(Debug, Clone)]
@@ -136,6 +156,8 @@ pub struct CompileResult {
     pub headings: Vec<HeadingEntry>,
     /// Dependencies referenced while compiling (layouts/imports).
     pub imports: Vec<ImportedModule>,
+    /// Parse diagnostics (warnings, not errors)
+    pub diagnostics: Diagnostics,
 }
 
 /// Neutral IR returned when Astro-compat codegen is disabled.
@@ -158,6 +180,8 @@ pub struct CompileIrResult {
     pub layout_import: Option<String>,
     /// JSX runtime import source to be used by JS adapters.
     pub runtime_import: String,
+    /// Parse diagnostics (warnings, not errors)
+    pub diagnostics: Diagnostics,
 }
 
 /// Structured import returned by the compiler IR.
