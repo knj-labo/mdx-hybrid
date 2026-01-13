@@ -32,10 +32,8 @@ pub use error::MarkflowError;
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
 pub use parser::{ParseConfig, ParseConstructs};
 pub use renderer::{
-    BlocksResult, ComponentRegistry, HeadingEntry, JsxComponentPlugin, JsxOptions,
-    JsxRenderResult, JsxStreamRenderer, MdastOptions, RenderBlock, RenderContext, RenderOutcome,
-    RewriteOptions, StreamingRewriter, render_to_jsx, render_to_jsx_with_options,
-    render_to_jsx_with_options_full, to_blocks,
+    BlocksResult, HeadingEntry, MdastOptions, RenderBlock, RewriteOptions, StreamingRewriter,
+    to_blocks,
 };
 pub use slug::{Slugger, slugify};
 pub use span::Span;
