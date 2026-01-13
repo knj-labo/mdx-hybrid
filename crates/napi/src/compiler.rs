@@ -35,7 +35,6 @@ fn split_leading_imports(input: &str) -> (Vec<String>, String) {
 #[derive(Debug, Clone)]
 pub(crate) struct InternalCompilerConfig {
     pub(crate) jsx_import_source: String,
-    pub(crate) jsx_render_options: Option<JsxRenderOptions>,
 }
 
 impl InternalCompilerConfig {
@@ -45,10 +44,7 @@ impl InternalCompilerConfig {
             .jsx_import_source
             .unwrap_or_else(|| ASTRO_DEFAULT_RUNTIME.to_string());
 
-        Self {
-            jsx_import_source,
-            jsx_render_options: cfg.jsx,
-        }
+        Self { jsx_import_source }
     }
 }
 
@@ -87,7 +83,6 @@ impl MarkflowCompiler {
             options.clone(),
             Some(CompilerConfig {
                 jsx_import_source: Some(self.config.jsx_import_source.clone()),
-                jsx: self.config.jsx_render_options.clone(),
                 ..CompilerConfig::default()
             }),
         )?;
@@ -168,17 +163,24 @@ pub fn compile_ir(
     let frontmatter = frontmatter_extraction.value;
     let raw_body = source[frontmatter_extraction.body_start..].to_string();
 
+    // Extract leading imports/exports before mdast processing
+    // mdast doesn't handle ESM imports yet, so we extract them manually
+    let (leading_imports, body_without_imports) = split_leading_imports(&raw_body);
+
     // Use mdast pipeline to generate blocks
     let mdast_options = MdastOptions {
         inject_starlight_css: false,
         enable_directives: true,
     };
-    let blocks_result = to_blocks(&raw_body, &mdast_options)
+    let blocks_result = to_blocks(&body_without_imports, &mdast_options)
         .map_err(|err| super::convert_error(with_path(MarkflowError::MarkdownAdapter(err), &effective_path)))?;
 
     // Convert blocks to JSX module string
     let jsx_body = blocks_to_jsx_string(&blocks_result.blocks);
-    let (hoisted, jsx) = split_leading_imports(&jsx_body);
+
+    // Merge leading imports with any imports found in the JSX body
+    let hoisted = leading_imports;
+    let jsx = jsx_body;
 
     // mdast doesn't produce diagnostics yet - return empty warnings
     let diagnostics = Diagnostics {
@@ -265,7 +267,6 @@ pub(crate) fn compile_document(
         options,
         Some(CompilerConfig {
             jsx_import_source: Some(config.jsx_import_source.clone()),
-            jsx: config.jsx_render_options.clone(),
             ..CompilerConfig::default()
         }),
     )?;
