@@ -421,7 +421,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: export default conflicts with generated `export default MarkflowContent`
     fn compile_document_hoists_exports_variants() {
         let config = InternalCompilerConfig::new(None);
         let source = "\nexport const foo = () => {\n  return 1\n}\n\nexport default function bar()\n{\n  return foo();\n}\n\nexport { foo };\n\n\n# Title"
@@ -482,7 +481,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: export default conflicts with generated `export default MarkflowContent`
     fn compile_document_hoists_export_edge_cases() {
         let config = InternalCompilerConfig::new(None);
         let source = "\nexport default async () => {\n  return 1\n}\n\nexport * from './mod';\n\nexport const foo = 1 // inline\n\n\n# Title"

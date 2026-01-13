@@ -193,6 +193,8 @@ pub struct CompileIrResult {
     pub runtime_import: String,
     /// Parse diagnostics (warnings, not errors)
     pub diagnostics: Diagnostics,
+    /// Whether user provided their own `export default` statement.
+    pub has_user_default_export: bool,
 }
 
 /// Structured import returned by the compiler IR.

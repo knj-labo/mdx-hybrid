@@ -84,15 +84,18 @@ pub(crate) fn generate_module_code_from_ir(
     writeln!(code, "export const Content = MarkflowContent;")
         .map_err(|err| Error::from_reason(err.to_string()))?;
 
-    if ir.layout_import.is_some() {
-        writeln!(
-            code,
-            "export default createComponent((result, props) => renderJSX(result, _jsx(Layout, {{...props, frontmatter: frontmatter, children: _jsx(MarkflowContent, {{...props}})}})), file);"
-        )
-        .map_err(|err| Error::from_reason(err.to_string()))?;
-    } else {
-        writeln!(code, "export default MarkflowContent;")
+    // Only generate export default if user didn't provide their own
+    if !ir.has_user_default_export {
+        if ir.layout_import.is_some() {
+            writeln!(
+                code,
+                "export default createComponent((result, props) => renderJSX(result, _jsx(Layout, {{...props, frontmatter: frontmatter, children: _jsx(MarkflowContent, {{...props}})}})), file);"
+            )
             .map_err(|err| Error::from_reason(err.to_string()))?;
+        } else {
+            writeln!(code, "export default MarkflowContent;")
+                .map_err(|err| Error::from_reason(err.to_string()))?;
+        }
     }
 
     Ok(code)
