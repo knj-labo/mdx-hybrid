@@ -74,6 +74,18 @@ importers:
         specifier: workspace:*
         version: link:../vite-plugin-markflow
 
+  packages/markflow:
+    dependencies:
+      markflow-napi:
+        specifier: workspace:*
+        version: link:../../crates/napi
+    optionalDependencies:
+      markflow-wasm:
+        specifier: workspace:*
+        version: link:../markflow-wasm
+
+  packages/markflow-wasm: {}
+
   packages/vite-plugin-markflow:
     dependencies:
       markflow-napi:
