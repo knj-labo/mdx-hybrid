@@ -16,7 +16,6 @@ mod headings;
 pub mod types;
 /// Utility helpers.
 mod utils;
-#[allow(deprecated)]
 pub use types::*;
 use utils::empty_frontmatter;
 pub(crate) use utils::{build_import_list, dedupe_imports};
@@ -424,7 +423,7 @@ mod tests {
 
         // mdast currently only hoists LEADING imports/exports
         // exports that appear after content are not hoisted
-        // TODO: Add full hoisting support similar to old multipass pipeline
+        // TODO: Add full hoisting support for complex import patterns
 
         assert!(
             fenced_pos > content_pos,

@@ -1,7 +1,5 @@
 //! NAPI-exposed data structures.
 
-#![allow(deprecated)]
-
 use napi_derive::napi;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -20,34 +18,6 @@ pub struct RewriteConfig {
     pub enable_smartypants: Option<bool>,
     /// Enable Astro docs component rewrites (Aside/Steps/Tabs/FileTree). Defaults to true.
     pub enable_components: Option<bool>,
-}
-
-/// DEPRECATED: JSX component imports are no longer used with mdast pipeline.
-/// This type will be removed in a future version.
-#[deprecated(note = "Component imports are handled by mdast pipeline. This type is unused.")]
-#[allow(deprecated)]
-#[napi(object)]
-#[derive(Debug, Clone)]
-pub struct JsxComponentImport {
-    /// JSX tag name (e.g., "Badge").
-    pub name: String,
-    /// Import statement to hoist (e.g., "import Badge from './Badge.astro';").
-    pub import: String,
-}
-
-/// DEPRECATED: JSX rendering options are no longer used with mdast pipeline.
-/// This type will be removed in a future version.
-#[deprecated(note = "JSX rendering is handled by mdast pipeline. This type is unused.")]
-#[allow(deprecated)]
-#[napi(object)]
-#[derive(Debug, Clone, Default)]
-pub struct JsxRenderOptions {
-    /// Optional rewrite options (directives/hoist/smartypants/components).
-    pub rewrite: Option<RewriteConfig>,
-    /// Component import mappings to hoist into the output.
-    pub component_imports: Option<Vec<JsxComponentImport>>,
-    /// Component names whose children should NOT be markdown-processed (e.g., Code, Prism).
-    pub code_sample_components: Option<Vec<String>>,
 }
 
 /// Parse result with HTML output and processing statistics
@@ -71,7 +41,6 @@ pub struct FrontmatterResult {
 }
 
 /// Options passed to the compiler constructor.
-#[allow(deprecated)]
 #[napi(object)]
 #[derive(Debug, Clone, Default)]
 pub struct CompilerConfig {
@@ -83,10 +52,6 @@ pub struct CompilerConfig {
     pub syntax_highlighting: Option<bool>,
     /// Overrides the module used for JSX runtime helpers.
     pub jsx_import_source: Option<String>,
-    /// DEPRECATED: Pipeline selection removed. mdast is the only pipeline.
-    /// This field is ignored and will be removed in a future version.
-    #[deprecated(note = "Only mdast pipeline is supported. This field is ignored.")]
-    pub pipeline: Option<String>,
 }
 
 /// File-specific overrides that accompany each compilation.

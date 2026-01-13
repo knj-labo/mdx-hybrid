@@ -271,3 +271,4 @@
 | 2026-01-13 00:00 | #250 | Single Pipeline Strategy: Consolidate on mdast exclusively | multipass 保守コスト削減とコード複雑性解消のため | docs/*, crates/core/src/renderer/*, crates/napi/src/compiler.rs |
 | 2026-01-13 00:00 | #251 | multipass/jsx ストリーミングパイプラインを削除し mdast に一本化 | Decision #240 で性能問題なしを確認済みのため | crates/core/src/renderer/{multipass.rs,jsx.rs,jsx/,streaming_rewriter.rs} |
 | 2026-01-13 00:00 | #252 | compiler.rs を mdast blocks (`parse_blocks`) 専用に切り替え | multipass fallback を除去し単一パスにするため | crates/napi/src/compiler.rs |
+| 2026-01-13 00:00 | #253 | NAPI deprecated 型の削除: JsxComponentImport, JsxRenderOptions, CompilerConfig.pipeline | Phase 1 完了に伴い不要になった deprecated コードを除去するため | crates/napi/src/types.rs, crates/napi/src/lib.rs |
