@@ -140,16 +140,24 @@ fn blocks_to_jsx_string(blocks: &[RenderBlock]) -> String {
                 if !props.is_empty() {
                     result.push_str(" {...{");
                     let mut first = true;
-                    for (key, value) in props {
+                    for (key, prop_value) in props {
                         if !first {
                             result.push_str(", ");
                         }
                         first = false;
                         result.push('"');
                         result.push_str(&key.replace('"', "\\\""));
-                        result.push_str("\": \"");
-                        result.push_str(&value.replace('"', "\\\"").replace('\n', "\\n"));
-                        result.push('"');
+                        result.push_str("\": ");
+                        match prop_value {
+                            markflow_core::PropValue::Literal { value } => {
+                                result.push('"');
+                                result.push_str(&value.replace('"', "\\\"").replace('\n', "\\n"));
+                                result.push('"');
+                            }
+                            markflow_core::PropValue::Expression { value } => {
+                                result.push_str(value);
+                            }
+                        }
                     }
                     result.push_str("}}");
                 }
