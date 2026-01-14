@@ -237,11 +237,7 @@ fn generate_module_code(
         code,
         "Content[Symbol.for('astro.needsHeadRendering')] = !Boolean(frontmatter.layout);"
     );
-    let _ = writeln!(
-        code,
-        "Content.moduleId = {};",
-        js_string_literal(filepath)
-    );
+    let _ = writeln!(code, "Content.moduleId = {};", js_string_literal(filepath));
 
     // Export default (conditional)
     if !has_user_default_export {
