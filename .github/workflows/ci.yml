@@ -101,7 +101,7 @@ jobs:
         run: ./scripts/setup-withastro-docs.sh
 
       - name: Install all workspace deps
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build withastro-docs (Regression Check)
         working-directory: fixtures/integration/withastro-docs/repo
