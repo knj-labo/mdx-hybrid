@@ -53,4 +53,12 @@ else
   git clone "${CLONE_ARGS[@]}" "$REMOTE" "$TARGET_DIR"
 fi
 
+# Apply markflow overlay (astro.config.ts and package.json with markflow integration)
+OVERLAY_DIR="$REPO_ROOT/fixtures/integration/withastro-docs/overlay"
+if [ -d "$OVERLAY_DIR" ]; then
+  echo "Applying markflow overlay from $OVERLAY_DIR"
+  cp "$OVERLAY_DIR/astro.config.ts" "$TARGET_DIR/"
+  cp "$OVERLAY_DIR/package.json" "$TARGET_DIR/"
+fi
+
 echo "Done. Repository is at $TARGET_DIR (ref: $REF)"
