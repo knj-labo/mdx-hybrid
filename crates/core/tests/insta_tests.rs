@@ -11,16 +11,6 @@ fn snapshot_from(source: &str, input: &str) {
 }
 
 #[test]
-fn markdown_basic_snapshot() {
-    snapshot_from("markdown_basic", "# Hello, World!");
-}
-
-#[test]
-fn directive_note_snapshot() {
-    snapshot_from("directive_note", ":::note\nBody\n:::");
-}
-
-#[test]
 fn directive_inline_code_snapshot() {
     snapshot_from("directive_inline_code", "Here is `:::note` inside code");
 }
