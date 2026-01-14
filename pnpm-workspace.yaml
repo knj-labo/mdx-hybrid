@@ -2,3 +2,4 @@ packages:
   - packages/*
   - web
   - crates/napi
+  - fixtures/integration/withastro-docs/repo
