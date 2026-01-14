@@ -1164,7 +1164,10 @@ fn main() {}
                 "Missing code block with language"
             );
             // Curly braces are escaped to &#123; and &#125; for JSX safety in code blocks
-            assert!(content.contains("fn main() &#123;&#125;"), "Missing code content");
+            assert!(
+                content.contains("fn main() &#123;&#125;"),
+                "Missing code content"
+            );
             assert!(
                 content.contains(r#"<img src="image.png""#),
                 "Missing img src"
