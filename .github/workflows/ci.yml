@@ -97,6 +97,9 @@ jobs:
         working-directory: crates/napi
         run: pnpm run build:napi
 
+      - name: Clone withastro-docs repository
+        run: ./scripts/setup-withastro-docs.sh
+
       - name: Install withastro-docs deps
         working-directory: fixtures/integration/withastro-docs/repo
         run: pnpm install --frozen-lockfile
