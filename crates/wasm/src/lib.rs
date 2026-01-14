@@ -231,6 +231,14 @@ fn generate_module_code(
 
     let _ = writeln!(code, "export const Content = MarkflowContent;");
 
+    // Add MDX component markers for Astro Content Collections
+    let _ = writeln!(code, "Content[Symbol.for('mdx-component')] = true;");
+    let _ = writeln!(
+        code,
+        "Content[Symbol.for('astro.needsHeadRendering')] = !Boolean(frontmatter.layout);"
+    );
+    let _ = writeln!(code, "Content.moduleId = {};", js_string_literal(filepath));
+
     // Export default (conditional)
     if !has_user_default_export {
         let _ = writeln!(code, "export default MarkflowContent;");
