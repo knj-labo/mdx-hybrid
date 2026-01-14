@@ -272,46 +272,10 @@ const unwrapVirtual = (value) =>
       try {
         const source = await readFile(filename, "utf8");
 
-        // Detect problematic patterns that cause runtime errors
-        // Template literals inside inline code blocks (backtick followed by ${...})
-        if (/`[^`\n]*\$\{[^`\n]*\}[^`\n]*`/.test(source)) {
-          fallbackFiles.add(filename);
-          this.warn(
-            `[markflow] Falling back to Astro MDX for ${filename}: Contains template literals in inline code blocks`,
-          );
-          return createFallbackModule(filename);
-        }
-
-        // Explicit fallback for known problematic files
-        const problematicFiles = [
-          "astro-syntax.mdx",
-          "directives-reference.mdx",
-        ];
-        if (problematicFiles.some((f) => filename.endsWith(f))) {
-          fallbackFiles.add(filename);
-          this.warn(
-            `[markflow] Falling back to Astro MDX for ${filename}: Known problematic file`,
-          );
-          return createFallbackModule(filename);
-        }
-
-        // Fallback for files with custom component imports (not yet supported)
-        if (/import\s+\w+\s+from\s+['"]~\/components\//.test(source)) {
-          fallbackFiles.add(filename);
-          this.warn(
-            `[markflow] Falling back to Astro MDX for ${filename}: Contains custom component imports`,
-          );
-          return createFallbackModule(filename);
-        }
-
-        // Fallback for files with fenced code blocks containing imports/exports
-        // These cause runtime errors as code is executed instead of displayed
-        if (/```[\s\S]*?(import|export|const\s+\w+\s*=\s*await)[\s\S]*?```/.test(source)) {
-          fallbackFiles.add(filename);
-          this.warn(
-            `[markflow] Falling back to Astro MDX for ${filename}: Contains code blocks with imports/exports`,
-          );
-          return createFallbackModule(filename);
+        // Check for problematic patterns that cause runtime errors in Starlight components
+        const validationError = validateStarlightComponents(source);
+        if (validationError) {
+          throw new Error(`Markdown parser error: ${validationError}`);
         }
 
         const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
@@ -757,4 +721,39 @@ function getText(node) {
     }
   }
   return text;
+}
+
+/**
+ * Validate that Starlight components don't contain problematic patterns.
+ * Returns an error message if a problem is found, null otherwise.
+ * @param {string} source - The markdown source
+ * @returns {string|null} Error message or null
+ */
+function validateStarlightComponents(source) {
+  // Check for directives inside Steps blocks - these break list structure
+  const stepsPattern = /<Steps\s*>[\s\S]*?<\/Steps>/gi;
+  const stepsMatches = source.match(stepsPattern);
+  if (stepsMatches) {
+    for (const block of stepsMatches) {
+      // Allow for leading whitespace (indented directives in list items)
+      if (/^\s*:::[a-z]/im.test(block)) {
+        return "Directive syntax (:::) inside <Steps> breaks list structure";
+      }
+    }
+  }
+
+  // Check for bold/emphasis markers inside FileTree blocks
+  // FileTree expects plain unordered list, markdown formatting breaks it
+  const fileTreePattern = /<FileTree[^>]*>[\s\S]*?<\/FileTree>/gi;
+  const fileTreeMatches = source.match(fileTreePattern);
+  if (fileTreeMatches) {
+    for (const block of fileTreeMatches) {
+      // Check for **bold** or *italic* markers
+      if (/\*\*[^*]+\*\*|\*[^*]+\*/.test(block)) {
+        return "Bold/italic markers inside <FileTree> break component structure";
+      }
+    }
+  }
+
+  return null;
 }

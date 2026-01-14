@@ -63,9 +63,10 @@ pub fn advance_fence_state(line: &str, state: FenceState) -> LineParseOutcome {
         skip_imports = true;
     } else if matches!(state.phase, FencePhase::InsideFence)
         && indent <= state.indent
-        && let Some(marker) = detect_fence_marker(after_indent)
-        && Some(marker) == state.marker
+        && is_closing_fence(after_indent)
+        && detect_fence_marker(after_indent) == state.marker
     {
+        // Only close if it's a bare fence (no info string)
         next_state = FenceState {
             phase: FencePhase::Outside,
             marker: None,
@@ -255,6 +256,28 @@ fn detect_fence_marker(after_indent: &str) -> Option<char> {
     if run_len >= 3 { Some(first) } else { None }
 }
 
+/// Check if a line is a closing fence (no info string after markers).
+/// A closing fence has only fence markers followed by optional whitespace.
+fn is_closing_fence(after_indent: &str) -> bool {
+    let mut chars = after_indent.chars();
+    let first = match chars.next() {
+        Some(c) if c == '`' || c == '~' => c,
+        _ => return false,
+    };
+    // Count fence markers
+    let mut count = 1;
+    for c in chars.by_ref() {
+        if c == first {
+            count += 1;
+        } else {
+            // After markers, only whitespace is allowed for a closing fence
+            return count >= 3 && c.is_whitespace() && chars.all(|c| c.is_whitespace());
+        }
+    }
+    // All markers, no trailing content
+    count >= 3
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,5 +422,38 @@ mod tests {
         let (imports, rest) = collect_root_imports(body);
         assert_eq!(imports, vec!["export const ok = false;"]);
         assert_eq!(rest, vec!["```", "export const skip = true", "```"]);
+    }
+
+    #[test]
+    fn fence_with_info_string_does_not_close_previous_fence() {
+        // A fence with info string (like ```astro) is an OPENER, not a closer
+        // So ```ini should not close the fence opened by ```
+        let body = "```\n{\"key\": \"value\"}\n```ini\nmore\n```\nimport ok from 'ok';";
+        let (imports, rest) = collect_root_imports(body);
+        // The import should be hoisted because it's after all fences are closed
+        assert_eq!(imports, vec!["import ok from 'ok';"]);
+        // The content should preserve the fence structure
+        assert_eq!(
+            rest,
+            vec!["```", "{\"key\": \"value\"}", "```ini", "more", "```"]
+        );
+    }
+
+    #[test]
+    fn is_closing_fence_tests() {
+        // Bare fence markers are closing fences
+        assert!(is_closing_fence("```"));
+        assert!(is_closing_fence("~~~"));
+        assert!(is_closing_fence("````"));
+        assert!(is_closing_fence("```  ")); // trailing whitespace OK
+
+        // Fences with info strings are NOT closing fences
+        assert!(!is_closing_fence("```js"));
+        assert!(!is_closing_fence("```astro title=\"test\""));
+        assert!(!is_closing_fence("~~~ini"));
+
+        // Too few markers
+        assert!(!is_closing_fence("``"));
+        assert!(!is_closing_fence("~"));
     }
 }

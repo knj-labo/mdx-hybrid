@@ -4,6 +4,44 @@ use std::collections::HashMap;
 
 use crate::transform::directives::{is_directive_closer, parse_opening_directive};
 
+/// A component prop value - either a literal string or a JS expression.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum PropValue {
+    /// A literal string value (from key="value").
+    Literal { value: String },
+    /// A JS expression (from key={expression}).
+    Expression { value: String },
+}
+
+impl PropValue {
+    /// Creates a literal string prop value.
+    pub fn literal(value: impl Into<String>) -> Self {
+        PropValue::Literal {
+            value: value.into(),
+        }
+    }
+
+    /// Creates an expression prop value.
+    pub fn expression(value: impl Into<String>) -> Self {
+        PropValue::Expression {
+            value: value.into(),
+        }
+    }
+
+    /// Returns the raw value regardless of type.
+    pub fn value(&self) -> &str {
+        match self {
+            PropValue::Literal { value } | PropValue::Expression { value } => value,
+        }
+    }
+
+    /// Returns true if this is an expression.
+    pub fn is_expression(&self) -> bool {
+        matches!(self, PropValue::Expression { .. })
+    }
+}
+
 /// Represents a rendering block to be passed to Astro.
 ///
 /// Each block is either plain HTML content or a component invocation
@@ -21,8 +59,8 @@ pub enum RenderBlock {
     Component {
         /// Component name (e.g., "note", "card").
         name: String,
-        /// Component props as key-value pairs.
-        props: HashMap<String, String>,
+        /// Component props as key-value pairs (literals or expressions).
+        props: HashMap<String, PropValue>,
         /// HTML content for the component's default slot.
         slot_html: String,
     },
@@ -146,6 +184,24 @@ impl<'a> Context<'a> {
         self.push_escaped(s);
     }
 
+    /// Writes code content to the buffer with JSX-safe escaping.
+    ///
+    /// This escapes curly braces in addition to HTML entities to prevent
+    /// JSX interpreting `{` and `}` as expression delimiters within code blocks.
+    pub fn push_code_text(&mut self, s: &str) {
+        for c in s.chars() {
+            match c {
+                '<' => self.current_html.push_str("&lt;"),
+                '>' => self.current_html.push_str("&gt;"),
+                '&' => self.current_html.push_str("&amp;"),
+                '`' => self.current_html.push_str("&#96;"),
+                '{' => self.current_html.push_str("&#123;"),
+                '}' => self.current_html.push_str("&#125;"),
+                _ => self.current_html.push(c),
+            }
+        }
+    }
+
     /// Writes HTML-escaped text to the current HTML buffer (internal use).
     ///
     /// Escapes `<`, `>`, `&`, and `` ` `` characters for safe text node rendering.
@@ -210,7 +266,7 @@ impl<'a> Context<'a> {
     pub fn push_component(
         &mut self,
         name: &str,
-        props: HashMap<String, String>,
+        props: HashMap<String, PropValue>,
         slot_html: String,
     ) {
         self.flush_html();
@@ -245,15 +301,37 @@ impl<'a> Context<'a> {
             match block {
                 RenderBlock::Html { content } => result.push_str(&content),
                 RenderBlock::Component {
-                    name, slot_html, ..
+                    name,
+                    props,
+                    slot_html,
                 } => {
-                    // Nested components are rendered as custom elements (fallback)
-                    use std::fmt::Write;
-                    let _ = write!(
-                        result,
-                        r#"<starlight-{} data-component>{}</starlight-{}>"#,
-                        name, slot_html, name
-                    );
+                    // Render nested components as JSX with props preserved
+                    result.push('<');
+                    result.push_str(&name);
+
+                    // Render props as JSX: key={"value"} or key={expression}
+                    for (key, prop_value) in &props {
+                        result.push(' ');
+                        result.push_str(key);
+                        result.push_str("={");
+                        match prop_value {
+                            PropValue::Literal { value } => {
+                                result.push('"');
+                                result.push_str(&value.replace('"', "\\\""));
+                                result.push('"');
+                            }
+                            PropValue::Expression { value } => {
+                                result.push_str(value);
+                            }
+                        }
+                        result.push('}');
+                    }
+
+                    result.push('>');
+                    result.push_str(&slot_html);
+                    result.push_str("</");
+                    result.push_str(&name);
+                    result.push('>');
                 }
             }
         }
@@ -476,7 +554,7 @@ fn render_node(node: &Node, ctx: &mut Context) {
         // InlineCode node - render as <code>
         Node::InlineCode(code) => {
             ctx.push_raw("<code>");
-            ctx.push_text(&code.value);
+            ctx.push_code_text(&code.value);
             ctx.push_raw("</code>");
         }
 
@@ -558,7 +636,8 @@ fn render_node(node: &Node, ctx: &mut Context) {
                 ctx.push_raw("<code>");
             }
 
-            ctx.push_text(&code.value);
+            // Use push_code_text to escape curly braces for JSX safety
+            ctx.push_code_text(&code.value);
             ctx.push_raw("</code></pre>");
         }
 
@@ -785,10 +864,10 @@ fn render_jsx(
             // Extract slot HTML from current buffer
             let slot_html = std::mem::take(&mut ctx.current_html);
 
-            // Build props from directive metadata
+            // Build props from directive metadata (always literals)
             let mut props = HashMap::new();
             if let Some(title) = meta.title {
-                props.insert("title".to_string(), title);
+                props.insert("title".to_string(), PropValue::literal(title));
             }
             // TODO: Parse attrs string if needed
 
@@ -805,12 +884,15 @@ fn render_jsx(
             // key="value" or key={expression}
             markdown::mdast::AttributeContent::Property(prop) => {
                 let value = match &prop.value {
-                    Some(markdown::mdast::AttributeValue::Literal(s)) => s.clone(),
-                    Some(markdown::mdast::AttributeValue::Expression(expr)) => {
-                        // Expression like {someVar} - use raw expression value
-                        expr.value.clone()
+                    Some(markdown::mdast::AttributeValue::Literal(s)) => {
+                        // String literal: key="value"
+                        PropValue::literal(s.clone())
                     }
-                    None => String::new(),
+                    Some(markdown::mdast::AttributeValue::Expression(expr)) => {
+                        // Expression: key={expression} - preserve as-is
+                        PropValue::expression(expr.value.clone())
+                    }
+                    None => PropValue::literal(String::new()),
                 };
                 props.insert(prop.name.clone(), value);
             }
@@ -983,7 +1065,7 @@ mod tests {
                 slot_html,
             } => {
                 assert_eq!(name, "note");
-                assert_eq!(props.get("title"), Some(&"My Title".to_string()));
+                assert_eq!(props.get("title"), Some(&PropValue::literal("My Title")));
                 assert!(slot_html.contains("<p>This is <strong>important</strong> content.</p>"));
             }
             _ => panic!("Expected Component block, got {:?}", blocks.blocks[0]),
@@ -1081,7 +1163,11 @@ fn main() {}
                 content.contains(r#"<code class="language-rust">"#),
                 "Missing code block with language"
             );
-            assert!(content.contains("fn main() {}"), "Missing code content");
+            // Curly braces are escaped to &#123; and &#125; for JSX safety in code blocks
+            assert!(
+                content.contains("fn main() &#123;&#125;"),
+                "Missing code content"
+            );
             assert!(
                 content.contains(r#"<img src="image.png""#),
                 "Missing img src"

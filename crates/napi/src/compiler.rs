@@ -1,7 +1,7 @@
 //! The stateful compiler and its configuration.
 
 use crate::types::*;
-use markflow_core::{MarkflowError, MdastOptions, RenderBlock, code_fence, to_blocks};
+use markflow_core::{MarkflowError, MdastOptions, PropValue, RenderBlock, code_fence, to_blocks};
 use napi_derive::napi;
 use std::path::Path;
 
@@ -91,21 +91,33 @@ fn blocks_to_jsx_string(blocks: &[RenderBlock]) -> String {
                 result.push('<');
                 result.push_str(name);
 
-                // Render props as {...{key: "value", ...}}
+                // Render props as {...{key: "value" | expression, ...}}
                 if !props.is_empty() {
                     result.push_str(" {...{");
                     let mut first = true;
-                    for (key, value) in props {
+                    for (key, prop_value) in props {
                         if !first {
                             result.push_str(", ");
                         }
                         first = false;
-                        // Escape the key and value for JavaScript
+                        // Escape the key for JavaScript
                         result.push('"');
                         result.push_str(&key.replace('"', "\\\""));
-                        result.push_str("\": \"");
-                        result.push_str(&value.replace('"', "\\\"").replace('\n', "\\n"));
-                        result.push('"');
+                        result.push_str("\": ");
+
+                        // Render value based on type
+                        match prop_value {
+                            PropValue::Literal { value } => {
+                                // String literal: wrap in quotes
+                                result.push('"');
+                                result.push_str(&value.replace('"', "\\\"").replace('\n', "\\n"));
+                                result.push('"');
+                            }
+                            PropValue::Expression { value } => {
+                                // JS expression: output raw (no quotes)
+                                result.push_str(value);
+                            }
+                        }
                     }
                     result.push_str("}}");
                 }
