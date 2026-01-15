@@ -757,6 +757,19 @@ function validateStarlightComponents(source) {
     }
   }
 
+  // Check for nested lists inside Steps
+  // The mdast pipeline doesn't correctly handle nested lists within ordered lists
+  // e.g., "1. Item\n    - Nested bullet" gets flattened to sibling ol/ul elements
+  const stepsNestedPattern = /<Steps[^>]*>([\s\S]*?)<\/Steps>/gi;
+  const stepsNestedMatches = source.matchAll(stepsNestedPattern);
+  for (const match of stepsNestedMatches) {
+    const content = match[1];
+    // Detect numbered list item followed by indented bullet points
+    if (/^\d+\.\s+.*\n\s{2,}-\s+/m.test(content)) {
+      return "Nested lists inside <Steps> require Astro MDX processing";
+    }
+  }
+
   // Check for bold/emphasis markers inside FileTree blocks
   // FileTree expects plain unordered list, markdown formatting breaks it
   const fileTreePattern = /<FileTree[^>]*>[\s\S]*?<\/FileTree>/gi;
