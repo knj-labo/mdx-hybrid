@@ -757,16 +757,18 @@ function validateStarlightComponents(source) {
     }
   }
 
-  // Check for nested lists inside Steps
-  // The mdast pipeline doesn't correctly handle nested lists within ordered lists
-  // e.g., "1. Item\n    - Nested bullet" gets flattened to sibling ol/ul elements
+  // Check for nested content inside Steps
+  // The mdast pipeline doesn't correctly handle:
+  // 1. Nested lists: "1. Item\n    - Nested bullet" -> <ol>...</ol><ul>...</ul>
+  // 2. Continuation paragraphs: "1. Item\n\n    Paragraph" -> <ol>...</ol><p>...</p>
   const stepsNestedPattern = /<Steps[^>]*>([\s\S]*?)<\/Steps>/gi;
   const stepsNestedMatches = source.matchAll(stepsNestedPattern);
   for (const match of stepsNestedMatches) {
     const content = match[1];
-    // Detect numbered list item followed by indented bullet points
-    if (/^\d+\.\s+.*\n\s{2,}-\s+/m.test(content)) {
-      return "Nested lists inside <Steps> require Astro MDX processing";
+    // Detect numbered list item followed by indented content (4+ spaces)
+    // This catches both nested lists and continuation paragraphs
+    if (/^\d+\.\s+.*\n\n?\s{4,}\S/m.test(content)) {
+      return "Nested content inside <Steps> requires Astro MDX processing";
     }
   }
 
