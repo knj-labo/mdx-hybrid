@@ -173,7 +173,6 @@ pub fn compile_ir(
 
     // Use mdast pipeline to generate blocks
     let mdast_options = MdastOptions {
-        inject_starlight_css: false,
         enable_directives: true,
     };
     let blocks_result = to_blocks(&body_without_imports, &mdast_options).map_err(|err| {

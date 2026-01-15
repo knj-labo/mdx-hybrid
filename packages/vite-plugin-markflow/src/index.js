@@ -26,13 +26,6 @@ const VIRTUAL_PREFIX = "\0markflow:";
 const DEBUG_BINDING = process.env.MARKFLOW_DEBUG_BINDING === "1";
 const ENABLE_SHIKI = process.env.MARKFLOW_SHIKI === "1";
 const IS_MDAST = process.env.MARKFLOW_PIPELINE === "mdast";
-const IS_HARNESS_ENV = Object.keys(process.env).some((key) =>
-  key.startsWith("MARKFLOW_HARNESS_"),
-);
-const ENABLE_DEV_LAYER_ORDER_FIX =
-  IS_HARNESS_ENV && process.env.MARKFLOW_HARNESS_LAYER_ORDER_FIX !== "0";
-const STARLIGHT_LAYER_ORDER =
-  "@layer starlight.base, starlight.reset, starlight.core, starlight.content, starlight.components, starlight.utils;";
 
 const logBindingSource = (source) => {
   if (!DEBUG_BINDING) return;
@@ -204,20 +197,6 @@ const unwrapVirtual = (value) =>
         : (cfg) => new binding.MarkflowCompiler(cfg);
       compiler = createCompiler(compilerOptions);
     },
-    transformIndexHtml() {
-      if (!ENABLE_DEV_LAYER_ORDER_FIX || resolvedConfig?.command !== "serve") {
-        return;
-      }
-      return {
-        tags: [
-          {
-            tag: "style",
-            children: STARLIGHT_LAYER_ORDER,
-            injectTo: "head-prepend",
-          },
-        ],
-      };
-    },
     async resolveId(sourceId, importer) {
       if (sourceId.startsWith(VIRTUAL_PREFIX)) {
         return sourceId;
@@ -285,7 +264,6 @@ const unwrapVirtual = (value) =>
           // Use parseBlocks() for mdast pipeline
           const binding = await loadMarkflowBinding();
           const { blocks, headings } = binding.parseBlocks(source, {
-            inject_starlight_css: false,
             enable_directives: true,
           });
           const frontmatterResult = binding.parseFrontmatter(source);
@@ -770,6 +748,11 @@ function validateStarlightComponents(source) {
       // Pattern: numbered list item followed by indented code fence
       if (/^\d+\.\s+[\s\S]*?\n\s{4,}```/m.test(block)) {
         return "Code blocks inside <Steps> list items break list structure";
+      }
+      // Check for FileTree component inside Steps
+      // FileTree renders as separate element, breaking Steps' single <ol> expectation
+      if (/<FileTree[\s>]/i.test(block)) {
+        return "FileTree component inside <Steps> breaks list structure";
       }
     }
   }

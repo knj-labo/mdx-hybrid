@@ -186,8 +186,6 @@ pub enum ImportKind {
 #[napi(object)]
 #[derive(Debug, Clone)]
 pub struct BlockOptions {
-    /// Inject Starlight CSS classes for components (default: false)
-    pub inject_starlight_css: Option<bool>,
     /// Enable directive preprocessing (:::note, etc.). Defaults to true.
     pub enable_directives: Option<bool>,
 }

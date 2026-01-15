@@ -402,8 +402,6 @@ impl<'a> Context<'a> {
 /// Rendering options for the mdast v2 renderer.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Options {
-    /// Whether to inject Starlight CSS when components are used.
-    pub inject_starlight_css: bool,
     /// Whether directive processing is enabled.
     pub enable_directives: bool,
 }
@@ -995,7 +993,6 @@ fn render_jsx(
 ///
 /// let input = "Hello, [world](https://example.com)!";
 /// let options = Options {
-///     inject_starlight_css: false,
 ///     enable_directives: false,
 /// };
 /// let blocks = to_blocks(input, &options).unwrap();
@@ -1055,7 +1052,6 @@ mod tests {
     fn test_simple_text() {
         let input = "Hello, world!";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
@@ -1074,7 +1070,6 @@ mod tests {
     fn test_paragraph() {
         let input = "This is a paragraph.";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
@@ -1093,7 +1088,6 @@ mod tests {
     fn test_link() {
         let input = "[Rust](https://www.rust-lang.org/)";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
@@ -1113,7 +1107,6 @@ mod tests {
     fn test_directive_to_component() {
         let input = ":::note[My Title]\nThis is **important** content.\n:::";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
@@ -1146,7 +1139,6 @@ mod tests {
     fn test_directive_without_title() {
         let input = ":::tip\nHelpful advice here.\n:::";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
@@ -1172,7 +1164,6 @@ mod tests {
     fn test_directive_disabled() {
         let input = ":::note\nContent\n:::";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1207,7 +1198,6 @@ fn main() {}
 ---
 "#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
         let blocks = to_blocks(input, &options).unwrap();
@@ -1254,7 +1244,6 @@ fn main() {}
     fn test_task_list() {
         let input = "- [ ] Unchecked task\n- [x] Checked task\n";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
         let blocks = to_blocks(input, &options).unwrap();
@@ -1278,7 +1267,6 @@ fn main() {}
     fn test_ordered_list() {
         let input = "1. First\n2. Second\n3. Third\n";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
         let blocks = to_blocks(input, &options).unwrap();
@@ -1300,7 +1288,6 @@ fn main() {}
     fn test_xss_text_escaping() {
         let input = "Text with <script>alert('xss')</script> and & symbols.";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1341,7 +1328,6 @@ fn main() {}
     fn test_xss_attribute_escaping() {
         let input = r#"[Link](http://example.com "Title with <script> and & and ' quotes")"#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1370,7 +1356,6 @@ fn main() {}
     fn test_xss_image_attributes() {
         let input = r#"![Alt with ' and "](image.png "Title with &")"#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1434,7 +1419,6 @@ fn main() {}
     fn test_strikethrough() {
         let input = "This is ~~deleted~~ text.";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1460,7 +1444,6 @@ fn main() {}
 | Alice | 30 | Tokyo |
 | Bob | 25 | NYC |"#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1511,7 +1494,6 @@ fn main() {}
 | [Link](https://example.com) | ✓ |
 | `code` | ✓ |"#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1546,7 +1528,6 @@ line2
 line3
 ```"#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
@@ -1577,14 +1558,16 @@ line3
 ```
 </Steps>"#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
         let result = to_blocks(input, &options).unwrap();
 
         // Find the component block
-        let component = result.blocks.iter().find(|b| matches!(b, RenderBlock::Component { name, .. } if name == "Steps"));
+        let component = result
+            .blocks
+            .iter()
+            .find(|b| matches!(b, RenderBlock::Component { name, .. } if name == "Steps"));
         assert!(component.is_some(), "Should have Steps component block");
 
         if let RenderBlock::Component { slot_html, .. } = component.unwrap() {
