@@ -765,9 +765,9 @@ function validateStarlightComponents(source) {
   const stepsNestedMatches = source.matchAll(stepsNestedPattern);
   for (const match of stepsNestedMatches) {
     const content = match[1];
-    // Detect numbered list item followed by indented content (4+ spaces)
+    // Detect numbered list item followed by indented content (3+ spaces)
     // This catches both nested lists and continuation paragraphs
-    if (/^\d+\.\s+.*\n\n?\s{4,}\S/m.test(content)) {
+    if (/^\d+\.\s+.*\n\n?\s{3,}\S/m.test(content)) {
       return "Nested content inside <Steps> requires Astro MDX processing";
     }
   }
