@@ -757,12 +757,6 @@ function validateStarlightComponents(source) {
     }
   }
 
-  // Check for Fragment with slot attribute - these need special handling
-  // that the current mdast pipeline doesn't fully support
-  if (/<Fragment\s+slot\s*=/i.test(source)) {
-    return "Fragment slot syntax requires Astro MDX processing";
-  }
-
   // Check for bold/emphasis markers inside FileTree blocks
   // FileTree expects plain unordered list, markdown formatting breaks it
   const fileTreePattern = /<FileTree[^>]*>[\s\S]*?<\/FileTree>/gi;
