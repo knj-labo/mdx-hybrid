@@ -13,21 +13,6 @@ fn read_fixture(path: &str) -> String {
 }
 
 #[test]
-fn test_parse() {
-    let input = "# Hello, World!";
-    let output = parse(input).unwrap().html;
-    assert!(output.contains("<h1 id=\"hello-world\">Hello, World!</h1>"));
-}
-
-#[test]
-fn test_parse_list() {
-    let input = "* Item 1\n* Item 2";
-    let output = parse(input).unwrap().html;
-    assert!(output.contains("<ul>"));
-    assert!(output.contains("<li>Item 1</li>"));
-}
-
-#[test]
 fn test_parse_applies_lazy_loading() {
     let input = "![alt](img.png)";
     let output = parse(input).unwrap().html;

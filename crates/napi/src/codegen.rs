@@ -84,6 +84,21 @@ pub(crate) fn generate_module_code_from_ir(
     writeln!(code, "export const Content = MarkflowContent;")
         .map_err(|err| Error::from_reason(err.to_string()))?;
 
+    // Add MDX component markers for Astro Content Collections
+    writeln!(code, "Content[Symbol.for('mdx-component')] = true;")
+        .map_err(|err| Error::from_reason(err.to_string()))?;
+    writeln!(
+        code,
+        "Content[Symbol.for('astro.needsHeadRendering')] = !Boolean(frontmatter.layout);"
+    )
+    .map_err(|err| Error::from_reason(err.to_string()))?;
+    writeln!(
+        code,
+        "Content.moduleId = {};",
+        js_string_literal(&ir.file_path)
+    )
+    .map_err(|err| Error::from_reason(err.to_string()))?;
+
     // Only generate export default if user didn't provide their own
     if !ir.has_user_default_export {
         if ir.layout_import.is_some() {
