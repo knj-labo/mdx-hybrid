@@ -428,10 +428,32 @@ function blocksToJsx(blocks, frontmatter = {}, headings = []) {
     if (block.type === "html") {
       fragments.push(block.content);
     } else if (block.type === "component") {
-      componentImports.add(block.name);
-      const propsStr = block.props
-        ? Object.entries(block.props)
+      // Handle directive components (note, tip, caution, danger) -> Aside
+      const DIRECTIVE_TYPES = ["note", "tip", "caution", "danger"];
+      const isDirective = DIRECTIVE_TYPES.includes(block.name);
+      const componentName = isDirective ? "Aside" : block.name;
+
+      // Skip Fragment - it's a built-in Astro component, not a Starlight component
+      if (componentName !== "Fragment") {
+        componentImports.add(componentName);
+      }
+
+      // For directives, add the type prop
+      const effectiveProps = isDirective
+        ? { ...block.props, type: { type: "literal", value: block.name } }
+        : block.props;
+
+      const propsStr = effectiveProps
+        ? Object.entries(effectiveProps)
             .map(([key, value]) => {
+              // Handle PropValue enum from Rust: { type: "literal"|"expression", value: string }
+              if (typeof value === "object" && value !== null && "type" in value && "value" in value) {
+                if (value.type === "literal") {
+                  return `${key}="${String(value.value).replace(/"/g, '\\"')}"`;
+                } else if (value.type === "expression") {
+                  return `${key}={${value.value}}`;
+                }
+              }
               if (typeof value === "string") {
                 return `${key}="${value.replace(/"/g, '\\"')}"`;
               }
@@ -439,8 +461,8 @@ function blocksToJsx(blocks, frontmatter = {}, headings = []) {
             })
             .join(" ")
         : "";
-      const openTag = propsStr ? `<${block.name} ${propsStr}>` : `<${block.name}>`;
-      fragments.push(`${openTag}${block.slotHtml || ""}</${block.name}>`);
+      const openTag = propsStr ? `<${componentName} ${propsStr}>` : `<${componentName}>`;
+      fragments.push(`${openTag}${block.slotHtml || ""}</${componentName}>`);
     }
   }
 
@@ -739,7 +761,23 @@ function validateStarlightComponents(source) {
       if (/^\s*:::[a-z]/im.test(block)) {
         return "Directive syntax (:::) inside <Steps> breaks list structure";
       }
+      // Check for JSX components inside list items (indented 4+ spaces)
+      // Pattern: numbered list item followed by indented JSX tag
+      if (/^\d+\.\s+[\s\S]*?\n\s{4,}<[A-Z]/m.test(block)) {
+        return "JSX components inside <Steps> list items break list structure";
+      }
+      // Check for code blocks inside list items (indented 4+ spaces)
+      // Pattern: numbered list item followed by indented code fence
+      if (/^\d+\.\s+[\s\S]*?\n\s{4,}```/m.test(block)) {
+        return "Code blocks inside <Steps> list items break list structure";
+      }
     }
+  }
+
+  // Check for Fragment with slot attribute - these need special handling
+  // that the current mdast pipeline doesn't fully support
+  if (/<Fragment\s+slot\s*=/i.test(source)) {
+    return "Fragment slot syntax requires Astro MDX processing";
   }
 
   // Check for bold/emphasis markers inside FileTree blocks
