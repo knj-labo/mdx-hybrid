@@ -36,6 +36,7 @@ export default defineConfig({
 				plugins: [pluginCollapsibleSections()],
 			},
 			components: {
+				Head: './src/components/starlight/Head.astro',
 				EditLink: './src/components/starlight/EditLink.astro',
 				Hero: './src/components/starlight/Hero.astro',
 				MarkdownContent: './src/components/starlight/MarkdownContent.astro',

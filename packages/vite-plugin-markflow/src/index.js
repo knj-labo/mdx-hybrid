@@ -26,8 +26,6 @@ const VIRTUAL_PREFIX = "\0markflow:";
 const DEBUG_BINDING = process.env.MARKFLOW_DEBUG_BINDING === "1";
 const ENABLE_SHIKI = process.env.MARKFLOW_SHIKI === "1";
 const IS_MDAST = process.env.MARKFLOW_PIPELINE === "mdast";
-const STARLIGHT_LAYER_ORDER =
-  "@layer starlight.base, starlight.reset, starlight.core, starlight.content, starlight.components, starlight.utils;";
 
 const logBindingSource = (source) => {
   if (!DEBUG_BINDING) return;
@@ -198,23 +196,6 @@ const unwrapVirtual = (value) =>
         ? binding.createCompiler
         : (cfg) => new binding.MarkflowCompiler(cfg);
       compiler = createCompiler(compilerOptions);
-    },
-    transformIndexHtml() {
-      // Only inject in dev mode - build mode bundles CSS correctly
-      if (resolvedConfig?.command !== "serve") {
-        return;
-      }
-      // Inject CSS layer order declaration at the very top of <head>
-      // This ensures @layer order is established before any CSS loads
-      return {
-        tags: [
-          {
-            tag: "style",
-            children: STARLIGHT_LAYER_ORDER,
-            injectTo: "head-prepend",
-          },
-        ],
-      };
     },
     async resolveId(sourceId, importer) {
       if (sourceId.startsWith(VIRTUAL_PREFIX)) {
