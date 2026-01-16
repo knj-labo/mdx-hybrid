@@ -1,7 +1,7 @@
 //! Rendering context for the mdast renderer.
 
-use super::types::{BlocksResult, HeadingEntry, PropValue, RenderBlock, Scope};
 use super::Options;
+use super::types::{BlocksResult, HeadingEntry, PropValue, RenderBlock, Scope};
 use markdown::mdast::Node;
 use std::collections::HashMap;
 

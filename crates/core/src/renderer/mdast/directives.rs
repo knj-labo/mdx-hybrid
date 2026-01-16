@@ -1,6 +1,6 @@
 //! Directive preprocessing for the mdast renderer.
 
-use crate::transform::code_fence::{advance_fence_state, FenceState};
+use crate::transform::code_fence::{FenceState, advance_fence_state};
 use crate::transform::directives::{is_directive_closer, parse_opening_directive};
 use std::fmt::Write;
 

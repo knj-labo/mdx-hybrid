@@ -17,9 +17,7 @@ pub mod render;
 mod types;
 
 pub use context::Context;
-pub use types::{
-    AsideMeta, BlocksResult, CardMeta, HeadingEntry, PropValue, RenderBlock, Scope,
-};
+pub use types::{AsideMeta, BlocksResult, CardMeta, HeadingEntry, PropValue, RenderBlock, Scope};
 
 use crate::parser::markdown_adapter::normalize_mdx_jsx_indentation;
 use render::render_node;
@@ -311,7 +309,9 @@ fn main() {}
         }
 
         match &result.blocks[1] {
-            RenderBlock::Component { name, slot_html, .. } => {
+            RenderBlock::Component {
+                name, slot_html, ..
+            } => {
                 assert_eq!(name, "script");
                 assert_eq!(slot_html, "alert('xss')");
             }
