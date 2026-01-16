@@ -23,7 +23,7 @@ export default defineConfig({
 	integrations: [
 		markflow({
 			starlightComponents: true,
-			expressiveCode: true,
+			expressiveCode: false, // Disable - incompatible with non-serializable plugin configs
 		}),
 		devServerFileWatcher([
 			'./config/**', // Custom plugins and integrations
