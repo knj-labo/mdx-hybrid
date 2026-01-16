@@ -526,8 +526,9 @@ function resolveExpressiveCodeConfig(config) {
 }
 
 function rewriteExpressiveCodeBlocks(code, componentName) {
+  // Match <pre> with optional attributes (class="astro-code" tabindex="0" etc.)
   const pattern =
-    /<pre><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
+    /<pre[^>]*><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
   let changed = false;
   const next = code.replace(pattern, (match, lang, raw) => {
     changed = true;

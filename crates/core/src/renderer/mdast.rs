@@ -546,6 +546,10 @@ fn render_list(list: &markdown::mdast::List, ctx: &mut Context) {
 }
 
 /// Renders a list item node as `<li>`.
+///
+/// For task list items (GFM), adds `task-list-item` class and wraps content
+/// in `<label><input><span>` to match the structure expected by rehype-tasklist-enhancer.
+/// This enables proper styling in Starlight's Checklist component.
 fn render_list_item(item: &markdown::mdast::ListItem, ctx: &mut Context) {
     // Task list support (GFM)
     let class_attr = if item.checked.is_some() {
@@ -555,18 +559,26 @@ fn render_list_item(item: &markdown::mdast::ListItem, ctx: &mut Context) {
     };
     ctx.push_raw(&format!("<li{}>", class_attr));
 
-    // Checkbox rendering for task lists
     if let Some(checked) = item.checked {
+        // For task list items, wrap in <label><input><span> structure
+        // to match rehype-tasklist-enhancer output for Checklist component compatibility
         let checked_str = if checked { " checked" } else { "" };
         ctx.push_raw(&format!(
-            "<input type=\"checkbox\" disabled{}/> ",
+            "<label><input type=\"checkbox\" disabled{}/><span>",
             checked_str
         ));
-    }
 
-    // Render children
-    for child in &item.children {
-        render_node(child, ctx);
+        // Render children inside <span>
+        for child in &item.children {
+            render_node(child, ctx);
+        }
+
+        ctx.push_raw("</span></label>");
+    } else {
+        // Normal list item
+        for child in &item.children {
+            render_node(child, ctx);
+        }
     }
 
     ctx.push_raw("</li>");
@@ -903,12 +915,9 @@ fn render_jsx(
         }
 
         // Render children to get slot HTML
-        let saved_html = std::mem::take(&mut ctx.current_html);
-        for child in children {
-            render_node(child, ctx);
-        }
-        let slot_html = std::mem::take(&mut ctx.current_html);
-        ctx.current_html = saved_html;
+        // Use render_children_to_string to properly handle both HTML content
+        // and nested JSX components (like <ReadMore>) inside directives
+        let slot_html = ctx.render_children_to_string(children);
 
         // Build props for Aside component
         // Use "Aside" as component name with type prop for proper Starlight integration
