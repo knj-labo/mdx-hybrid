@@ -108,7 +108,6 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
 ///
 /// * `input` - The markdown text to parse
 /// * `opts` - Optional configuration object with:
-///   - `inject_starlight_css`: boolean (default: false)
 ///   - `enable_directives`: boolean (default: true)
 ///
 /// # Returns
@@ -143,12 +142,10 @@ pub fn parse_blocks(input: String, opts: Option<BlockOptions>) -> napi::Result<P
     // Parse options from JavaScript
     let options = if let Some(o) = opts {
         mdast::Options {
-            inject_starlight_css: o.inject_starlight_css.unwrap_or(false),
             enable_directives: o.enable_directives.unwrap_or(true),
         }
     } else {
         mdast::Options {
-            inject_starlight_css: false,
             enable_directives: true,
         }
     };

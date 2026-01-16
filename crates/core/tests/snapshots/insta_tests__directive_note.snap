@@ -1,7 +1,0 @@
----
-source: directive_note
-expression: result
----
-<aside class="aside aside--note">
-Body
-</aside>

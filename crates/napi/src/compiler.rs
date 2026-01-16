@@ -88,8 +88,20 @@ fn blocks_to_jsx_string(blocks: &[RenderBlock]) -> String {
                 props,
                 slot_html,
             } => {
+                // Map directive names to Aside component
+                let directive_types = ["note", "tip", "caution", "danger"];
+                let is_directive = directive_types.contains(&name.as_str());
+                let tag_name = if is_directive { "Aside" } else { name.as_str() };
+
                 result.push('<');
-                result.push_str(name);
+                result.push_str(tag_name);
+
+                // For directives, add type prop
+                if is_directive {
+                    result.push_str(" type=\"");
+                    result.push_str(name);
+                    result.push('"');
+                }
 
                 // Render props as {...{key: "value" | expression, ...}}
                 if !props.is_empty() {
@@ -125,7 +137,7 @@ fn blocks_to_jsx_string(blocks: &[RenderBlock]) -> String {
                 result.push('>');
                 result.push_str(slot_html);
                 result.push_str("</");
-                result.push_str(name);
+                result.push_str(tag_name);
                 result.push('>');
             }
         }
@@ -161,7 +173,6 @@ pub fn compile_ir(
 
     // Use mdast pipeline to generate blocks
     let mdast_options = MdastOptions {
-        inject_starlight_css: false,
         enable_directives: true,
     };
     let blocks_result = to_blocks(&body_without_imports, &mdast_options).map_err(|err| {

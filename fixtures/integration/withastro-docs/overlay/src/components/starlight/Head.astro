@@ -1,0 +1,16 @@
+---
+/**
+ * Custom Head component that ensures CSS @layer order declaration
+ * is placed at the very top of <head>, before any other styles.
+ *
+ * This fixes spacing issues in dev mode caused by Starlight's
+ * component styles being inlined before layers.css is processed.
+ */
+const { head } = Astro.locals.starlightRoute;
+
+const STARLIGHT_LAYER_ORDER = '@layer starlight.base, starlight.reset, starlight.core, starlight.content, starlight.components, starlight.utils;';
+---
+
+<style is:inline set:html={STARLIGHT_LAYER_ORDER} />
+
+{head.map(({ tag: Tag, attrs, content }) => <Tag {...attrs} set:html={content} />)}
