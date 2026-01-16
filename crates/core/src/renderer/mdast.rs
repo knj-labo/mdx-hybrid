@@ -449,8 +449,16 @@ fn preprocess_directives(input: &str) -> String {
         if let Some(opening) = parse_opening_directive(line) {
             directive_stack.push(opening.name.clone());
 
+            // Preserve leading whitespace from original line
+            let leading_ws: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+
             // Convert to JSX tag
-            write!(output, "<mf-directive-start name=\"{}\"", opening.name).ok();
+            write!(
+                output,
+                "{}<mf-directive-start name=\"{}\"",
+                leading_ws, opening.name
+            )
+            .ok();
 
             if let Some(title) = &opening.bracket_title {
                 // Escape quotes in title
@@ -474,7 +482,9 @@ fn preprocess_directives(input: &str) -> String {
         // Check for directive closer
         if is_directive_closer(line) && !directive_stack.is_empty() {
             directive_stack.pop();
-            writeln!(output, "<mf-directive-end />").ok();
+            // Preserve leading whitespace from original line
+            let leading_ws: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+            writeln!(output, "{}<mf-directive-end />", leading_ws).ok();
             continue;
         }
 
