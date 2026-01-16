@@ -774,18 +774,5 @@ function validateStarlightComponents(source) {
   // (JSX components, code fences, continuation paragraphs) is now handled correctly.
   // Deep indentation is interpreted as nested list content instead of code blocks.
 
-  // Check for bold/emphasis markers inside FileTree blocks
-  // FileTree expects plain unordered list, markdown formatting breaks it
-  const fileTreePattern = /<FileTree[^>]*>[\s\S]*?<\/FileTree>/gi;
-  const fileTreeMatches = source.match(fileTreePattern);
-  if (fileTreeMatches) {
-    for (const block of fileTreeMatches) {
-      // Check for **bold** or *italic* markers
-      if (/\*\*[^*]+\*\*|\*[^*]+\*/.test(block)) {
-        return "Bold/italic markers inside <FileTree> break component structure";
-      }
-    }
-  }
-
   return null;
 }

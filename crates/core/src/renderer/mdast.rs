@@ -934,7 +934,18 @@ fn render_jsx(
         return;
     }
 
-    // 3. Extract props from JSX attributes
+    // 3. Handle FileTree: transform to plain HTML <ul class="filetree">
+    // This allows bold/italic formatting inside FileTree without relying on
+    // Starlight's FileTree component (which doesn't support <strong>/<em> children).
+    if tag_name == "FileTree" {
+        let slot_html = ctx.render_children_to_string(children);
+        ctx.push_raw("<ul class=\"filetree\">");
+        ctx.push_raw(&slot_html);
+        ctx.push_raw("</ul>");
+        return;
+    }
+
+    // 4. Extract props from JSX attributes
     let mut props = HashMap::new();
     for attr in attributes {
         match attr {
@@ -960,12 +971,12 @@ fn render_jsx(
         }
     }
 
-    // 4. Render children to HTML string (enables nested markdown/JSX)
+    // 5. Render children to HTML string (enables nested markdown/JSX)
     // This is the key to supporting markdown inside JSX components!
     // Headings found in children are automatically bubbled up to ctx for TOC.
     let slot_html = ctx.render_children_to_string(children);
 
-    // 5. Special handling for Fragment with slot attribute
+    // 6. Special handling for Fragment with slot attribute
     // Fragment with slot must be rendered inline as JSX to work with Astro's slot system.
     // Creating a separate Component block would break the parent-child relationship.
     if tag_name == "Fragment" && props.contains_key("slot") {
@@ -973,7 +984,7 @@ fn render_jsx(
         return;
     }
 
-    // 6. Push as component block (unified with directive rendering)
+    // 7. Push as component block (unified with directive rendering)
     // When inside a list, render inline to avoid fragmenting the list structure.
     if ctx.is_in_list() {
         ctx.push_component_inline(tag_name, &props, &slot_html);
