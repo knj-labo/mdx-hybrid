@@ -752,7 +752,20 @@ pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
             // Inside JSX blocks: preserve original indentation
             // With code_indented: false, deep indentation won't trigger code blocks
             if !jsx_stack.is_empty() {
-                output.push_str(line_body);
+                // Preserve relative indentation for nested markdown structures
+                // Convert indentation to "levels" (each 2-4 chars = 1 level = 3 spaces)
+                // This preserves nesting hierarchy while avoiding 4+ space code blocks
+                let leading_spaces = line_body.len() - trimmed.len();
+                let level = match leading_spaces {
+                    0..=1 => 0,
+                    2..=4 => 1,
+                    5..=7 => 2,
+                    _ => 3, // Cap at 3 levels to avoid code blocks
+                };
+                for _ in 0..level {
+                    output.push_str("   ");
+                }
+                output.push_str(trimmed);
                 output.push_str(line_ending);
                 continue;
             }
