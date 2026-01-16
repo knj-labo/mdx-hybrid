@@ -757,5 +757,33 @@ function validateStarlightComponents(source) {
     }
   }
 
+  // Check for nested content inside Steps
+  // The mdast pipeline doesn't correctly handle:
+  // 1. Nested lists: "1. Item\n    - Nested bullet" -> <ol>...</ol><ul>...</ul>
+  // 2. Continuation paragraphs: "1. Item\n\n    Paragraph" -> <ol>...</ol><p>...</p>
+  const stepsNestedPattern = /<Steps[^>]*>([\s\S]*?)<\/Steps>/gi;
+  const stepsNestedMatches = source.matchAll(stepsNestedPattern);
+  for (const match of stepsNestedMatches) {
+    const content = match[1];
+    // Detect numbered list item followed by indented content (3+ spaces)
+    // This catches both nested lists and continuation paragraphs
+    if (/^\d+\.\s+.*\n\n?\s{3,}\S/m.test(content)) {
+      return "Nested content inside <Steps> requires Astro MDX processing";
+    }
+  }
+
+  // Check for bold/emphasis markers inside FileTree blocks
+  // FileTree expects plain unordered list, markdown formatting breaks it
+  const fileTreePattern = /<FileTree[^>]*>[\s\S]*?<\/FileTree>/gi;
+  const fileTreeMatches = source.match(fileTreePattern);
+  if (fileTreeMatches) {
+    for (const block of fileTreeMatches) {
+      // Check for **bold** or *italic* markers
+      if (/\*\*[^*]+\*\*|\*[^*]+\*/.test(block)) {
+        return "Bold/italic markers inside <FileTree> break component structure";
+      }
+    }
+  }
+
   return null;
 }

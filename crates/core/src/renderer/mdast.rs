@@ -532,6 +532,47 @@ fn extract_text_from_node(node: &Node, buffer: &mut String) {
     }
 }
 
+/// Renders a list node as `<ul>` or `<ol>`.
+fn render_list(list: &markdown::mdast::List, ctx: &mut Context) {
+    let tag = if list.ordered { "ol" } else { "ul" };
+    ctx.push_raw(&format!("<{}>", tag));
+    ctx.enter(Scope::List);
+
+    for child in &list.children {
+        render_node(child, ctx);
+    }
+
+    ctx.exit();
+    ctx.push_raw(&format!("</{}>", tag));
+}
+
+/// Renders a list item node as `<li>`.
+fn render_list_item(item: &markdown::mdast::ListItem, ctx: &mut Context) {
+    // Task list support (GFM)
+    let class_attr = if item.checked.is_some() {
+        " class=\"task-list-item\""
+    } else {
+        ""
+    };
+    ctx.push_raw(&format!("<li{}>", class_attr));
+
+    // Checkbox rendering for task lists
+    if let Some(checked) = item.checked {
+        let checked_str = if checked { " checked" } else { "" };
+        ctx.push_raw(&format!(
+            "<input type=\"checkbox\" disabled{}/> ",
+            checked_str
+        ));
+    }
+
+    // Render children
+    for child in &item.children {
+        render_node(child, ctx);
+    }
+
+    ctx.push_raw("</li>");
+}
+
 /// Recursively renders an AST node to HTML, updating the context state.
 fn render_node(node: &Node, ctx: &mut Context) {
     match node {
@@ -630,45 +671,10 @@ fn render_node(node: &Node, ctx: &mut Context) {
         }
 
         // List node - render as <ul> or <ol>
-        Node::List(list) => {
-            let tag = if list.ordered { "ol" } else { "ul" };
-            ctx.push_raw(&format!("<{}>", tag));
-            ctx.enter(Scope::List);
-
-            for child in &list.children {
-                render_node(child, ctx);
-            }
-
-            ctx.exit();
-            ctx.push_raw(&format!("</{}>", tag));
-        }
+        Node::List(list) => render_list(list, ctx),
 
         // ListItem node - render as <li>
-        Node::ListItem(item) => {
-            // Task list support (GFM)
-            let class_attr = if item.checked.is_some() {
-                " class=\"task-list-item\""
-            } else {
-                ""
-            };
-            ctx.push_raw(&format!("<li{}>", class_attr));
-
-            // Checkbox rendering for task lists
-            if let Some(checked) = item.checked {
-                let checked_str = if checked { " checked" } else { "" };
-                ctx.push_raw(&format!(
-                    "<input type=\"checkbox\" disabled{}/> ",
-                    checked_str
-                ));
-            }
-
-            // Render children
-            for child in &item.children {
-                render_node(child, ctx);
-            }
-
-            ctx.push_raw("</li>");
-        }
+        Node::ListItem(item) => render_list_item(item, ctx),
 
         // Code block node - render as <pre><code>
         // astro-code class for Starlight CSS compatibility
