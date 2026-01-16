@@ -5,11 +5,11 @@ expression: result
 <Layout>
 <Section>
 <Callout type="info">
-Hello <strong>MDX</strong>
+      Hello <strong>MDX</strong>
 </Callout>
-<>
+   <>
 <Inline code={`const x = 1`} />
 <span>Tail</span>
-</>
+   </>
 </Section>
 </Layout>
