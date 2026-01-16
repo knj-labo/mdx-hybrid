@@ -108,18 +108,6 @@ pub struct Context<'a> {
     stack: Vec<Scope>,
     #[allow(dead_code)]
     options: &'a Options,
-
-    /// Stack of active directive metadata (for nested directives).
-    directive_stack: Vec<DirectiveMeta>,
-}
-
-/// Metadata extracted from a directive placeholder tag.
-#[derive(Debug, Clone)]
-struct DirectiveMeta {
-    name: String,
-    title: Option<String>,
-    #[allow(dead_code)]
-    attrs: Option<String>,
 }
 
 /// Represents the type of scope currently being rendered.
@@ -171,7 +159,6 @@ impl<'a> Context<'a> {
             slugger: crate::Slugger::new(),
             stack: vec![Scope::Root],
             options,
-            directive_stack: Vec::new(),
         }
     }
 
@@ -423,9 +410,9 @@ pub struct Options {
 ///
 /// Output:
 /// ```text
-/// <mf-directive-start name="note" title="Title" />
+/// <mf-directive name="note" title="Title">
 /// Content
-/// <mf-directive-end />
+/// </mf-directive>
 /// ```
 fn preprocess_directives(input: &str) -> String {
     use crate::transform::code_fence::{FenceState, advance_fence_state};
@@ -433,7 +420,8 @@ fn preprocess_directives(input: &str) -> String {
 
     let mut fence_state = FenceState::default();
     let mut output = String::with_capacity(input.len());
-    let mut directive_stack: Vec<String> = Vec::new(); // Track directive names for proper closing
+    // Track directive names and their leading whitespace for proper closing
+    let mut directive_stack: Vec<(String, String)> = Vec::new();
 
     for line in input.lines() {
         let fence_outcome = advance_fence_state(line, fence_state);
@@ -447,15 +435,16 @@ fn preprocess_directives(input: &str) -> String {
 
         // Check for directive opening
         if let Some(opening) = parse_opening_directive(line) {
-            directive_stack.push(opening.name.clone());
-
             // Preserve leading whitespace from original line
             let leading_ws: String = line.chars().take_while(|c| c.is_whitespace()).collect();
 
-            // Convert to JSX tag
+            directive_stack.push((opening.name.clone(), leading_ws.clone()));
+
+            // Convert to JSX container tag (NOT self-closing)
+            // This ensures the content between ::: markers is INSIDE the JSX element
             write!(
                 output,
-                "{}<mf-directive-start name=\"{}\"",
+                "{}<mf-directive name=\"{}\"",
                 leading_ws, opening.name
             )
             .ok();
@@ -475,16 +464,16 @@ fn preprocess_directives(input: &str) -> String {
                 .ok();
             }
 
-            writeln!(output, " />").ok();
+            // Opening tag, not self-closing
+            writeln!(output, ">").ok();
             continue;
         }
 
         // Check for directive closer
         if is_directive_closer(line) && !directive_stack.is_empty() {
-            directive_stack.pop();
-            // Preserve leading whitespace from original line
-            let leading_ws: String = line.chars().take_while(|c| c.is_whitespace()).collect();
-            writeln!(output, "{}<mf-directive-end />", leading_ws).ok();
+            let (_, leading_ws) = directive_stack.pop().unwrap();
+            // Close the container tag with same indentation as opener
+            writeln!(output, "{}</mf-directive>", leading_ws).ok();
             continue;
         }
 
@@ -493,8 +482,8 @@ fn preprocess_directives(input: &str) -> String {
     }
 
     // Close any unclosed directives
-    while directive_stack.pop().is_some() {
-        writeln!(output, "<mf-directive-end />").ok();
+    while let Some((_, leading_ws)) = directive_stack.pop() {
+        writeln!(output, "{}</mf-directive>", leading_ws).ok();
     }
 
     output
@@ -886,18 +875,13 @@ fn render_jsx(
         return;
     };
 
-    // 2. Handle internal directive markers
-
-    // Opening marker: <mf-directive-start name="..." title="..." />
-    if tag_name == "mf-directive-start" {
-        // Flush any pending HTML before starting directive capture
+    // 2. Handle internal directive container: <mf-directive name="..." title="...">...</mf-directive>
+    if tag_name == "mf-directive" {
+        // Flush any pending HTML before processing directive
         ctx.flush_html();
 
-        let mut meta = DirectiveMeta {
-            name: "note".to_string(),
-            title: None,
-            attrs: None,
-        };
+        let mut directive_type = "note".to_string();
+        let mut title: Option<String> = None;
 
         // Extract metadata from attributes
         for attr in attributes {
@@ -908,38 +892,35 @@ fn render_jsx(
                 };
 
                 match prop.name.as_str() {
-                    "name" => meta.name = val,
+                    "name" => directive_type = val,
                     "title" => {
                         // Unescape &quot; back to "
-                        meta.title = Some(val.replace("&quot;", "\""));
+                        title = Some(val.replace("&quot;", "\""));
                     }
-                    "attrs" => meta.attrs = Some(val.replace("&quot;", "\"")),
                     _ => {}
                 }
             }
         }
 
-        ctx.directive_stack.push(meta);
-        return; // Don't output anything to HTML
-    }
-
-    // Closing marker: <mf-directive-end />
-    if tag_name == "mf-directive-end" {
-        if let Some(meta) = ctx.directive_stack.pop() {
-            // Extract slot HTML from current buffer
-            let slot_html = std::mem::take(&mut ctx.current_html);
-
-            // Build props from directive metadata (always literals)
-            let mut props = HashMap::new();
-            if let Some(title) = meta.title {
-                props.insert("title".to_string(), PropValue::literal(title));
-            }
-            // TODO: Parse attrs string if needed
-
-            // Emit Component block
-            ctx.push_component(&meta.name, props, slot_html);
+        // Render children to get slot HTML
+        let saved_html = std::mem::take(&mut ctx.current_html);
+        for child in children {
+            render_node(child, ctx);
         }
-        return; // Don't output anything to HTML
+        let slot_html = std::mem::take(&mut ctx.current_html);
+        ctx.current_html = saved_html;
+
+        // Build props for Aside component
+        // Use "Aside" as component name with type prop for proper Starlight integration
+        let mut props = HashMap::new();
+        props.insert("type".to_string(), PropValue::literal(directive_type));
+        if let Some(t) = title {
+            props.insert("title".to_string(), PropValue::literal(t));
+        }
+
+        // Emit as Aside Component block
+        ctx.push_component("Aside", props, slot_html);
+        return;
     }
 
     // 3. Extract props from JSX attributes
@@ -1142,7 +1123,9 @@ mod tests {
                 props,
                 slot_html,
             } => {
-                assert_eq!(name, "note");
+                // Directives are converted to Aside component with type prop
+                assert_eq!(name, "Aside");
+                assert_eq!(props.get("type"), Some(&PropValue::literal("note")));
                 assert_eq!(props.get("title"), Some(&PropValue::literal("My Title")));
                 assert!(slot_html.contains("<p>This is <strong>important</strong> content.</p>"));
             }
@@ -1167,7 +1150,9 @@ mod tests {
                 props,
                 slot_html,
             } => {
-                assert_eq!(name, "tip");
+                // Directives are converted to Aside component with type prop
+                assert_eq!(name, "Aside");
+                assert_eq!(props.get("type"), Some(&PropValue::literal("tip")));
                 assert!(props.get("title").is_none());
                 assert!(slot_html.contains("Helpful advice"));
             }
@@ -1591,6 +1576,65 @@ line3
             assert!(
                 slot_html.contains("line1&#10;line2&#10;line3"),
                 "Code block inside JSX should preserve newlines. Got: {}",
+                slot_html
+            );
+        }
+    }
+
+    /// Tests that indented directives inside Steps preserve their indentation
+    /// and become part of the list item content.
+    #[test]
+    fn test_indented_directive_inside_steps() {
+        let input = r#"<Steps>
+
+1. First step
+
+2. Second step
+
+    <PackageManagerTabs>
+    content
+    </PackageManagerTabs>
+
+    :::tip
+    Some tip content
+    :::
+
+3. Third step
+
+</Steps>"#;
+
+        let options = Options {
+            enable_directives: true,
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        // Find the Steps component block
+        let steps_component = result
+            .blocks
+            .iter()
+            .find(|b| matches!(b, RenderBlock::Component { name, .. } if name == "Steps"));
+        assert!(
+            steps_component.is_some(),
+            "Should have Steps component block"
+        );
+
+        if let RenderBlock::Component { slot_html, .. } = steps_component.unwrap() {
+            // The directive should be converted to <Aside type="tip">, not raw <tip>
+            assert!(
+                !slot_html.contains("<tip>"),
+                "Directive should NOT produce raw <tip> element. Got: {}",
+                slot_html
+            );
+            // Should have Aside component with type prop
+            assert!(
+                slot_html.contains("<Aside") && slot_html.contains("type={\"tip\"}"),
+                "Should have Aside component with type prop. Got: {}",
+                slot_html
+            );
+            // Directive content should be present
+            assert!(
+                slot_html.contains("Some tip content"),
+                "Tip directive content should be present. Got: {}",
                 slot_html
             );
         }
