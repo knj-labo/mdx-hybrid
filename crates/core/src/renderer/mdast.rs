@@ -483,6 +483,47 @@ fn extract_text_from_node(node: &Node, buffer: &mut String) {
     }
 }
 
+/// Renders a list node as `<ul>` or `<ol>`.
+fn render_list(list: &markdown::mdast::List, ctx: &mut Context) {
+    let tag = if list.ordered { "ol" } else { "ul" };
+    ctx.push_raw(&format!("<{}>", tag));
+    ctx.enter(Scope::List);
+
+    for child in &list.children {
+        render_node(child, ctx);
+    }
+
+    ctx.exit();
+    ctx.push_raw(&format!("</{}>", tag));
+}
+
+/// Renders a list item node as `<li>`.
+fn render_list_item(item: &markdown::mdast::ListItem, ctx: &mut Context) {
+    // Task list support (GFM)
+    let class_attr = if item.checked.is_some() {
+        " class=\"task-list-item\""
+    } else {
+        ""
+    };
+    ctx.push_raw(&format!("<li{}>", class_attr));
+
+    // Checkbox rendering for task lists
+    if let Some(checked) = item.checked {
+        let checked_str = if checked { " checked" } else { "" };
+        ctx.push_raw(&format!(
+            "<input type=\"checkbox\" disabled{}/> ",
+            checked_str
+        ));
+    }
+
+    // Render children
+    for child in &item.children {
+        render_node(child, ctx);
+    }
+
+    ctx.push_raw("</li>");
+}
+
 /// Recursively renders an AST node to HTML, updating the context state.
 fn render_node(node: &Node, ctx: &mut Context) {
     match node {
@@ -581,45 +622,10 @@ fn render_node(node: &Node, ctx: &mut Context) {
         }
 
         // List node - render as <ul> or <ol>
-        Node::List(list) => {
-            let tag = if list.ordered { "ol" } else { "ul" };
-            ctx.push_raw(&format!("<{}>", tag));
-            ctx.enter(Scope::List);
-
-            for child in &list.children {
-                render_node(child, ctx);
-            }
-
-            ctx.exit();
-            ctx.push_raw(&format!("</{}>", tag));
-        }
+        Node::List(list) => render_list(list, ctx),
 
         // ListItem node - render as <li>
-        Node::ListItem(item) => {
-            // Task list support (GFM)
-            let class_attr = if item.checked.is_some() {
-                " class=\"task-list-item\""
-            } else {
-                ""
-            };
-            ctx.push_raw(&format!("<li{}>", class_attr));
-
-            // Checkbox rendering for task lists
-            if let Some(checked) = item.checked {
-                let checked_str = if checked { " checked" } else { "" };
-                ctx.push_raw(&format!(
-                    "<input type=\"checkbox\" disabled{}/> ",
-                    checked_str
-                ));
-            }
-
-            // Render children
-            for child in &item.children {
-                render_node(child, ctx);
-            }
-
-            ctx.push_raw("</li>");
-        }
+        Node::ListItem(item) => render_list_item(item, ctx),
 
         // Code block node - render as <pre><code>
         // astro-code class for Starlight CSS compatibility
@@ -1465,6 +1471,84 @@ fn main() {}
             );
         } else {
             panic!("Expected HTML block");
+        }
+    }
+
+    /// Tests nested list structure is preserved (not flattened).
+    /// This is a regression test for the bug where nested lists become siblings.
+    #[test]
+    fn test_nested_list_structure() {
+        let input = "1. Item 1\n   - Nested A\n2. Item 2\n";
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: false,
+        };
+        let blocks = to_blocks(input, &options).unwrap();
+
+        assert_eq!(blocks.blocks.len(), 1, "Should have one block");
+        if let RenderBlock::Html { content } = &blocks.blocks[0] {
+            // The nested list should be INSIDE the first <li>, not as a sibling
+            // Expected: <ol><li>Item 1<ul><li>Nested A</li></ul></li><li>Item 2</li></ol>
+            // Bug produces: <ol><li>Item 1</li></ol><ul><li>Nested A</li></ul><ol><li>Item 2</li></ol>
+
+            // Check that we don't have multiple top-level ol elements
+            let ol_count = content.matches("<ol>").count();
+            assert_eq!(
+                ol_count, 1,
+                "Should have exactly one <ol> tag, but found {}. Content: {}",
+                ol_count, content
+            );
+
+            // Check nested structure: <li> containing <ul>
+            assert!(
+                content.contains("<li>") && content.contains("<ul>"),
+                "Content should have nested list structure. Got: {}",
+                content
+            );
+        } else {
+            panic!("Expected HTML block");
+        }
+    }
+
+    /// Tests nested list inside Steps component.
+    /// This tests the actual bug scenario where nested lists inside Steps get flattened.
+    #[test]
+    fn test_nested_list_inside_steps() {
+        let input = r#"<Steps>
+1. Item 1
+   - Nested A
+2. Item 2
+</Steps>"#;
+        let options = Options {
+            inject_starlight_css: false,
+            enable_directives: true,
+        };
+        let blocks = to_blocks(input, &options).unwrap();
+
+        // Find the Steps component
+        let component = blocks
+            .blocks
+            .iter()
+            .find(|b| matches!(b, RenderBlock::Component { name, .. } if name == "Steps"));
+        assert!(component.is_some(), "Should have Steps component block");
+
+        if let RenderBlock::Component { slot_html, .. } = component.unwrap() {
+            // Check that nested list is preserved
+            let ol_count = slot_html.matches("<ol>").count();
+            assert_eq!(
+                ol_count, 1,
+                "Should have exactly one <ol> tag inside Steps, but found {}. Content: {}",
+                ol_count, slot_html
+            );
+
+            // Verify the structure is nested, not flattened
+            assert!(
+                slot_html.contains("<ul>"),
+                "Should have nested <ul> inside Steps. Got: {}",
+                slot_html
+            );
+        } else {
+            panic!("Expected Component block");
         }
     }
 }
