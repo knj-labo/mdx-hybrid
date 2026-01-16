@@ -675,10 +675,25 @@ fn normalize_identifier(id: &str) -> String {
 }
 
 pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
+    // With code_indented: false in MDX mode, we no longer need to clamp indentation
+    // to avoid the "4+ spaces = code block" rule. Deep indentation is now interpreted
+    // as nested list content instead of indented code blocks.
+    //
+    // This function now only strips leading indentation from JSX tags themselves
+    // (opening and closing tags) while preserving all other content as-is.
+    //
+    // Special handling for <Steps>: Non-indented content after a blank line inside
+    // a numbered list gets 3-space indentation added to make it list continuation.
+    // This is needed because Starlight's <Steps> requires a single <ol> child.
     let mut output = String::with_capacity(input.len());
     let mut in_fence = false;
     let mut fence_marker: Option<char> = None;
     let mut jsx_stack: Vec<String> = Vec::new();
+
+    // Steps-specific state tracking
+    let mut in_steps = false;
+    let mut in_numbered_list = false;
+    let mut after_blank_in_list = false;
 
     for line in input.split_inclusive('\n') {
         let (line_body, line_ending) = if let Some(stripped) = line.strip_suffix('\n') {
@@ -689,6 +704,8 @@ pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
         };
 
         let trimmed = line_body.trim_start();
+
+        // Track code fences to avoid processing JSX-like content inside them
         let fence = trimmed.starts_with("```") || trimmed.starts_with("~~~");
         if fence {
             let marker = trimmed.chars().next();
@@ -701,48 +718,88 @@ pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
                 in_fence = true;
                 fence_marker = marker;
             }
-            // Preserve indentation for fence marker lines even inside JSX.
             output.push_str(line_body);
             output.push_str(line_ending);
             continue;
         }
 
         if !in_fence {
+            // Track JSX tags but preserve indentation when inside JSX blocks
             if let Some(tag) = jsx_open_tag(trimmed) {
+                // Track entering <Steps>
+                if tag.name.eq_ignore_ascii_case("steps") {
+                    in_steps = true;
+                    in_numbered_list = false;
+                    after_blank_in_list = false;
+                }
                 if !tag.self_closing {
                     jsx_stack.push(tag.name);
                 }
-                output.push_str(trimmed);
+                // Preserve indentation for nested JSX tags inside JSX blocks
+                // This keeps <PackageManagerTabs> etc. as children of list items
+                if jsx_stack.len() > 1 {
+                    output.push_str(line_body);
+                } else {
+                    output.push_str(trimmed);
+                }
                 output.push_str(line_ending);
                 continue;
             }
 
             if let Some(tag_name) = jsx_close_tag(trimmed) {
+                // Track exiting <Steps>
+                if tag_name.eq_ignore_ascii_case("steps") {
+                    in_steps = false;
+                    in_numbered_list = false;
+                    after_blank_in_list = false;
+                }
+                // Check if we should preserve indentation before popping
+                let should_preserve_indent = jsx_stack.len() > 1;
                 if let Some(last) = jsx_stack.pop()
                     && last != tag_name
                 {
                     jsx_stack.clear();
                 }
-                output.push_str(trimmed);
+                // Preserve indentation for nested JSX closing tags
+                if should_preserve_indent {
+                    output.push_str(line_body);
+                } else {
+                    output.push_str(trimmed);
+                }
                 output.push_str(line_ending);
                 continue;
             }
 
+            // Inside JSX blocks: preserve original indentation
+            // With code_indented: false, deep indentation won't trigger code blocks
             if !jsx_stack.is_empty() {
-                // Preserve relative indentation for nested markdown structures
-                // Convert indentation to "levels" (each 2-4 chars = 1 level = 3 spaces)
-                // This preserves nesting hierarchy while avoiding 4+ space code blocks
                 let leading_spaces = line_body.len() - trimmed.len();
-                let level = match leading_spaces {
-                    0..=1 => 0,
-                    2..=4 => 1,
-                    5..=7 => 2,
-                    _ => 3, // Cap at 3 levels to avoid code blocks
-                };
-                for _ in 0..level {
-                    output.push_str("   ");
+
+                // Steps-specific: track numbered list context and blank lines
+                if in_steps {
+                    if is_numbered_list_item(trimmed) {
+                        in_numbered_list = true;
+                        after_blank_in_list = false;
+                    } else if trimmed.is_empty() && in_numbered_list {
+                        after_blank_in_list = true;
+                    } else if in_numbered_list
+                        && after_blank_in_list
+                        && !trimmed.is_empty()
+                        && leading_spaces == 0
+                        && !trimmed.starts_with("</")
+                    {
+                        // Non-indented content after blank line in numbered list
+                        // Add 3-space indent to make it list continuation
+                        output.push_str("   ");
+                        output.push_str(trimmed);
+                        output.push_str(line_ending);
+                        after_blank_in_list = false;
+                        continue;
+                    }
                 }
-                output.push_str(trimmed);
+
+                // Preserve original indentation for content inside JSX blocks
+                output.push_str(line_body);
                 output.push_str(line_ending);
                 continue;
             }
@@ -799,6 +856,18 @@ fn jsx_close_tag(trimmed: &str) -> Option<String> {
     if name.is_empty() { None } else { Some(name) }
 }
 
+/// Check if a line starts with a numbered list item pattern (e.g., "1. ", "2. ", "10. ")
+fn is_numbered_list_item(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    // Skip digits
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    // Must have at least one digit, followed by ". "
+    i > 0 && bytes.get(i) == Some(&b'.') && bytes.get(i + 1) == Some(&b' ')
+}
+
 pub(crate) fn build_parse_options(config: ParseConfig) -> ParseOptions {
     let mut options = ParseOptions::gfm();
     options.constructs.frontmatter = true;
@@ -814,6 +883,11 @@ pub(crate) fn build_parse_options(config: ParseConfig) -> ParseOptions {
     if config.constructs.jsx {
         options.constructs.html_flow = false;
         options.constructs.html_text = false;
+        // Disable indented code blocks in MDX mode
+        // This allows deep indentation to be interpreted as nested list content
+        // instead of being treated as code blocks (4+ spaces = code block rule)
+        // Modern docs use fenced code blocks (```) exclusively
+        options.constructs.code_indented = false;
     } else {
         options.constructs.html_flow = true;
         options.constructs.html_text = true;

@@ -5,5 +5,5 @@ expression: result
 <p><Button>Click me</Button></p>
 <p>Text between.</p>
 <div className="wrapper">
-<Button>Nested</Button>
+  <Button>Nested</Button>
 </div>
