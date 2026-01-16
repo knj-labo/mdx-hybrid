@@ -137,6 +137,9 @@ export function markflowPlugin(userOptions = {}) {
   let resolvedConfig;
   const sourceLookup = new Map();
   const fallbackFiles = new Set();
+  const fallbackReasons = new Map(); // file -> reason
+  const processedFiles = new Set();
+  let totalProcessingTimeMs = 0;
 
   const providedBinding = userOptions.binding ?? null;
 
@@ -259,6 +262,7 @@ const unwrapVirtual = (value) =>
 
         const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
 
+        const startTime = performance.now();
         let result;
         if (IS_MDAST) {
           // Use parseBlocks() for mdast pipeline
@@ -280,6 +284,9 @@ const unwrapVirtual = (value) =>
           // Use original compiler for multipass pipeline
           result = compiler.compile(source, filename, fileOptions);
         }
+        const endTime = performance.now();
+        totalProcessingTimeMs += endTime - startTime;
+        processedFiles.add(filename);
 
         // Log warnings from Rust diagnostics
         if (result.diagnostics?.warnings?.length > 0) {
@@ -342,6 +349,7 @@ const unwrapVirtual = (value) =>
           message.includes("Transform failed");
         if (shouldFallback) {
           fallbackFiles.add(filename);
+          fallbackReasons.set(filename, message);
           this.warn(
             `[markflow] Falling back to Astro MDX for ${filename}: ${message}`,
           );
@@ -349,6 +357,36 @@ const unwrapVirtual = (value) =>
         }
         throw new Error(`[markflow] Compile failed for ${filename}: ${message}`);
       }
+    },
+    async buildEnd() {
+      if (process.env.MARKFLOW_STATS !== "1") return;
+
+      const stats = {
+        timestamp: new Date().toISOString(),
+        totalFiles: processedFiles.size + fallbackFiles.size,
+        processedByMarkflow: processedFiles.size,
+        fallbacks: fallbackFiles.size,
+        fallbackRate:
+          processedFiles.size + fallbackFiles.size > 0
+            ? `${((fallbackFiles.size / (processedFiles.size + fallbackFiles.size)) * 100).toFixed(2)}%`
+            : "0%",
+        fallbackFiles: Array.from(fallbackFiles).map((file) => ({
+          file: file.replace(resolvedConfig?.root ?? "", ""),
+          reason: fallbackReasons.get(file) ?? "unknown",
+        })),
+        performance: {
+          totalProcessingTimeMs: Math.round(totalProcessingTimeMs * 100) / 100,
+          averageFileTimeMs:
+            processedFiles.size > 0
+              ? Math.round((totalProcessingTimeMs / processedFiles.size) * 100) / 100
+              : 0,
+        },
+      };
+
+      const { writeFile } = await import("node:fs/promises");
+      const outputPath = path.join(resolvedConfig?.root ?? ".", "markflow-stats.json");
+      await writeFile(outputPath, JSON.stringify(stats, null, 2));
+      console.info(`[markflow] Stats written to ${outputPath}`);
     },
   };
 }
@@ -731,25 +769,14 @@ function getText(node) {
  */
 function validateStarlightComponents(source) {
   // Check for directives inside Steps blocks - these break list structure
+  // Note: Directive syntax (:::) is remark-specific and not handled by markdown-rs
   const stepsPattern = /<Steps\s*>[\s\S]*?<\/Steps>/gi;
   const stepsMatches = source.match(stepsPattern);
   if (stepsMatches) {
     for (const block of stepsMatches) {
-      // Allow for leading whitespace (indented directives in list items)
       if (/^\s*:::[a-z]/im.test(block)) {
         return "Directive syntax (:::) inside <Steps> breaks list structure";
       }
-      // Check for JSX components inside list items (indented 4+ spaces)
-      // Pattern: numbered list item followed by indented JSX tag
-      if (/^\d+\.\s+[\s\S]*?\n\s{4,}<[A-Z]/m.test(block)) {
-        return "JSX components inside <Steps> list items break list structure";
-      }
-      // Check for code blocks inside list items (indented 4+ spaces)
-      // Pattern: numbered list item followed by indented code fence
-      if (/^\d+\.\s+[\s\S]*?\n\s{4,}```/m.test(block)) {
-        return "Code blocks inside <Steps> list items break list structure";
-      }
-      // Check for FileTree component inside Steps
       // FileTree renders as separate element, breaking Steps' single <ol> expectation
       if (/<FileTree[\s>]/i.test(block)) {
         return "FileTree component inside <Steps> breaks list structure";
@@ -757,20 +784,9 @@ function validateStarlightComponents(source) {
     }
   }
 
-  // Check for nested content inside Steps
-  // The mdast pipeline doesn't correctly handle:
-  // 1. Nested lists: "1. Item\n    - Nested bullet" -> <ol>...</ol><ul>...</ul>
-  // 2. Continuation paragraphs: "1. Item\n\n    Paragraph" -> <ol>...</ol><p>...</p>
-  const stepsNestedPattern = /<Steps[^>]*>([\s\S]*?)<\/Steps>/gi;
-  const stepsNestedMatches = source.matchAll(stepsNestedPattern);
-  for (const match of stepsNestedMatches) {
-    const content = match[1];
-    // Detect numbered list item followed by indented content (3+ spaces)
-    // This catches both nested lists and continuation paragraphs
-    if (/^\d+\.\s+.*\n\n?\s{3,}\S/m.test(content)) {
-      return "Nested content inside <Steps> requires Astro MDX processing";
-    }
-  }
+  // Note: With code_indented: false in the Rust parser, nested content inside Steps
+  // (JSX components, code fences, continuation paragraphs) is now handled correctly.
+  // Deep indentation is interpreted as nested list content instead of code blocks.
 
   // Check for bold/emphasis markers inside FileTree blocks
   // FileTree expects plain unordered list, markdown formatting breaks it
