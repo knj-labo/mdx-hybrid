@@ -1,0 +1,422 @@
+//! Rendering functions for the mdast renderer.
+
+use super::context::Context;
+use super::types::{HeadingEntry, PropValue, Scope};
+use markdown::mdast::Node;
+use std::collections::HashMap;
+
+/// Extracts plain text from a list of AST nodes (for heading text).
+///
+/// This recursively traverses the nodes and collects all text content,
+/// which is used for generating slugs and table of contents entries.
+pub fn extract_text_from_nodes(nodes: &[Node]) -> String {
+    let mut text = String::new();
+    for node in nodes {
+        extract_text_from_node(node, &mut text);
+    }
+    text.trim().to_string()
+}
+
+/// Helper function to recursively extract text from a single node.
+fn extract_text_from_node(node: &Node, buffer: &mut String) {
+    match node {
+        Node::Text(t) => buffer.push_str(&t.value),
+        Node::InlineCode(code) => buffer.push_str(&code.value),
+        Node::Strong(strong) => {
+            for child in &strong.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        Node::Emphasis(emphasis) => {
+            for child in &emphasis.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        Node::Link(link) => {
+            for child in &link.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        Node::Delete(del) => {
+            for child in &del.children {
+                extract_text_from_node(child, buffer);
+            }
+        }
+        // Ignore other node types in headings
+        _ => {}
+    }
+}
+
+/// Renders a list node as `<ul>` or `<ol>`.
+fn render_list(list: &markdown::mdast::List, ctx: &mut Context) {
+    let tag = if list.ordered { "ol" } else { "ul" };
+    ctx.push_raw(&format!("<{}>", tag));
+    ctx.enter(Scope::List);
+
+    for child in &list.children {
+        render_node(child, ctx);
+    }
+
+    ctx.exit();
+    ctx.push_raw(&format!("</{}>", tag));
+}
+
+/// Renders a list item node as `<li>`.
+///
+/// For task list items (GFM), adds `task-list-item` class and wraps content
+/// in `<label><input><span>` to match the structure expected by rehype-tasklist-enhancer.
+fn render_list_item(item: &markdown::mdast::ListItem, ctx: &mut Context) {
+    let class_attr = if item.checked.is_some() {
+        " class=\"task-list-item\""
+    } else {
+        ""
+    };
+    ctx.push_raw(&format!("<li{}>", class_attr));
+
+    if let Some(checked) = item.checked {
+        let checked_str = if checked { " checked" } else { "" };
+        ctx.push_raw(&format!(
+            "<label><input type=\"checkbox\" disabled{}/><span>",
+            checked_str
+        ));
+
+        for child in &item.children {
+            render_node(child, ctx);
+        }
+
+        ctx.push_raw("</span></label>");
+    } else {
+        for child in &item.children {
+            render_node(child, ctx);
+        }
+    }
+
+    ctx.push_raw("</li>");
+}
+
+/// Helper function to render a table row with proper alignment.
+fn render_table_row(
+    row: &markdown::mdast::TableRow,
+    ctx: &mut Context,
+    is_header: bool,
+    aligns: &[markdown::mdast::AlignKind],
+) {
+    ctx.push_raw("<tr>");
+
+    for (i, cell) in row.children.iter().enumerate() {
+        if let Node::TableCell(c) = cell {
+            let tag = if is_header { "th" } else { "td" };
+
+            let align_attr = if i < aligns.len() {
+                match aligns[i] {
+                    markdown::mdast::AlignKind::Left => " align=\"left\"",
+                    markdown::mdast::AlignKind::Right => " align=\"right\"",
+                    markdown::mdast::AlignKind::Center => " align=\"center\"",
+                    markdown::mdast::AlignKind::None => "",
+                }
+            } else {
+                ""
+            };
+
+            ctx.push_raw(&format!("<{}{}>", tag, align_attr));
+
+            for child in &c.children {
+                render_node(child, ctx);
+            }
+
+            ctx.push_raw(&format!("</{}>", tag));
+        }
+    }
+
+    ctx.push_raw("</tr>");
+}
+
+/// Renders a JSX element (MDX) as either a component block or transparent container.
+fn render_jsx(
+    name: Option<&str>,
+    attributes: &[markdown::mdast::AttributeContent],
+    children: &[Node],
+    ctx: &mut Context,
+) {
+    // 1. Fragment handling: <> ... </> has no name, just render children
+    let Some(tag_name) = name else {
+        for child in children {
+            render_node(child, ctx);
+        }
+        return;
+    };
+
+    // 2. Handle internal directive container: <mf-directive name="..." title="...">...</mf-directive>
+    if tag_name == "mf-directive" {
+        let mut directive_type = "note".to_string();
+        let mut title: Option<String> = None;
+
+        for attr in attributes {
+            if let markdown::mdast::AttributeContent::Property(prop) = attr {
+                let val = match &prop.value {
+                    Some(markdown::mdast::AttributeValue::Literal(s)) => s.clone(),
+                    _ => String::new(),
+                };
+
+                match prop.name.as_str() {
+                    "name" => directive_type = val,
+                    "title" => {
+                        title = Some(val.replace("&quot;", "\""));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let slot_html = ctx.render_children_to_string(children);
+
+        let mut props = HashMap::new();
+        props.insert("type".to_string(), PropValue::literal(directive_type));
+        if let Some(t) = title {
+            props.insert("title".to_string(), PropValue::literal(t));
+        }
+
+        if ctx.is_in_list() {
+            ctx.push_component_inline("Aside", &props, &slot_html);
+        } else {
+            ctx.push_component("Aside", props, slot_html);
+        }
+        return;
+    }
+
+    // 3. Handle FileTree: transform to plain HTML <ul class="filetree">
+    if tag_name == "FileTree" {
+        let slot_html = ctx.render_children_to_string(children);
+        ctx.push_raw("<ul class=\"filetree\">");
+        ctx.push_raw(&slot_html);
+        ctx.push_raw("</ul>");
+        return;
+    }
+
+    // 4. Extract props from JSX attributes
+    let mut props = HashMap::new();
+    for attr in attributes {
+        match attr {
+            markdown::mdast::AttributeContent::Property(prop) => {
+                let value = match &prop.value {
+                    Some(markdown::mdast::AttributeValue::Literal(s)) => {
+                        PropValue::literal(s.clone())
+                    }
+                    Some(markdown::mdast::AttributeValue::Expression(expr)) => {
+                        PropValue::expression(expr.value.clone())
+                    }
+                    None => PropValue::literal(String::new()),
+                };
+                props.insert(prop.name.clone(), value);
+            }
+            markdown::mdast::AttributeContent::Expression(_) => {
+                // Spread attributes not yet supported
+            }
+        }
+    }
+
+    // 5. Render children to HTML string
+    let slot_html = ctx.render_children_to_string(children);
+
+    // 6. Special handling for Fragment with slot attribute
+    if tag_name == "Fragment" && props.contains_key("slot") {
+        ctx.push_component_inline(tag_name, &props, &slot_html);
+        return;
+    }
+
+    // 7. Push as component block
+    if ctx.is_in_list() {
+        ctx.push_component_inline(tag_name, &props, &slot_html);
+    } else {
+        ctx.push_component(tag_name, props, slot_html);
+    }
+}
+
+/// Recursively renders an AST node to HTML, updating the context state.
+pub fn render_node(node: &Node, ctx: &mut Context) {
+    match node {
+        Node::Root(root) => {
+            for child in &root.children {
+                render_node(child, ctx);
+            }
+        }
+
+        Node::Text(text) => {
+            ctx.push_text(&text.value);
+        }
+
+        Node::Paragraph(para) => {
+            ctx.push_raw("<p>");
+            ctx.enter(Scope::Paragraph);
+
+            for child in &para.children {
+                render_node(child, ctx);
+            }
+
+            ctx.exit();
+            ctx.push_raw("</p>");
+        }
+
+        Node::Link(link) => {
+            ctx.push_raw(r#"<a href=""#);
+            ctx.push_attr_value(&link.url);
+            ctx.push_raw(r#"""#);
+
+            if let Some(title) = &link.title {
+                ctx.push_raw(r#" title=""#);
+                ctx.push_attr_value(title);
+                ctx.push_raw(r#"""#);
+            }
+
+            ctx.push_raw(">");
+
+            for child in &link.children {
+                render_node(child, ctx);
+            }
+
+            ctx.push_raw("</a>");
+        }
+
+        Node::Strong(strong) => {
+            ctx.push_raw("<strong>");
+            for child in &strong.children {
+                render_node(child, ctx);
+            }
+            ctx.push_raw("</strong>");
+        }
+
+        Node::Emphasis(emphasis) => {
+            ctx.push_raw("<em>");
+            for child in &emphasis.children {
+                render_node(child, ctx);
+            }
+            ctx.push_raw("</em>");
+        }
+
+        Node::InlineCode(code) => {
+            ctx.push_raw("<code>");
+            ctx.push_code_text(&code.value);
+            ctx.push_raw("</code>");
+        }
+
+        Node::Heading(heading) => {
+            let text = extract_text_from_nodes(&heading.children);
+            let slug = ctx.generate_slug(&text);
+
+            ctx.add_heading(HeadingEntry {
+                depth: heading.depth,
+                slug: slug.clone(),
+                text,
+            });
+
+            let tag = format!("h{}", heading.depth);
+            ctx.push_raw(&format!("<{} id=\"{}\">", tag, slug));
+            for child in &heading.children {
+                render_node(child, ctx);
+            }
+            ctx.push_raw(&format!("</{}>", tag));
+        }
+
+        Node::List(list) => render_list(list, ctx),
+
+        Node::ListItem(item) => render_list_item(item, ctx),
+
+        Node::Code(code) => {
+            ctx.push_raw(r#"<pre class="astro-code" tabindex="0">"#);
+
+            if let Some(lang) = &code.lang {
+                ctx.push_raw(r#"<code class="language-"#);
+                ctx.push_attr_value(lang);
+                ctx.push_raw(r#"">"#);
+            } else {
+                ctx.push_raw("<code>");
+            }
+
+            ctx.push_code_text(&code.value);
+            ctx.push_raw("</code></pre>");
+        }
+
+        Node::Blockquote(quote) => {
+            ctx.push_raw("<blockquote>");
+            for child in &quote.children {
+                render_node(child, ctx);
+            }
+            ctx.push_raw("</blockquote>");
+        }
+
+        Node::Image(img) => {
+            ctx.push_raw(r#"<img src=""#);
+            ctx.push_attr_value(&img.url);
+            ctx.push_raw(r#"""#);
+
+            ctx.push_raw(r#" alt=""#);
+            ctx.push_attr_value(&img.alt);
+            ctx.push_raw(r#"""#);
+
+            if let Some(title) = &img.title {
+                ctx.push_raw(r#" title=""#);
+                ctx.push_attr_value(title);
+                ctx.push_raw(r#"""#);
+            }
+
+            ctx.push_raw(" />");
+        }
+
+        Node::ThematicBreak(_) => {
+            ctx.push_raw("<hr />");
+        }
+
+        Node::Html(html) => {
+            log::warn!(
+                "Raw HTML in markdown will be escaped for security: {}",
+                html.value
+            );
+            ctx.push_text(&html.value);
+        }
+
+        Node::Delete(delete) => {
+            ctx.push_raw("<del>");
+            for child in &delete.children {
+                render_node(child, ctx);
+            }
+            ctx.push_raw("</del>");
+        }
+
+        Node::Table(table) => {
+            ctx.push_raw("<table>");
+
+            ctx.push_raw("<thead>");
+            if let Some(Node::TableRow(row)) = table.children.first() {
+                render_table_row(row, ctx, true, &table.align);
+            }
+            ctx.push_raw("</thead>");
+
+            if table.children.len() > 1 {
+                ctx.push_raw("<tbody>");
+                for row in table.children.iter().skip(1) {
+                    if let Node::TableRow(r) = row {
+                        render_table_row(r, ctx, false, &table.align);
+                    }
+                }
+                ctx.push_raw("</tbody>");
+            }
+
+            ctx.push_raw("</table>");
+        }
+
+        Node::TableRow(_) => {}
+        Node::TableCell(_) => {}
+
+        Node::MdxJsxFlowElement(elem) => {
+            render_jsx(elem.name.as_deref(), &elem.attributes, &elem.children, ctx);
+        }
+
+        Node::MdxJsxTextElement(elem) => {
+            render_jsx(elem.name.as_deref(), &elem.attributes, &elem.children, ctx);
+        }
+
+        _ => {
+            log::warn!("Unhandled markdown node type: {:?}", node);
+        }
+    }
+}
