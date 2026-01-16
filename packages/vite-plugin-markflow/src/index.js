@@ -138,6 +138,8 @@ export function markflowPlugin(userOptions = {}) {
   const sourceLookup = new Map();
   const fallbackFiles = new Set();
   const fallbackReasons = new Map(); // file -> reason
+  const preValidationSkips = new Set(); // files skipped during pre-validation in resolveId
+  const preValidationReasons = new Map(); // file -> reason for pre-validation skip
   const processedFiles = new Set();
   let totalProcessingTimeMs = 0;
 
@@ -234,9 +236,36 @@ const unwrapVirtual = (value) =>
         resolved && resolved.id
           ? stripQuery(unwrapVirtual(resolved.id))
           : fallback();
+
+      // Check if file was already marked for fallback (runtime error)
       if (fallbackFiles.has(resolvedId)) {
         return null;
       }
+
+      // Check if file was already skipped during pre-validation
+      if (preValidationSkips.has(resolvedId)) {
+        return null;
+      }
+
+      // Pre-validation: detect problematic patterns before creating virtual module
+      // This prevents the timing issue where resolveId creates a virtual module
+      // but load() then discovers an error and falls back incorrectly
+      try {
+        const source = await readFile(resolvedId, "utf8");
+        const preValidationError = preValidateSource(source);
+        if (preValidationError) {
+          preValidationSkips.add(resolvedId);
+          preValidationReasons.set(resolvedId, preValidationError);
+          console.warn(
+            `[markflow] Skipping ${resolvedId}: ${preValidationError} (letting Astro MDX handle it)`,
+          );
+          return null; // Let Astro handle this file from the start
+        }
+      } catch {
+        // If we can't read the file, let Vite handle the error normally
+        // Don't block resolution for missing files
+      }
+
       const virtualId = `${VIRTUAL_PREFIX}${resolvedId}.markflow.jsx`;
       sourceLookup.set(virtualId, resolvedId);
       return virtualId;
@@ -353,6 +382,16 @@ const unwrapVirtual = (value) =>
           this.warn(
             `[markflow] Falling back to Astro MDX for ${filename}: ${message}`,
           );
+
+          // Invalidate the virtual module from the cache so subsequent requests
+          // go through resolveId again (which will now return null for this file)
+          if (resolvedConfig?.server?.moduleGraph) {
+            const mod = resolvedConfig.server.moduleGraph.getModuleById(id);
+            if (mod) {
+              resolvedConfig.server.moduleGraph.invalidateModule(mod);
+            }
+          }
+
           return createFallbackModule(filename);
         }
         throw new Error(`[markflow] Compile failed for ${filename}: ${message}`);
@@ -361,10 +400,35 @@ const unwrapVirtual = (value) =>
     async buildEnd() {
       if (process.env.MARKFLOW_STATS !== "1") return;
 
+      const totalHandledByAstro = preValidationSkips.size + fallbackFiles.size;
+      const totalFiles = processedFiles.size + totalHandledByAstro;
+
       const stats = {
         timestamp: new Date().toISOString(),
-        totalFiles: processedFiles.size + fallbackFiles.size,
+        totalFiles,
         processedByMarkflow: processedFiles.size,
+        handledByAstro: totalHandledByAstro,
+        handledByAstroRate:
+          totalFiles > 0
+            ? `${((totalHandledByAstro / totalFiles) * 100).toFixed(2)}%`
+            : "0%",
+        // Pre-validation skips: detected in resolveId before creating virtual module
+        preValidationSkips: {
+          count: preValidationSkips.size,
+          files: Array.from(preValidationSkips).map((file) => ({
+            file: file.replace(resolvedConfig?.root ?? "", ""),
+            reason: preValidationReasons.get(file) ?? "unknown",
+          })),
+        },
+        // Runtime fallbacks: errors discovered during compilation in load()
+        runtimeFallbacks: {
+          count: fallbackFiles.size,
+          files: Array.from(fallbackFiles).map((file) => ({
+            file: file.replace(resolvedConfig?.root ?? "", ""),
+            reason: fallbackReasons.get(file) ?? "unknown",
+          })),
+        },
+        // Legacy fields for backwards compatibility
         fallbacks: fallbackFiles.size,
         fallbackRate:
           processedFiles.size + fallbackFiles.size > 0
@@ -775,4 +839,39 @@ function validateStarlightComponents(source) {
   // Deep indentation is interpreted as nested list content instead of code blocks.
 
   return null;
+}
+
+/**
+ * Performs lightweight pre-validation of source to detect patterns known to cause
+ * compilation failures. This runs in resolveId() BEFORE creating virtual modules,
+ * allowing problematic files to fall back to Astro MDX from the start.
+ *
+ * @param {string} source - The markdown/mdx source content
+ * @returns {string|null} Error reason if pre-validation fails, null if OK
+ */
+function preValidateSource(source) {
+  // 1. Template literals in inline code blocks cause JSX parsing issues
+  // Match: `something ${expr} else` (inline code containing template literal syntax)
+  if (/`[^`\n]*\$\{[^`\n]*\}[^`\n]*`/.test(source)) {
+    return "Contains template literals in inline code";
+  }
+
+  // 2. Custom component imports from ~/components/ are not yet supported
+  // These need special handling that Markflow doesn't provide
+  if (/import\s+\w+\s+from\s+['"]~\/components\//.test(source)) {
+    return "Contains custom component imports from ~/components/";
+  }
+
+  // 3. Dynamic import expressions in MDX can cause issues
+  if (/import\s*\([^)]*\)/.test(source)) {
+    return "Contains dynamic import expressions";
+  }
+
+  // 4. Complex JSX expressions with nested template literals
+  // Match JSX attributes with template literal values: prop={`...${...}...`}
+  if (/\{`[^`]*\$\{[^}]+\}[^`]*`\}/.test(source)) {
+    return "Contains JSX with nested template literal expressions";
+  }
+
+  return null; // No issues detected
 }
