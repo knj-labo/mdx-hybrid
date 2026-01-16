@@ -75,7 +75,6 @@ pub fn compile(source: &str, filepath: &str) -> Result<JsValue, JsError> {
 
     // 3. Parse to blocks and render JSX
     let mdast_options = MdastOptions {
-        inject_starlight_css: false,
         enable_directives: true,
     };
     let blocks_result = to_blocks(&body_without_imports, &mdast_options)
@@ -399,7 +398,6 @@ fn js_callback_error(err: JsValue) -> io::Error {
 ///
 /// * `input` - The markdown text to parse
 /// * `opts` - Optional JavaScript object with options:
-///   - `inject_starlight_css`: boolean (default: false)
 ///   - `enable_directives`: boolean (default: true)
 ///
 /// # Returns
@@ -434,7 +432,6 @@ pub fn parse_blocks(input: &str, opts: JsValue) -> Result<JsValue, JsError> {
     // Parse options from JavaScript
     let options: Options = if opts.is_undefined() || opts.is_null() {
         Options {
-            inject_starlight_css: false,
             enable_directives: true,
         }
     } else {

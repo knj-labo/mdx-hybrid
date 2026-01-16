@@ -26,13 +26,6 @@ const VIRTUAL_PREFIX = "\0markflow:";
 const DEBUG_BINDING = process.env.MARKFLOW_DEBUG_BINDING === "1";
 const ENABLE_SHIKI = process.env.MARKFLOW_SHIKI === "1";
 const IS_MDAST = process.env.MARKFLOW_PIPELINE === "mdast";
-const IS_HARNESS_ENV = Object.keys(process.env).some((key) =>
-  key.startsWith("MARKFLOW_HARNESS_"),
-);
-const ENABLE_DEV_LAYER_ORDER_FIX =
-  IS_HARNESS_ENV && process.env.MARKFLOW_HARNESS_LAYER_ORDER_FIX !== "0";
-const STARLIGHT_LAYER_ORDER =
-  "@layer starlight.base, starlight.reset, starlight.core, starlight.content, starlight.components, starlight.utils;";
 
 const logBindingSource = (source) => {
   if (!DEBUG_BINDING) return;
@@ -204,20 +197,6 @@ const unwrapVirtual = (value) =>
         : (cfg) => new binding.MarkflowCompiler(cfg);
       compiler = createCompiler(compilerOptions);
     },
-    transformIndexHtml() {
-      if (!ENABLE_DEV_LAYER_ORDER_FIX || resolvedConfig?.command !== "serve") {
-        return;
-      }
-      return {
-        tags: [
-          {
-            tag: "style",
-            children: STARLIGHT_LAYER_ORDER,
-            injectTo: "head-prepend",
-          },
-        ],
-      };
-    },
     async resolveId(sourceId, importer) {
       if (sourceId.startsWith(VIRTUAL_PREFIX)) {
         return sourceId;
@@ -285,7 +264,6 @@ const unwrapVirtual = (value) =>
           // Use parseBlocks() for mdast pipeline
           const binding = await loadMarkflowBinding();
           const { blocks, headings } = binding.parseBlocks(source, {
-            inject_starlight_css: false,
             enable_directives: true,
           });
           const frontmatterResult = binding.parseFrontmatter(source);
@@ -428,10 +406,32 @@ function blocksToJsx(blocks, frontmatter = {}, headings = []) {
     if (block.type === "html") {
       fragments.push(block.content);
     } else if (block.type === "component") {
-      componentImports.add(block.name);
-      const propsStr = block.props
-        ? Object.entries(block.props)
+      // Handle directive components (note, tip, caution, danger) -> Aside
+      const DIRECTIVE_TYPES = ["note", "tip", "caution", "danger"];
+      const isDirective = DIRECTIVE_TYPES.includes(block.name);
+      const componentName = isDirective ? "Aside" : block.name;
+
+      // Skip Fragment - it's a built-in Astro component, not a Starlight component
+      if (componentName !== "Fragment") {
+        componentImports.add(componentName);
+      }
+
+      // For directives, add the type prop
+      const effectiveProps = isDirective
+        ? { ...block.props, type: { type: "literal", value: block.name } }
+        : block.props;
+
+      const propsStr = effectiveProps
+        ? Object.entries(effectiveProps)
             .map(([key, value]) => {
+              // Handle PropValue enum from Rust: { type: "literal"|"expression", value: string }
+              if (typeof value === "object" && value !== null && "type" in value && "value" in value) {
+                if (value.type === "literal") {
+                  return `${key}="${String(value.value).replace(/"/g, '\\"')}"`;
+                } else if (value.type === "expression") {
+                  return `${key}={${value.value}}`;
+                }
+              }
               if (typeof value === "string") {
                 return `${key}="${value.replace(/"/g, '\\"')}"`;
               }
@@ -439,8 +439,8 @@ function blocksToJsx(blocks, frontmatter = {}, headings = []) {
             })
             .join(" ")
         : "";
-      const openTag = propsStr ? `<${block.name} ${propsStr}>` : `<${block.name}>`;
-      fragments.push(`${openTag}${block.slotHtml || ""}</${block.name}>`);
+      const openTag = propsStr ? `<${componentName} ${propsStr}>` : `<${componentName}>`;
+      fragments.push(`${openTag}${block.slotHtml || ""}</${componentName}>`);
     }
   }
 
@@ -739,6 +739,36 @@ function validateStarlightComponents(source) {
       if (/^\s*:::[a-z]/im.test(block)) {
         return "Directive syntax (:::) inside <Steps> breaks list structure";
       }
+      // Check for JSX components inside list items (indented 4+ spaces)
+      // Pattern: numbered list item followed by indented JSX tag
+      if (/^\d+\.\s+[\s\S]*?\n\s{4,}<[A-Z]/m.test(block)) {
+        return "JSX components inside <Steps> list items break list structure";
+      }
+      // Check for code blocks inside list items (indented 4+ spaces)
+      // Pattern: numbered list item followed by indented code fence
+      if (/^\d+\.\s+[\s\S]*?\n\s{4,}```/m.test(block)) {
+        return "Code blocks inside <Steps> list items break list structure";
+      }
+      // Check for FileTree component inside Steps
+      // FileTree renders as separate element, breaking Steps' single <ol> expectation
+      if (/<FileTree[\s>]/i.test(block)) {
+        return "FileTree component inside <Steps> breaks list structure";
+      }
+    }
+  }
+
+  // Check for nested content inside Steps
+  // The mdast pipeline doesn't correctly handle:
+  // 1. Nested lists: "1. Item\n    - Nested bullet" -> <ol>...</ol><ul>...</ul>
+  // 2. Continuation paragraphs: "1. Item\n\n    Paragraph" -> <ol>...</ol><p>...</p>
+  const stepsNestedPattern = /<Steps[^>]*>([\s\S]*?)<\/Steps>/gi;
+  const stepsNestedMatches = source.matchAll(stepsNestedPattern);
+  for (const match of stepsNestedMatches) {
+    const content = match[1];
+    // Detect numbered list item followed by indented content (3+ spaces)
+    // This catches both nested lists and continuation paragraphs
+    if (/^\d+\.\s+.*\n\n?\s{3,}\S/m.test(content)) {
+      return "Nested content inside <Steps> requires Astro MDX processing";
     }
   }
 

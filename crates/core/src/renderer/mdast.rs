@@ -2,6 +2,7 @@ use markdown::mdast::Node;
 use serde::Serialize;
 use std::collections::HashMap;
 
+use crate::parser::markdown_adapter::normalize_mdx_jsx_indentation;
 use crate::transform::directives::{is_directive_closer, parse_opening_directive};
 
 /// A component prop value - either a literal string or a JS expression.
@@ -197,6 +198,10 @@ impl<'a> Context<'a> {
                 '`' => self.current_html.push_str("&#96;"),
                 '{' => self.current_html.push_str("&#123;"),
                 '}' => self.current_html.push_str("&#125;"),
+                // Encode newlines as HTML entities to prevent esbuild's JSX
+                // transform from stripping them (esbuild normalizes whitespace
+                // in JSX text children, converting \n to spaces)
+                '\n' => self.current_html.push_str("&#10;"),
                 _ => self.current_html.push(c),
             }
         }
@@ -239,6 +244,14 @@ impl<'a> Context<'a> {
         self.stack.last().unwrap_or(&Scope::Root)
     }
 
+    /// Returns true if any scope in the stack is a List.
+    ///
+    /// Used to determine if JSX components should be rendered inline
+    /// to avoid fragmenting list structures.
+    pub fn is_in_list(&self) -> bool {
+        self.stack.iter().any(|scope| matches!(scope, Scope::List))
+    }
+
     /// Enters a new scope by pushing it onto the stack.
     pub fn enter(&mut self, scope: Scope) {
         self.stack.push(scope);
@@ -275,6 +288,44 @@ impl<'a> Context<'a> {
             props,
             slot_html,
         });
+    }
+
+    /// Renders a component inline to the HTML buffer as JSX.
+    ///
+    /// Used when inside a list to avoid fragmenting the list structure.
+    /// Instead of creating a separate Component block (which would flush
+    /// the HTML buffer), this writes the component directly as JSX syntax.
+    pub fn push_component_inline(
+        &mut self,
+        name: &str,
+        props: &HashMap<String, PropValue>,
+        slot_html: &str,
+    ) {
+        self.current_html.push('<');
+        self.current_html.push_str(name);
+
+        for (key, prop_value) in props {
+            self.current_html.push(' ');
+            self.current_html.push_str(key);
+            self.current_html.push_str("={");
+            match prop_value {
+                PropValue::Literal { value } => {
+                    self.current_html.push('"');
+                    self.current_html.push_str(&value.replace('"', "\\\""));
+                    self.current_html.push('"');
+                }
+                PropValue::Expression { value } => {
+                    self.current_html.push_str(value);
+                }
+            }
+            self.current_html.push('}');
+        }
+
+        self.current_html.push('>');
+        self.current_html.push_str(slot_html);
+        self.current_html.push_str("</");
+        self.current_html.push_str(name);
+        self.current_html.push('>');
     }
 
     /// Renders child nodes to an HTML string (for component slots).
@@ -351,8 +402,6 @@ impl<'a> Context<'a> {
 /// Rendering options for the mdast v2 renderer.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Options {
-    /// Whether to inject Starlight CSS when components are used.
-    pub inject_starlight_css: bool,
     /// Whether directive processing is enabled.
     pub enable_directives: bool,
 }
@@ -908,8 +957,21 @@ fn render_jsx(
     // Headings found in children are automatically bubbled up to ctx for TOC.
     let slot_html = ctx.render_children_to_string(children);
 
-    // 5. Push as component block (unified with directive rendering)
-    ctx.push_component(tag_name, props, slot_html);
+    // 5. Special handling for Fragment with slot attribute
+    // Fragment with slot must be rendered inline as JSX to work with Astro's slot system.
+    // Creating a separate Component block would break the parent-child relationship.
+    if tag_name == "Fragment" && props.contains_key("slot") {
+        ctx.push_component_inline(tag_name, &props, &slot_html);
+        return;
+    }
+
+    // 6. Push as component block (unified with directive rendering)
+    // When inside a list, render inline to avoid fragmenting the list structure.
+    if ctx.is_in_list() {
+        ctx.push_component_inline(tag_name, &props, &slot_html);
+    } else {
+        ctx.push_component(tag_name, props, slot_html);
+    }
 }
 
 /// Converts Markdown input to rendering blocks (entry point).
@@ -931,7 +993,6 @@ fn render_jsx(
 ///
 /// let input = "Hello, [world](https://example.com)!";
 /// let options = Options {
-///     inject_starlight_css: false,
 ///     enable_directives: false,
 /// };
 /// let blocks = to_blocks(input, &options).unwrap();
@@ -944,7 +1005,12 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
         input.to_string()
     };
 
-    // 2. Parse markdown to MDAST with enhanced options
+    // 2. Normalize JSX indentation to prevent content from being treated as code blocks
+    // When content inside JSX elements is indented (4+ spaces), markdown-rs interprets
+    // it as an indented code block. This normalization strips that indentation.
+    let normalized = normalize_mdx_jsx_indentation(&preprocessed);
+
+    // 3. Parse markdown to MDAST with enhanced options
     let parse_options = markdown::ParseOptions {
         constructs: markdown::Constructs {
             // MDX: JSX support for <Component>...</Component>
@@ -966,14 +1032,14 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
         ..markdown::ParseOptions::default()
     };
 
-    let tree = markdown::to_mdast(&preprocessed, &parse_options)
+    let tree = markdown::to_mdast(&normalized, &parse_options)
         .map_err(|e| format!("Markdown parse error: {}", e))?;
 
-    // 2. Traverse the AST and render to blocks
+    // 4. Traverse the AST and render to blocks
     let mut ctx = Context::new(options);
     render_node(&tree, &mut ctx);
 
-    // 3. Finish and return blocks
+    // 5. Finish and return blocks
     Ok(ctx.finish())
 }
 
@@ -986,7 +1052,6 @@ mod tests {
     fn test_simple_text() {
         let input = "Hello, world!";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
@@ -1005,7 +1070,6 @@ mod tests {
     fn test_paragraph() {
         let input = "This is a paragraph.";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
@@ -1024,7 +1088,6 @@ mod tests {
     fn test_link() {
         let input = "[Rust](https://www.rust-lang.org/)";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
@@ -1044,7 +1107,6 @@ mod tests {
     fn test_directive_to_component() {
         let input = ":::note[My Title]\nThis is **important** content.\n:::";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
@@ -1077,7 +1139,6 @@ mod tests {
     fn test_directive_without_title() {
         let input = ":::tip\nHelpful advice here.\n:::";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
 
@@ -1103,7 +1164,6 @@ mod tests {
     fn test_directive_disabled() {
         let input = ":::note\nContent\n:::";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1138,7 +1198,6 @@ fn main() {}
 ---
 "#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
         let blocks = to_blocks(input, &options).unwrap();
@@ -1185,7 +1244,6 @@ fn main() {}
     fn test_task_list() {
         let input = "- [ ] Unchecked task\n- [x] Checked task\n";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
         let blocks = to_blocks(input, &options).unwrap();
@@ -1209,7 +1267,6 @@ fn main() {}
     fn test_ordered_list() {
         let input = "1. First\n2. Second\n3. Third\n";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: true,
         };
         let blocks = to_blocks(input, &options).unwrap();
@@ -1231,7 +1288,6 @@ fn main() {}
     fn test_xss_text_escaping() {
         let input = "Text with <script>alert('xss')</script> and & symbols.";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1272,7 +1328,6 @@ fn main() {}
     fn test_xss_attribute_escaping() {
         let input = r#"[Link](http://example.com "Title with <script> and & and ' quotes")"#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1301,7 +1356,6 @@ fn main() {}
     fn test_xss_image_attributes() {
         let input = r#"![Alt with ' and "](image.png "Title with &")"#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1365,7 +1419,6 @@ fn main() {}
     fn test_strikethrough() {
         let input = "This is ~~deleted~~ text.";
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1391,7 +1444,6 @@ fn main() {}
 | Alice | 30 | Tokyo |
 | Bob | 25 | NYC |"#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1442,7 +1494,6 @@ fn main() {}
 | [Link](https://example.com) | ✓ |
 | `code` | ✓ |"#;
         let options = Options {
-            inject_starlight_css: false,
             enable_directives: false,
         };
 
@@ -1465,6 +1516,67 @@ fn main() {}
             );
         } else {
             panic!("Expected HTML block");
+        }
+    }
+
+    /// Tests that code blocks preserve newlines between lines.
+    #[test]
+    fn test_code_block_preserves_newlines() {
+        let input = r#"```ts
+line1
+line2
+line3
+```"#;
+        let options = Options {
+            enable_directives: true,
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        assert_eq!(result.blocks.len(), 1);
+
+        if let RenderBlock::Html { content } = &result.blocks[0] {
+            // Code block newlines are encoded as &#10; to survive esbuild's
+            // JSX transform (which normalizes whitespace in JSX text children)
+            assert!(
+                content.contains("line1&#10;line2&#10;line3"),
+                "Code block should preserve newlines as HTML entities. Got: {}",
+                content
+            );
+        } else {
+            panic!("Expected HTML block");
+        }
+    }
+
+    /// Tests that code blocks inside JSX components preserve newlines.
+    #[test]
+    fn test_code_block_inside_jsx_preserves_newlines() {
+        let input = r#"<Steps>
+```ts
+line1
+line2
+line3
+```
+</Steps>"#;
+        let options = Options {
+            enable_directives: true,
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+
+        // Find the component block
+        let component = result
+            .blocks
+            .iter()
+            .find(|b| matches!(b, RenderBlock::Component { name, .. } if name == "Steps"));
+        assert!(component.is_some(), "Should have Steps component block");
+
+        if let RenderBlock::Component { slot_html, .. } = component.unwrap() {
+            // Code block newlines are encoded as &#10; to survive esbuild's JSX transform
+            assert!(
+                slot_html.contains("line1&#10;line2&#10;line3"),
+                "Code block inside JSX should preserve newlines. Got: {}",
+                slot_html
+            );
         }
     }
 }
