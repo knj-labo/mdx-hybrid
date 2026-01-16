@@ -1,10 +1,14 @@
 //! The stateful compiler and its configuration.
 
+use crate::batch::*;
 use crate::types::*;
 use markflow_core::codegen::{DirectiveMappingResult, blocks_to_jsx_string};
 use markflow_core::{MarkflowError, MdastOptions, code_fence, to_blocks};
 use napi_derive::napi;
+use rayon::prelude::*;
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Instant;
 
 const ASTRO_DEFAULT_RUNTIME: &str = "astro/runtime/server/index.js";
 
@@ -64,6 +68,109 @@ impl MarkflowCompiler {
         )?;
 
         compile_document_from_ir(ir)
+    }
+
+    /// Compiles multiple Markdown/MDX files in parallel using Rayon.
+    ///
+    /// This method uses the compiler's configuration for all files and processes
+    /// them concurrently for faster batch compilation.
+    ///
+    /// # Arguments
+    ///
+    /// * `inputs` - Array of files to compile
+    /// * `options` - Optional batch processing options (thread count, error handling)
+    ///
+    /// # Returns
+    ///
+    /// Returns a `BatchProcessingResult` containing individual results and statistics.
+    #[napi(js_name = "compileBatch")]
+    pub fn compile_batch(
+        &self,
+        inputs: Vec<BatchInput>,
+        options: Option<BatchOptions>,
+    ) -> napi::Result<BatchProcessingResult> {
+        let start = Instant::now();
+        let opts = options.unwrap_or_default();
+        let continue_on_error = opts.continue_on_error.unwrap_or(true);
+
+        // Use compiler's config, ignoring any config in batch options
+        let config = Some(CompilerConfig {
+            jsx_import_source: Some(self.config.jsx_import_source.clone()),
+            ..CompilerConfig::default()
+        });
+
+        // Configure thread pool if max_threads is specified
+        let pool = if let Some(max_threads) = opts.max_threads {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(max_threads as usize)
+                .build()
+                .ok()
+        } else {
+            None
+        };
+
+        let total = inputs.len() as u32;
+        let succeeded = AtomicU32::new(0);
+        let failed = AtomicU32::new(0);
+
+        let process_input = |input: BatchInput| -> BatchResult {
+            let filepath = input.filepath.clone().unwrap_or_else(|| input.id.clone());
+            match compile_ir(input.source, filepath, None, config.clone()) {
+                Ok(result) => {
+                    succeeded.fetch_add(1, Ordering::Relaxed);
+                    BatchResult {
+                        id: input.id,
+                        result: Some(result),
+                        error: None,
+                    }
+                }
+                Err(e) => {
+                    failed.fetch_add(1, Ordering::Relaxed);
+                    BatchResult {
+                        id: input.id,
+                        result: None,
+                        error: Some(e.to_string()),
+                    }
+                }
+            }
+        };
+
+        let results: Vec<BatchResult> = if continue_on_error {
+            // Process all files regardless of errors
+            if let Some(pool) = pool {
+                pool.install(|| inputs.into_par_iter().map(process_input).collect())
+            } else {
+                inputs.into_par_iter().map(process_input).collect()
+            }
+        } else {
+            // Stop on first error - sequential processing required
+            let mut results = Vec::with_capacity(inputs.len());
+            let mut had_error = false;
+
+            for input in inputs {
+                if had_error {
+                    break;
+                }
+                let result = process_input(input);
+                if result.error.is_some() {
+                    had_error = true;
+                }
+                results.push(result);
+            }
+            results
+        };
+
+        let elapsed = start.elapsed();
+
+        Ok(BatchProcessingResult {
+            results,
+            stats: BatchStats {
+                total,
+                succeeded: succeeded.load(Ordering::Relaxed),
+                failed: failed.load(Ordering::Relaxed),
+                processing_time_ms: elapsed.as_secs_f64() * 1000.0,
+            },
+        })
     }
 }
 
