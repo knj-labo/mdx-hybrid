@@ -359,6 +359,10 @@ pub fn render_node(node: &Node, ctx: &mut Context) {
                 ctx.push_raw(r#"""#);
             }
 
+            if ctx.lazy_images_enabled() {
+                ctx.push_raw(r#" loading="lazy""#);
+            }
+
             ctx.push_raw(" />");
         }
 
