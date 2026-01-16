@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 markflow-core = { path = "../core" }
 napi = { workspace = true }
 napi-derive = { workspace = true }
+rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
