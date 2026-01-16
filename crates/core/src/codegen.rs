@@ -23,6 +23,27 @@ pub fn js_string_literal(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
+/// Escapes a string for use inside a JavaScript string literal (without surrounding quotes).
+///
+/// Uses JSON serialization to properly escape special characters, then strips the quotes.
+///
+/// # Examples
+///
+/// ```
+/// use markflow_core::codegen::escape_js_string_value;
+///
+/// assert_eq!(escape_js_string_value("hello"), "hello");
+/// assert_eq!(escape_js_string_value("say \"hi\""), "say \\\"hi\\\"");
+/// assert_eq!(escape_js_string_value("line1\nline2"), "line1\\nline2");
+/// assert_eq!(escape_js_string_value("back\\slash"), "back\\\\slash");
+/// ```
+pub fn escape_js_string_value(value: &str) -> String {
+    // Use serde_json for proper escaping, then strip the surrounding quotes
+    let json = serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string());
+    // Remove leading and trailing quotes added by serde_json
+    json[1..json.len() - 1].to_string()
+}
+
 /// Result of directive mapping.
 pub struct DirectiveMappingResult {
     /// The component tag name to use (e.g., "Aside" instead of "note").
@@ -108,7 +129,7 @@ where
                             PropValue::Literal { value } => {
                                 // String literal: wrap in quotes
                                 result.push('"');
-                                result.push_str(&value.replace('"', "\\\"").replace('\n', "\\n"));
+                                result.push_str(&escape_js_string_value(value));
                                 result.push('"');
                             }
                             PropValue::Expression { value } => {
@@ -266,6 +287,45 @@ mod tests {
         assert_eq!(js_string_literal("say \"hi\""), "\"say \\\"hi\\\"\"");
         assert_eq!(js_string_literal("line1\nline2"), "\"line1\\nline2\"");
         assert_eq!(js_string_literal("back\\slash"), "\"back\\\\slash\"");
+    }
+
+    #[test]
+    fn test_escape_js_string_value() {
+        // Basic escaping
+        assert_eq!(escape_js_string_value("hello"), "hello");
+        assert_eq!(escape_js_string_value("say \"hi\""), "say \\\"hi\\\"");
+        assert_eq!(escape_js_string_value("line1\nline2"), "line1\\nline2");
+        assert_eq!(escape_js_string_value("back\\slash"), "back\\\\slash");
+
+        // CJK characters
+        assert_eq!(escape_js_string_value("中文"), "中文");
+        assert_eq!(escape_js_string_value("中文\"引用\""), "中文\\\"引用\\\"");
+        assert_eq!(escape_js_string_value("한글"), "한글");
+
+        // Special characters
+        assert_eq!(escape_js_string_value("tab\there"), "tab\\there");
+        assert_eq!(escape_js_string_value("return\rhere"), "return\\rhere");
+    }
+
+    #[test]
+    fn test_blocks_to_jsx_string_cjk_props() {
+        let mut props = HashMap::new();
+        props.insert(
+            "title".to_string(),
+            PropValue::Literal {
+                value: "中文\"引用\"标题".to_string(),
+            },
+        );
+        let blocks = vec![RenderBlock::Component {
+            name: "Card".to_string(),
+            props,
+            slot_html: "<p>Content</p>".to_string(),
+        }];
+        let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
+        assert_eq!(
+            jsx,
+            "<Card {...{\"title\": \"中文\\\"引用\\\"标题\"}}><p>Content</p></Card>"
+        );
     }
 
     #[test]

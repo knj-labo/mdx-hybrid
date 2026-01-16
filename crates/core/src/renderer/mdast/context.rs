@@ -176,7 +176,8 @@ impl<'a> Context<'a> {
             match prop_value {
                 PropValue::Literal { value } => {
                     self.current_html.push('"');
-                    self.current_html.push_str(&value.replace('"', "\\\""));
+                    self.current_html
+                        .push_str(&crate::codegen::escape_js_string_value(value));
                     self.current_html.push('"');
                 }
                 PropValue::Expression { value } => {
@@ -236,7 +237,7 @@ impl<'a> Context<'a> {
                         match prop_value {
                             PropValue::Literal { value } => {
                                 result.push('"');
-                                result.push_str(&value.replace('"', "\\\""));
+                                result.push_str(&crate::codegen::escape_js_string_value(value));
                                 result.push('"');
                             }
                             PropValue::Expression { value } => {
