@@ -1,10 +1,10 @@
 use js_sys::Function;
 use markflow_core::MdastOptions;
 use markflow_core::code_fence::collect_root_imports;
-use markflow_core::renderer::mdast::{RenderBlock, to_blocks};
+use markflow_core::codegen::{AstroModuleOptions, DirectiveMappingResult, blocks_to_jsx_string};
+use markflow_core::renderer::mdast::to_blocks;
 use markflow_core::{MarkdownStream, RewriteOptions, StreamingRewriter, get_event_iterator};
 use serde::Serialize;
-use std::fmt::Write as FmtWrite;
 use std::io::{self, Write};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
@@ -80,7 +80,10 @@ pub fn compile(source: &str, filepath: &str) -> Result<JsValue, JsError> {
     let blocks_result = to_blocks(&body_without_imports, &mdast_options)
         .map_err(|e| JsError::new(&format!("Parse error: {}", e)))?;
 
-    let jsx_body = blocks_to_jsx_string(&blocks_result.blocks);
+    let jsx_body = blocks_to_jsx_string(
+        &blocks_result.blocks,
+        None::<fn(&str) -> Option<DirectiveMappingResult>>,
+    );
 
     // 4. Convert headings
     let headings: Vec<HeadingEntry> = blocks_result
@@ -98,14 +101,16 @@ pub fn compile(source: &str, filepath: &str) -> Result<JsValue, JsError> {
     let headings_json = serde_json::to_string(&headings).unwrap_or_else(|_| "[]".to_string());
 
     // 6. Generate module code
-    let code = generate_module_code(
-        &jsx_body,
-        &hoisted_imports,
-        &frontmatter_json,
-        &headings_json,
+    let code = markflow_core::codegen::generate_astro_module(&AstroModuleOptions {
+        jsx: &jsx_body,
+        hoisted_imports: &hoisted_imports,
+        frontmatter_json: &frontmatter_json,
+        headings_json: &headings_json,
         filepath,
+        url: None,
+        layout_import: None,
         has_user_default_export,
-    );
+    });
 
     // 7. Build result
     let result = CompileResult {
@@ -117,138 +122,6 @@ pub fn compile(source: &str, filepath: &str) -> Result<JsValue, JsError> {
 
     serde_wasm_bindgen::to_value(&result)
         .map_err(|e| JsError::new(&format!("Serialization error: {}", e)))
-}
-
-/// Converts RenderBlocks to a JSX string.
-fn blocks_to_jsx_string(blocks: &[RenderBlock]) -> String {
-    let mut result = String::new();
-    for block in blocks {
-        match block {
-            RenderBlock::Html { content } => {
-                result.push_str(content);
-            }
-            RenderBlock::Component {
-                name,
-                props,
-                slot_html,
-            } => {
-                result.push('<');
-                result.push_str(name);
-
-                // Render props as {...{key: "value", ...}}
-                if !props.is_empty() {
-                    result.push_str(" {...{");
-                    let mut first = true;
-                    for (key, prop_value) in props {
-                        if !first {
-                            result.push_str(", ");
-                        }
-                        first = false;
-                        result.push('"');
-                        result.push_str(&key.replace('"', "\\\""));
-                        result.push_str("\": ");
-                        match prop_value {
-                            markflow_core::PropValue::Literal { value } => {
-                                result.push('"');
-                                result.push_str(&value.replace('"', "\\\"").replace('\n', "\\n"));
-                                result.push('"');
-                            }
-                            markflow_core::PropValue::Expression { value } => {
-                                result.push_str(value);
-                            }
-                        }
-                    }
-                    result.push_str("}}");
-                }
-
-                result.push('>');
-                result.push_str(slot_html);
-                result.push_str("</");
-                result.push_str(name);
-                result.push('>');
-            }
-        }
-    }
-    result
-}
-
-/// Generates Astro-compatible module code.
-fn generate_module_code(
-    jsx: &str,
-    hoisted_imports: &[String],
-    frontmatter_json: &str,
-    headings_json: &str,
-    filepath: &str,
-    has_user_default_export: bool,
-) -> String {
-    let mut code = String::new();
-
-    // Runtime imports
-    let _ = writeln!(
-        code,
-        "import {{ Fragment, jsx as __jsx }} from 'astro/jsx-runtime';"
-    );
-    let _ = writeln!(code, "const _Fragment = Fragment;");
-    let _ = writeln!(
-        code,
-        "const _jsx = (type, props, ...children) => {{\n  const resolved = props ?? {{}};\n  if (children.length > 0) {{\n    resolved.children = children.length === 1 ? children[0] : children;\n  }}\n  return __jsx(type, resolved, resolved.key);\n}};"
-    );
-    let _ = writeln!(
-        code,
-        "import {{ createComponent, renderJSX }} from 'astro/runtime/server/index.js';"
-    );
-
-    // Hoisted imports
-    for import in hoisted_imports {
-        let _ = writeln!(code, "{}", import);
-    }
-
-    // Exports
-    let _ = writeln!(code, "export const frontmatter = {};", frontmatter_json);
-    let _ = writeln!(code, "export const file = {};", js_string_literal(filepath));
-    let _ = writeln!(code, "export const url = undefined;");
-    let _ = writeln!(code, "export const headings = {};", headings_json);
-    let _ = writeln!(code, "export function getHeadings() {{");
-    let _ = writeln!(code, "  return {};", headings_json);
-    let _ = writeln!(code, "}}");
-
-    // MarkflowContent component
-    let _ = writeln!(code, "// function MarkflowContent");
-    let _ = writeln!(
-        code,
-        "const MarkflowContent = createComponent((result, props) => {{"
-    );
-    let _ = writeln!(code, "  return renderJSX(result, (");
-    let _ = writeln!(code, "    <>");
-    code.push_str(jsx);
-    if !jsx.ends_with('\n') {
-        code.push('\n');
-    }
-    let _ = writeln!(code, "    </>");
-    let _ = writeln!(code, "  ));");
-    let _ = writeln!(code, "}}, file);");
-
-    let _ = writeln!(code, "export const Content = MarkflowContent;");
-
-    // Add MDX component markers for Astro Content Collections
-    let _ = writeln!(code, "Content[Symbol.for('mdx-component')] = true;");
-    let _ = writeln!(
-        code,
-        "Content[Symbol.for('astro.needsHeadRendering')] = !Boolean(frontmatter.layout);"
-    );
-    let _ = writeln!(code, "Content.moduleId = {};", js_string_literal(filepath));
-
-    // Export default (conditional)
-    if !has_user_default_export {
-        let _ = writeln!(code, "export default MarkflowContent;");
-    }
-
-    code
-}
-
-/// Converts a string to a JavaScript string literal.
-fn js_string_literal(value: &str) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
 // ============================================================================

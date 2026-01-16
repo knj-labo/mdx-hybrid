@@ -1,7 +1,8 @@
 //! The stateful compiler and its configuration.
 
 use crate::types::*;
-use markflow_core::{MarkflowError, MdastOptions, PropValue, RenderBlock, code_fence, to_blocks};
+use markflow_core::codegen::{DirectiveMappingResult, blocks_to_jsx_string};
+use markflow_core::{MarkflowError, MdastOptions, code_fence, to_blocks};
 use napi_derive::napi;
 use std::path::Path;
 
@@ -72,79 +73,6 @@ pub fn create_compiler(config: Option<CompilerConfig>) -> MarkflowCompiler {
     MarkflowCompiler::new(config)
 }
 
-/// Converts mdast RenderBlocks to a JSX string format.
-///
-/// Html blocks are output directly. Component blocks are rendered as
-/// JSX component syntax: <Name {...props}>{slotHtml}</Name>
-fn blocks_to_jsx_string(blocks: &[RenderBlock]) -> String {
-    let mut result = String::new();
-    for block in blocks {
-        match block {
-            RenderBlock::Html { content } => {
-                result.push_str(content);
-            }
-            RenderBlock::Component {
-                name,
-                props,
-                slot_html,
-            } => {
-                // Map directive names to Aside component
-                let directive_types = ["note", "tip", "caution", "danger"];
-                let is_directive = directive_types.contains(&name.as_str());
-                let tag_name = if is_directive { "Aside" } else { name.as_str() };
-
-                result.push('<');
-                result.push_str(tag_name);
-
-                // For directives, add type prop
-                if is_directive {
-                    result.push_str(" type=\"");
-                    result.push_str(name);
-                    result.push('"');
-                }
-
-                // Render props as {...{key: "value" | expression, ...}}
-                if !props.is_empty() {
-                    result.push_str(" {...{");
-                    let mut first = true;
-                    for (key, prop_value) in props {
-                        if !first {
-                            result.push_str(", ");
-                        }
-                        first = false;
-                        // Escape the key for JavaScript
-                        result.push('"');
-                        result.push_str(&key.replace('"', "\\\""));
-                        result.push_str("\": ");
-
-                        // Render value based on type
-                        match prop_value {
-                            PropValue::Literal { value } => {
-                                // String literal: wrap in quotes
-                                result.push('"');
-                                result.push_str(&value.replace('"', "\\\"").replace('\n', "\\n"));
-                                result.push('"');
-                            }
-                            PropValue::Expression { value } => {
-                                // JS expression: output raw (no quotes)
-                                result.push_str(value);
-                            }
-                        }
-                    }
-                    result.push_str("}}");
-                }
-
-                result.push('>');
-                result.push_str(slot_html);
-                result.push_str("</");
-                result.push_str(tag_name);
-                result.push('>');
-            }
-        }
-    }
-    result
-}
-
 /// Compiles Markdown/MDX and returns a neutral IR.
 #[napi(js_name = "compileIr")]
 pub fn compile_ir(
@@ -182,8 +110,19 @@ pub fn compile_ir(
         ))
     })?;
 
-    // Convert blocks to JSX module string
-    let jsx_body = blocks_to_jsx_string(&blocks_result.blocks);
+    // Convert blocks to JSX module string with directive mapping
+    let directive_mapper = |name: &str| -> Option<DirectiveMappingResult> {
+        let directive_types = ["note", "tip", "caution", "danger"];
+        if directive_types.contains(&name) {
+            Some(DirectiveMappingResult {
+                tag_name: "Aside".to_string(),
+                type_prop: Some(name.to_string()),
+            })
+        } else {
+            None
+        }
+    };
+    let jsx_body = blocks_to_jsx_string(&blocks_result.blocks, Some(directive_mapper));
 
     // Merge leading imports with any imports found in the JSX body
     let hoisted = leading_imports;
