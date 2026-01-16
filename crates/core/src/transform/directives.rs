@@ -4,55 +4,6 @@ use std::fmt::Write as _;
 
 use crate::transform::code_fence::{FenceState, advance_fence_state};
 
-/// Declarative description of how a parsed directive should be rendered.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DirectiveTransform {
-    /// Opening tag (already assembled, e.g. `<Aside type="note">`).
-    pub start_tag: String,
-    /// Closing tag (e.g. `</Aside>`).
-    pub end_tag: String,
-    /// Import statements the mapper requires for this directive instance.
-    pub required_imports: Vec<String>,
-}
-
-/// Trait for mapping parsed directive openings into concrete HTML/JSX tags plus imports.
-pub trait DirectiveMapper {
-    /// Maps a directive opening to a rendering transform. Returning `None` leaves the directive untouched.
-    fn map_opening(&self, opening: &DirectiveOpening) -> Option<DirectiveTransform>;
-}
-
-/// Default mapper that preserves current Aside-based behavior for Starlight/Astro.
-#[derive(Clone, Debug, Default)]
-pub struct AsideDirectiveMapper {
-    import_stmt: String,
-}
-
-impl AsideDirectiveMapper {
-    /// Creates a mapper that emits `<Aside>` tags and requests the Starlight Aside import.
-    pub fn new() -> Self {
-        Self {
-            import_stmt: "import { Aside } from '@astrojs/starlight/components';".to_string(),
-        }
-    }
-}
-
-impl DirectiveMapper for AsideDirectiveMapper {
-    fn map_opening(&self, opening: &DirectiveOpening) -> Option<DirectiveTransform> {
-        if !is_supported_name(&opening.name) {
-            return None;
-        }
-
-        let start_tag = opening.to_aside_start();
-        let end_tag = opening.to_aside_end();
-
-        Some(DirectiveTransform {
-            start_tag,
-            end_tag,
-            required_imports: vec![self.import_stmt.clone()],
-        })
-    }
-}
-
 /// Ensures Aside import is present when directives were rewritten.
 /// If `count > 0` and no existing import from `@astrojs/starlight/components` is present,
 /// it pushes the import into the `hoisted` list.
@@ -254,155 +205,72 @@ pub(crate) fn rewrite_directives_to_asides(input: &str) -> (String, usize) {
     (output, count)
 }
 
-/// Mapper-powered rewrite that returns transformed HTML, count, and required imports.
-pub(crate) fn rewrite_with_mapper(
-    input: &str,
-    mapper: &dyn DirectiveMapper,
-) -> (String, usize, Vec<String>) {
-    let mut fence_state = FenceState::default();
-    let mut output = String::new();
-    let mut count = 0usize;
-    let mut required_imports = Vec::new();
-
-    // Stack of active directive transforms (paired with openings for fallback closing).
-    let mut directive_stack: Vec<(DirectiveOpening, DirectiveTransform)> = Vec::new();
-
-    for line in input.lines() {
-        let fence_outcome = advance_fence_state(line, fence_state);
-        fence_state = fence_outcome.next_state;
-
-        if fence_outcome.skip_imports {
-            writeln!(output, "{}", line).ok();
-            continue;
-        }
-
-        if let Some(opening) = parse_opening_directive(line)
-            && let Some(transform) = mapper.map_opening(&opening)
-        {
-            count += 1;
-            required_imports.extend(transform.required_imports.clone());
-            directive_stack.push((opening.clone(), transform.clone()));
-            writeln!(output, "{}", transform.start_tag).ok();
-            continue;
-        }
-
-        if is_directive_closer(line)
-            && let Some((_, transform)) = directive_stack.pop()
-        {
-            let end_tag = transform.end_tag;
-            writeln!(output, "{}", end_tag).ok();
-            continue;
-        }
-
-        writeln!(output, "{}", line).ok();
-    }
-
-    while let Some((_, transform)) = directive_stack.pop() {
-        writeln!(output, "{}", transform.end_tag).ok();
-    }
-
-    (output, count, required_imports)
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::{
-        DirectiveAdapter, MarkdownStream, RewriteOptions, StreamingRewriter, get_event_iterator,
-    };
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use super::*;
 
     #[test]
-    fn rewrites_simple_note() {
-        let input = ":::note\nhello\n:::";
-        let (out, count) = render_with_adapter(input);
-        assert_eq!(count, 1);
-        assert!(out.contains("<aside class=\"aside aside--note\">"));
-        assert!(out.contains("hello"));
+    fn parse_simple_note() {
+        let opening = parse_opening_directive(":::note").unwrap();
+        assert_eq!(opening.name, "note");
+        assert!(opening.bracket_title.is_none());
     }
 
     #[test]
-    fn preserves_code_fence() {
+    fn parse_note_with_bracket_title() {
+        let opening = parse_opening_directive(":::note[My Title]").unwrap();
+        assert_eq!(opening.name, "note");
+        assert_eq!(opening.bracket_title, Some("My Title".to_string()));
+    }
+
+    #[test]
+    fn parse_note_with_attrs() {
+        let opening = parse_opening_directive(":::warning data-test=\"yes\"").unwrap();
+        assert_eq!(opening.name, "warning");
+        assert_eq!(opening.raw_attrs, "data-test=\"yes\"");
+    }
+
+    #[test]
+    fn type_attr_is_stripped() {
+        let opening = parse_opening_directive(":::warning type=\"old\"").unwrap();
+        assert_eq!(opening.name, "warning");
+        assert!(!opening.raw_attrs.contains("type="));
+    }
+
+    #[test]
+    fn title_attr_stripped_when_bracket_present() {
+        let opening = parse_opening_directive(":::note[Hi] title=\"Ignored\"").unwrap();
+        assert_eq!(opening.bracket_title, Some("Hi".to_string()));
+        assert!(!opening.raw_attrs.contains("title="));
+    }
+
+    #[test]
+    fn unsupported_directive_returns_none() {
+        assert!(parse_opening_directive(":::unknown").is_none());
+    }
+
+    #[test]
+    fn directive_closer_detected() {
+        assert!(is_directive_closer(":::"));
+        assert!(is_directive_closer("  :::  "));
+        assert!(!is_directive_closer(":::note"));
+    }
+
+    #[test]
+    fn rewrite_directives_simple() {
+        let input = ":::note\nhello\n:::";
+        let (out, count) = rewrite_directives_to_asides(input);
+        assert_eq!(count, 1);
+        assert!(out.contains("<Aside"));
+        assert!(out.contains("type=\"note\""));
+        assert!(out.contains("</Aside>"));
+    }
+
+    #[test]
+    fn rewrite_preserves_code_fence() {
         let input = "```\n:::note\n```";
-        let (out, count) = render_with_adapter(input);
+        let (out, count) = rewrite_directives_to_asides(input);
         assert_eq!(count, 0);
         assert!(out.contains(":::note"));
-    }
-
-    #[test]
-    fn bracket_title_overrides_attr() {
-        let input = ":::note[Hi] title=\"Ignore\"\nBody\n:::";
-        let (out, _) = render_with_adapter(input);
-        assert!(
-            out.contains("<aside class=\"aside aside--note\"><div class=\"aside__title\">Hi</div>")
-        );
-        assert!(!out.contains("Ignore"));
-    }
-
-    #[test]
-    fn type_attr_is_overwritten() {
-        let input = ":::warning type=\"old\"\nBody\n:::";
-        let (out, _) = render_with_adapter(input);
-        assert!(out.contains("<aside class=\"aside aside--warning\">"));
-        assert!(!out.contains("type=\"old\""));
-    }
-
-    #[test]
-    fn nested_directives_close_in_order() {
-        let input = ":::note\nOuter\n:::tip\nInner\n:::\n:::";
-        let (out, count) = render_with_adapter(input);
-        assert_eq!(count, 2);
-        assert!(out.contains("<aside class=\"aside aside--note\">"));
-        assert!(out.contains("<aside class=\"aside aside--tip\">"));
-        assert!(out.contains("</aside>"));
-    }
-
-    #[test]
-    fn attribute_title_retained_when_no_bracket() {
-        let input = ":::info title=\"Keep me\"\nBody\n:::";
-        let (out, _) = render_with_adapter(input);
-        assert!(out.contains(
-            "<aside class=\"aside aside--info\"><div class=\"aside__title\">Keep me</div>"
-        ));
-    }
-
-    #[test]
-    fn arbitrary_attributes_are_preserved() {
-        let input = ":::danger data-test=\"yes\" class=\"foo\"\nBody\n:::";
-        let (out, _) = render_with_adapter(input);
-        assert!(out.contains("data-test=\"yes\""));
-        assert!(out.contains("class=\"aside aside--danger foo\""));
-    }
-
-    #[test]
-    fn ignores_directive_like_text_in_inline_code() {
-        let input = "Here is `:::note` inside code";
-        let (out, count) = render_with_adapter(input);
-        assert_eq!(count, 0);
-        assert!(out.contains("<code>:::note</code>"));
-    }
-
-    #[test]
-    fn ignores_directive_like_text_in_html_attribute() {
-        let input = "<div title=\":note\">content</div>";
-        let (out, count) = render_with_adapter(input);
-        assert_eq!(count, 0);
-        assert!(out.contains("<div title=\":note\">content</div>"));
-    }
-
-    fn render_with_adapter(input: &str) -> (String, usize) {
-        let events = get_event_iterator(input).expect("parser");
-        let directive_count = Rc::new(RefCell::new(0usize));
-        let opts = RewriteOptions::default();
-        let pipeline = DirectiveAdapter::new(
-            events,
-            Rc::clone(&directive_count),
-            opts.directive_mapper.clone(),
-            opts.required_imports.clone(),
-        );
-        let writer = StreamingRewriter::new(Vec::new(), opts);
-        let writer = pipeline.stream_to_writer(writer).expect("render stream");
-        let html = String::from_utf8(writer.into_inner().expect("flush")).expect("utf8");
-        (html, *directive_count.borrow())
     }
 }

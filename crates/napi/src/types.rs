@@ -4,32 +4,6 @@ use napi_derive::napi;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
-/// Configuration options for the HTML rewriter
-#[napi(object)]
-#[derive(Debug, Clone)]
-pub struct RewriteConfig {
-    /// Enable lazy loading for images (default: true)
-    pub enforce_img_loading_lazy: bool,
-    /// Enable directive rewriting (:::note, etc.). Defaults to true.
-    pub enable_directives: Option<bool>,
-    /// Enable hoisting of root-level import/export statements. Defaults to true.
-    pub enable_hoist: Option<bool>,
-    /// Enable smart punctuation (quotes, dashes, ellipsis). Defaults to true.
-    pub enable_smartypants: Option<bool>,
-    /// Enable Astro docs component rewrites (Aside/Steps/Tabs/FileTree). Defaults to true.
-    pub enable_components: Option<bool>,
-}
-
-/// Parse result with HTML output and processing statistics
-#[napi(object)]
-#[derive(Debug, Clone)]
-pub struct ParseResult {
-    /// The parsed HTML output
-    pub html: String,
-    /// Processing time in milliseconds
-    pub processing_time_ms: f64,
-}
-
 /// Parsed frontmatter document plus any parser errors.
 #[napi(object)]
 #[derive(Debug, Clone)]
@@ -188,6 +162,10 @@ pub enum ImportKind {
 pub struct BlockOptions {
     /// Enable directive preprocessing (:::note, etc.). Defaults to true.
     pub enable_directives: Option<bool>,
+    /// Enable smart punctuation transformations. Defaults to false.
+    pub enable_smartypants: Option<bool>,
+    /// Enable lazy loading for images. Defaults to false.
+    pub enable_lazy_images: Option<bool>,
 }
 
 /// Represents a rendering block returned by parse_blocks().
@@ -221,19 +199,4 @@ pub struct ParseBlocksResult {
     pub blocks: Vec<RenderBlock>,
     /// Extracted heading metadata.
     pub headings: Vec<HeadingEntry>,
-}
-
-use markflow_core::RewriteOptions;
-
-impl From<RewriteConfig> for RewriteOptions {
-    fn from(config: RewriteConfig) -> Self {
-        RewriteOptions {
-            enforce_img_loading_lazy: config.enforce_img_loading_lazy,
-            enable_directives: config.enable_directives.unwrap_or(true),
-            enable_hoist: config.enable_hoist.unwrap_or(true),
-            enable_smartypants: config.enable_smartypants.unwrap_or(true),
-            enable_components: config.enable_components.unwrap_or(true),
-            ..RewriteOptions::default()
-        }
-    }
 }

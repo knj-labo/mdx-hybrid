@@ -19,14 +19,29 @@ mod types;
 pub use context::Context;
 pub use types::{AsideMeta, BlocksResult, CardMeta, HeadingEntry, PropValue, RenderBlock, Scope};
 
-use crate::parser::markdown_adapter::normalize_mdx_jsx_indentation;
+use crate::transform::jsx_normalize::normalize_mdx_jsx_indentation;
+use crate::transform::smartypants::apply_smartypants;
 use render::render_node;
 
 /// Rendering options for the mdast renderer.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Options {
     /// Whether directive processing is enabled.
+    #[serde(default)]
     pub enable_directives: bool,
+    /// Whether to apply smart punctuation transformations.
+    #[serde(default)]
+    pub enable_smartypants: bool,
+    /// Whether to add loading="lazy" to images.
+    #[serde(default)]
+    pub enable_lazy_images: bool,
+}
+
+impl Options {
+    /// Returns whether lazy image loading is enabled.
+    pub fn lazy_images(&self) -> bool {
+        self.enable_lazy_images
+    }
 }
 
 /// Converts Markdown input to rendering blocks (entry point).
@@ -49,6 +64,7 @@ pub struct Options {
 /// let input = "Hello, [world](https://example.com)!";
 /// let options = Options {
 ///     enable_directives: false,
+///     ..Default::default()
 /// };
 /// let blocks = to_blocks(input, &options).unwrap();
 /// ```
@@ -91,8 +107,19 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
     let mut ctx = Context::new(options);
     render_node(&tree, &mut ctx);
 
-    // 5. Finish and return blocks
-    Ok(ctx.finish())
+    // 5. Finish and get blocks
+    let mut result = ctx.finish();
+
+    // 6. Apply smartypants if enabled
+    if options.enable_smartypants {
+        for block in &mut result.blocks {
+            if let RenderBlock::Html { content } = block {
+                *content = apply_smartypants(content);
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -104,6 +131,7 @@ mod tests {
         let input = "Hello, world!";
         let options = Options {
             enable_directives: true,
+            ..Default::default()
         };
 
         let blocks = to_blocks(input, &options).unwrap();
@@ -121,6 +149,7 @@ mod tests {
         let input = "This is a paragraph.";
         let options = Options {
             enable_directives: true,
+            ..Default::default()
         };
 
         let blocks = to_blocks(input, &options).unwrap();
@@ -138,6 +167,7 @@ mod tests {
         let input = "[Rust](https://www.rust-lang.org/)";
         let options = Options {
             enable_directives: true,
+            ..Default::default()
         };
 
         let blocks = to_blocks(input, &options).unwrap();
@@ -156,6 +186,7 @@ mod tests {
         let input = ":::note[My Title]\nThis is **important** content.\n:::";
         let options = Options {
             enable_directives: true,
+            ..Default::default()
         };
 
         let blocks = to_blocks(input, &options).unwrap();
@@ -181,6 +212,7 @@ mod tests {
         let input = ":::tip\nHelpful advice here.\n:::";
         let options = Options {
             enable_directives: true,
+            ..Default::default()
         };
 
         let blocks = to_blocks(input, &options).unwrap();
@@ -206,6 +238,7 @@ mod tests {
         let input = ":::note\nContent\n:::";
         let options = Options {
             enable_directives: false,
+            ..Default::default()
         };
 
         let blocks = to_blocks(input, &options).unwrap();
@@ -237,6 +270,7 @@ fn main() {}
 "#;
         let options = Options {
             enable_directives: true,
+            ..Default::default()
         };
         let blocks = to_blocks(input, &options).unwrap();
         assert_eq!(blocks.blocks.len(), 1);
@@ -261,6 +295,7 @@ fn main() {}
         let input = "- [ ] Unchecked task\n- [x] Checked task\n";
         let options = Options {
             enable_directives: true,
+            ..Default::default()
         };
         let blocks = to_blocks(input, &options).unwrap();
 
@@ -278,6 +313,7 @@ fn main() {}
         let input = "1. First\n2. Second\n3. Third\n";
         let options = Options {
             enable_directives: true,
+            ..Default::default()
         };
         let blocks = to_blocks(input, &options).unwrap();
 
@@ -296,6 +332,7 @@ fn main() {}
         let input = "Text with <script>alert('xss')</script> and & symbols.";
         let options = Options {
             enable_directives: false,
+            ..Default::default()
         };
 
         let result = to_blocks(input, &options).unwrap();
@@ -331,6 +368,7 @@ fn main() {}
         let input = r#"[Link](http://example.com "Title with <script> and & and ' quotes")"#;
         let options = Options {
             enable_directives: false,
+            ..Default::default()
         };
 
         let blocks = to_blocks(input, &options).unwrap();
@@ -350,6 +388,7 @@ fn main() {}
         let input = r#"![Alt with ' and "](image.png "Title with &")"#;
         let options = Options {
             enable_directives: false,
+            ..Default::default()
         };
 
         let blocks = to_blocks(input, &options).unwrap();
@@ -391,6 +430,7 @@ fn main() {}
         let input = "This is ~~deleted~~ text.";
         let options = Options {
             enable_directives: false,
+            ..Default::default()
         };
 
         let blocks = to_blocks(input, &options).unwrap();
@@ -411,6 +451,7 @@ fn main() {}
 | Bob | 25 | NYC |"#;
         let options = Options {
             enable_directives: false,
+            ..Default::default()
         };
 
         let blocks = to_blocks(input, &options).unwrap();
@@ -437,6 +478,7 @@ fn main() {}
 | `code` | ✓ |"#;
         let options = Options {
             enable_directives: false,
+            ..Default::default()
         };
 
         let blocks = to_blocks(input, &options).unwrap();
@@ -460,6 +502,7 @@ line3
 ```"#;
         let options = Options {
             enable_directives: true,
+            ..Default::default()
         };
 
         let result = to_blocks(input, &options).unwrap();
@@ -483,6 +526,7 @@ line3
 </Steps>"#;
         let options = Options {
             enable_directives: true,
+            ..Default::default()
         };
 
         let result = to_blocks(input, &options).unwrap();
@@ -520,6 +564,7 @@ line3
 
         let options = Options {
             enable_directives: true,
+            ..Default::default()
         };
 
         let result = to_blocks(input, &options).unwrap();

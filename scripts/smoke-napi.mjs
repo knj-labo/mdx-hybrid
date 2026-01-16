@@ -4,7 +4,7 @@ import { basename, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { performance } from 'node:perf_hooks'
 
-import { parse, parseWithOptions, parseWithStats } from '../crates/napi/index.js'
+import { parseBlocks, parseFrontmatter } from '../crates/napi/index.js'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = resolve(__dirname, '..')
@@ -13,17 +13,21 @@ const [inputArg = 'fixtures/core/markdown/hello.md'] = userArgs
 const inputPath = resolve(repoRoot, inputArg)
 
 const markdown = await readFile(inputPath, 'utf8')
-console.log(`🚀 Running markflow-napi smoke test for ${basename(inputPath)}`)
+console.log(`Running markflow-napi smoke test for ${basename(inputPath)}`)
 
+// Test parseBlocks
 const start = performance.now()
-const html = parse(markdown)
+const result = parseBlocks(markdown, { enableDirectives: true })
 const elapsed = performance.now() - start
-console.log(`✅ parse() returned ${html.length} bytes in ${elapsed.toFixed(3)}ms`)
+console.log(`parseBlocks() returned ${result.blocks.length} blocks in ${elapsed.toFixed(3)}ms`)
 
-const custom = parseWithOptions(markdown, { enforceImgLoadingLazy: false })
-console.log(`✅ parseWithOptions() toggled lazy attr: ${(custom.includes('loading="lazy"') ? 'on' : 'off')}`)
+// Test parseFrontmatter
+const fmResult = parseFrontmatter(markdown)
+console.log(`parseFrontmatter() returned ${Object.keys(fmResult.frontmatter).length} keys`)
 
-const stats = parseWithStats(markdown)
-console.log(`✅ parseWithStats() reports ${stats.processingTimeMs.toFixed(3)}ms with ${stats.html.length} bytes`)
-
-console.log('\n📝 HTML preview:\n', html.slice(0, 160), html.length > 160 ? '…' : '')
+// Show preview
+const htmlContent = result.blocks
+  .filter((b) => b.type === 'html')
+  .map((b) => b.content)
+  .join('')
+console.log(`\nHTML preview:\n`, htmlContent.slice(0, 160), htmlContent.length > 160 ? '...' : '')

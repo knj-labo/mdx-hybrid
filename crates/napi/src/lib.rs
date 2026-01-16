@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 //! Node.js bindings that surface Markflow's Rust implementation.
 
-use markflow_core::{MarkflowError, RewriteOptions, extract_frontmatter};
+use markflow_core::{MarkflowError, extract_frontmatter};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use std::path::Path;
@@ -12,8 +12,6 @@ pub mod batch;
 mod codegen;
 /// The stateful compiler and its configuration.
 pub mod compiler;
-/// Heading extraction helpers.
-mod headings;
 /// NAPI-exposed data structures.
 pub mod types;
 /// Utility helpers.
@@ -23,68 +21,6 @@ pub use batch::*;
 pub use types::*;
 use utils::empty_frontmatter;
 pub(crate) use utils::{build_import_list, dedupe_imports};
-
-/// Parses markdown string to HTML with default options
-#[napi]
-pub fn parse(input: String) -> napi::Result<String> {
-    let result = markflow_core::parse(&input).map_err(convert_error)?;
-    Ok(result.html)
-}
-
-#[cfg(test)]
-fn wrap_jsx_fragment_as_module(input: &str) -> String {
-    let mut imports = Vec::new();
-    let mut body_lines = Vec::new();
-    let mut in_import_block = true;
-
-    for line in input.lines() {
-        if in_import_block && line.trim_start().starts_with("import ") {
-            imports.push(line);
-            continue;
-        }
-
-        if in_import_block && line.trim().is_empty() {
-            continue;
-        }
-
-        in_import_block = false;
-        body_lines.push(line);
-    }
-
-    let imports = if imports.is_empty() {
-        String::new()
-    } else {
-        format!("{}\n\n", imports.join("\n"))
-    };
-    let body = body_lines.join("\n");
-
-    format!(
-        "{imports}export default function _Tmp() {{\n  return (\n    <>\n{body}\n    </>\n  );\n}}\n"
-    )
-}
-
-/// Parses markdown string to HTML with custom rewrite options
-#[napi]
-pub fn parse_with_options(input: String, config: RewriteConfig) -> napi::Result<String> {
-    let options: RewriteOptions = config.into();
-    let result = markflow_core::parse_with_options(&input, options).map_err(convert_error)?;
-    Ok(result.html)
-}
-
-/// Parses markdown and returns both HTML output and processing statistics
-#[napi]
-pub fn parse_with_stats(input: String) -> napi::Result<ParseResult> {
-    use std::time::Instant;
-
-    let start = Instant::now();
-    let html = parse(input)?;
-    let elapsed = start.elapsed();
-
-    Ok(ParseResult {
-        html,
-        processing_time_ms: elapsed.as_secs_f64() * 1000.0,
-    })
-}
 
 /// Extracts YAML or TOML frontmatter without compiling the entire Markdown document.
 #[napi]
@@ -146,10 +82,13 @@ pub fn parse_blocks(input: String, opts: Option<BlockOptions>) -> napi::Result<P
     let options = if let Some(o) = opts {
         mdast::Options {
             enable_directives: o.enable_directives.unwrap_or(true),
+            enable_smartypants: o.enable_smartypants.unwrap_or(false),
+            enable_lazy_images: o.enable_lazy_images.unwrap_or(false),
         }
     } else {
         mdast::Options {
             enable_directives: true,
+            ..Default::default()
         }
     };
 
@@ -415,15 +354,6 @@ mod tests {
         let result = parse_frontmatter("# Heading".to_string()).unwrap();
         assert!(result.errors.is_empty());
         assert_eq!(result.frontmatter, empty_frontmatter());
-    }
-
-    #[test]
-    fn wrap_jsx_fragment_as_module_preserves_imports_and_body() {
-        let input = "import X from './x'\n\n<div />".to_string();
-        let output = super::wrap_jsx_fragment_as_module(&input);
-        assert!(output.starts_with("import X from './x'"));
-        assert!(output.contains("export default function _Tmp"));
-        assert!(output.contains("<div />"));
     }
 
     #[test]

@@ -209,6 +209,7 @@ pub fn compile_ir(
     // Use mdast pipeline to generate blocks
     let mdast_options = MdastOptions {
         enable_directives: true,
+        ..Default::default()
     };
     let blocks_result = to_blocks(&body_without_imports, &mdast_options).map_err(|err| {
         super::convert_error(with_path(

@@ -267,6 +267,11 @@ impl<'a> Context<'a> {
         self.headings.push(entry);
     }
 
+    /// Returns whether lazy image loading is enabled.
+    pub fn lazy_images_enabled(&self) -> bool {
+        self.options.lazy_images()
+    }
+
     /// Consumes the context and returns the list of rendering blocks.
     pub fn finish(mut self) -> BlocksResult {
         self.flush_html();
