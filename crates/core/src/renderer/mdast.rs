@@ -889,9 +889,6 @@ fn render_jsx(
 
     // 2. Handle internal directive container: <mf-directive name="..." title="...">...</mf-directive>
     if tag_name == "mf-directive" {
-        // Flush any pending HTML before processing directive
-        ctx.flush_html();
-
         let mut directive_type = "note".to_string();
         let mut title: Option<String> = None;
 
@@ -928,7 +925,12 @@ fn render_jsx(
         }
 
         // Emit as Aside Component block
-        ctx.push_component("Aside", props, slot_html);
+        // When inside a list, render inline to avoid fragmenting the list structure.
+        if ctx.is_in_list() {
+            ctx.push_component_inline("Aside", &props, &slot_html);
+        } else {
+            ctx.push_component("Aside", props, slot_html);
+        }
         return;
     }
 

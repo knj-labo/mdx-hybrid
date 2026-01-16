@@ -770,20 +770,6 @@ function getText(node) {
  */
 function validateStarlightComponents(source) {
   // Check for problematic patterns inside Steps blocks
-  const stepsPattern = /<Steps\s*>[\s\S]*?<\/Steps>/gi;
-  const stepsMatches = source.match(stepsPattern);
-  if (stepsMatches) {
-    for (const block of stepsMatches) {
-      // Note: Directive syntax (:::) is now handled by normalize_mdx_jsx_indentation()
-      // which adds proper indentation to directives inside Steps numbered lists.
-
-      // FileTree renders as separate element, breaking Steps' single <ol> expectation
-      if (/<FileTree[\s>]/i.test(block)) {
-        return "FileTree component inside <Steps> breaks list structure";
-      }
-    }
-  }
-
   // Note: With code_indented: false in the Rust parser, nested content inside Steps
   // (JSX components, code fences, continuation paragraphs) is now handled correctly.
   // Deep indentation is interpreted as nested list content instead of code blocks.
