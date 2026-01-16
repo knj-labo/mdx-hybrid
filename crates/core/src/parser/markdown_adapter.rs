@@ -695,6 +695,7 @@ pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
     let mut in_numbered_list = false;
     let mut after_blank_in_list = false;
     let mut in_steps_directive = false; // Track if we're inside a directive that needs indentation
+    let mut in_filetree = false; // Track if we're inside a FileTree to skip Steps indentation
 
     for line in input.split_inclusive('\n') {
         let (line_body, line_ending) = if let Some(stripped) = line.strip_suffix('\n') {
@@ -733,6 +734,10 @@ pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
                     in_numbered_list = false;
                     after_blank_in_list = false;
                 }
+                // Track entering <FileTree>
+                if tag.name.eq_ignore_ascii_case("filetree") {
+                    in_filetree = true;
+                }
                 if !tag.self_closing {
                     jsx_stack.push(tag.name);
                 }
@@ -754,6 +759,10 @@ pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
                     in_numbered_list = false;
                     after_blank_in_list = false;
                     in_steps_directive = false;
+                }
+                // Track exiting <FileTree>
+                if tag_name.eq_ignore_ascii_case("filetree") {
+                    in_filetree = false;
                 }
                 // Check if we should preserve indentation before popping
                 let should_preserve_indent = jsx_stack.len() > 1;
@@ -778,7 +787,8 @@ pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
                 let leading_spaces = line_body.len() - trimmed.len();
 
                 // Steps-specific: track numbered list context and blank lines
-                if in_steps {
+                // Skip this logic when inside FileTree to preserve its list structure
+                if in_steps && !in_filetree {
                     if is_numbered_list_item(trimmed) {
                         in_numbered_list = true;
                         after_blank_in_list = false;
