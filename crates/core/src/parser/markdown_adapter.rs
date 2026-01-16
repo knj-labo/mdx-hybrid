@@ -694,6 +694,7 @@ pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
     let mut in_steps = false;
     let mut in_numbered_list = false;
     let mut after_blank_in_list = false;
+    let mut in_steps_directive = false; // Track if we're inside a directive that needs indentation
 
     for line in input.split_inclusive('\n') {
         let (line_body, line_ending) = if let Some(stripped) = line.strip_suffix('\n') {
@@ -752,6 +753,7 @@ pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
                     in_steps = false;
                     in_numbered_list = false;
                     after_blank_in_list = false;
+                    in_steps_directive = false;
                 }
                 // Check if we should preserve indentation before popping
                 let should_preserve_indent = jsx_stack.len() > 1;
@@ -780,21 +782,49 @@ pub(crate) fn normalize_mdx_jsx_indentation(input: &str) -> String {
                     if is_numbered_list_item(trimmed) {
                         in_numbered_list = true;
                         after_blank_in_list = false;
+                        in_steps_directive = false;
                     } else if trimmed.is_empty() && in_numbered_list {
                         after_blank_in_list = true;
-                    } else if in_numbered_list
-                        && after_blank_in_list
-                        && !trimmed.is_empty()
-                        && leading_spaces == 0
-                        && !trimmed.starts_with("</")
-                    {
-                        // Non-indented content after blank line in numbered list
-                        // Add 3-space indent to make it list continuation
-                        output.push_str("   ");
-                        output.push_str(trimmed);
-                        output.push_str(line_ending);
-                        after_blank_in_list = false;
-                        continue;
+                    } else if in_numbered_list && leading_spaces == 0 {
+                        // Check for directive syntax (:::word or just :::)
+                        let is_directive_opener = trimmed.starts_with(":::")
+                            && trimmed.len() > 3
+                            && trimmed.chars().nth(3).is_some_and(|c| c.is_alphabetic());
+                        let is_directive_closer = trimmed == ":::";
+
+                        if is_directive_opener && !in_steps_directive {
+                            // Start of directive - add indent and track state
+                            in_steps_directive = true;
+                            after_blank_in_list = false;
+                            output.push_str("   ");
+                            output.push_str(trimmed);
+                            output.push_str(line_ending);
+                            continue;
+                        } else if is_directive_closer && in_steps_directive {
+                            // End of directive - add indent and reset state
+                            in_steps_directive = false;
+                            output.push_str("   ");
+                            output.push_str(trimmed);
+                            output.push_str(line_ending);
+                            continue;
+                        } else if in_steps_directive {
+                            // Inside directive - add indent to all content
+                            output.push_str("   ");
+                            output.push_str(trimmed);
+                            output.push_str(line_ending);
+                            continue;
+                        } else if after_blank_in_list
+                            && !trimmed.is_empty()
+                            && !trimmed.starts_with("</")
+                        {
+                            // Non-indented content after blank line in numbered list
+                            // Add 3-space indent to make it list continuation
+                            output.push_str("   ");
+                            output.push_str(trimmed);
+                            output.push_str(line_ending);
+                            after_blank_in_list = false;
+                            continue;
+                        }
                     }
                 }
 

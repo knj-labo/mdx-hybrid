@@ -768,15 +768,14 @@ function getText(node) {
  * @returns {string|null} Error message or null
  */
 function validateStarlightComponents(source) {
-  // Check for directives inside Steps blocks - these break list structure
-  // Note: Directive syntax (:::) is remark-specific and not handled by markdown-rs
+  // Check for problematic patterns inside Steps blocks
   const stepsPattern = /<Steps\s*>[\s\S]*?<\/Steps>/gi;
   const stepsMatches = source.match(stepsPattern);
   if (stepsMatches) {
     for (const block of stepsMatches) {
-      if (/^\s*:::[a-z]/im.test(block)) {
-        return "Directive syntax (:::) inside <Steps> breaks list structure";
-      }
+      // Note: Directive syntax (:::) is now handled by normalize_mdx_jsx_indentation()
+      // which adds proper indentation to directives inside Steps numbered lists.
+
       // FileTree renders as separate element, breaking Steps' single <ol> expectation
       if (/<FileTree[\s>]/i.test(block)) {
         return "FileTree component inside <Steps> breaks list structure";
