@@ -3,6 +3,8 @@
 
 /// Markdown event to `io::Write` bridge utilities.
 pub mod adapter;
+/// Code generation utilities for WASM and NAPI bindings.
+pub mod codegen;
 /// Core parsing and rewriting engine.
 pub mod engine;
 /// Error types and utilities.
