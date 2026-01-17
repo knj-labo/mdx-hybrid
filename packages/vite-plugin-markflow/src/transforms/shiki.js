@@ -114,6 +114,9 @@ export async function highlightHtmlBlocks(html, highlight) {
  * @returns {Promise<string>} The transformed code with highlighted blocks
  */
 export async function rewriteAstroSetHtml(code, highlight) {
+  if (!code || typeof code !== 'string') {
+    return code;
+  }
   const marker = "<Fragment set:html={";
   const idx = code.indexOf(marker);
   if (idx === -1) return code;

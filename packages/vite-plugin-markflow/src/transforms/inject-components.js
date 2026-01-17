@@ -48,6 +48,9 @@ function stripHeadingsMeta(code) {
  * // Adds: import { Aside } from '@astrojs/starlight/components';
  */
 export function injectComponentImports(code, components, moduleId) {
+  if (!code || typeof code !== 'string') {
+    return code;
+  }
   const scanTarget = stripHeadingsMeta(code);
   const used = components.filter((name) =>
     new RegExp(`<${name}\\b`).test(scanTarget),
