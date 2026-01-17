@@ -294,7 +294,6 @@ const unwrapVirtual = (value) =>
         stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ""));
       try {
         const source = await readFile(filename, "utf8");
-        const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
 
         const startTime = performance.now();
         let result;
