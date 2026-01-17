@@ -4,6 +4,13 @@ import { transformWithEsbuild } from "vite";
 import { parseFragment, serialize } from "parse5";
 import { codeToHtml, createCssVariablesTheme } from "shiki";
 import { createRegistry, starlightLibrary, astroLibrary } from "markflow/registry";
+import { pipe, when } from "./pipeline/pipe.js";
+import {
+  transformExpressiveCode,
+  transformInjectAstroComponents,
+  transformInjectStarlightComponents,
+  transformShikiHighlight,
+} from "./transforms/index.js";
 
 const DEFAULT_EXTENSIONS = new Set([".md", ".mdx"]);
 
@@ -119,12 +126,44 @@ const shouldCompile = (id) =>
   DEFAULT_EXTENSIONS.has(path.extname(stripQuery(id)));
 
 /**
+ * Collects hooks from an array of plugins, organizing them by hook type.
+ * @param {import('./types.js').MarkflowPlugin[]} plugins - Array of plugins
+ * @returns {import('./types.js').PluginHooks} Collected hooks
+ */
+function collectHooks(plugins) {
+  const hooks = {
+    afterParse: [],
+    beforeInject: [],
+    beforeOutput: [],
+    preprocess: [],
+  };
+
+  // Sort plugins: 'pre' first, then undefined, then 'post'
+  const sorted = [...plugins].sort((a, b) => {
+    const order = { pre: 0, undefined: 1, post: 2 };
+    const aOrder = order[a.enforce] ?? 1;
+    const bOrder = order[b.enforce] ?? 1;
+    return aOrder - bOrder;
+  });
+
+  for (const plugin of sorted) {
+    if (plugin.afterParse) hooks.afterParse.push(plugin.afterParse);
+    if (plugin.beforeInject) hooks.beforeInject.push(plugin.beforeInject);
+    if (plugin.beforeOutput) hooks.beforeOutput.push(plugin.beforeOutput);
+    if (plugin.preprocess) hooks.preprocess.push(plugin.preprocess);
+  }
+
+  return hooks;
+}
+
+/**
  * Creates the Markflow Vite plugin that intercepts `.md`/`.mdx` files
  * before `@astrojs/mdx` runs.
  *
  * Options:
  * - starlightComponents: true | { module?: string, components?: string[] }
  *   Auto-imports Starlight components when their JSX tags appear in output.
+ * - plugins: Array of MarkflowPlugin objects to extend transform behavior
  */
 export function markflowPlugin(userOptions = {}) {
   let compiler;
@@ -136,6 +175,11 @@ export function markflowPlugin(userOptions = {}) {
   let totalProcessingTimeMs = 0;
 
   const providedBinding = userOptions.binding ?? null;
+
+  // Collect hooks from plugins
+  /** @type {import('./types.js').MarkflowPlugin[]} */
+  const plugins = userOptions.plugins ?? [];
+  const hooks = collectHooks(plugins);
 
   // Build compiler options with default code_sample_components
   const compilerOptions = {
@@ -246,7 +290,12 @@ const unwrapVirtual = (value) =>
         sourceLookup.get(id) ??
         stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ""));
       try {
-        const source = await readFile(filename, "utf8");
+        let source = await readFile(filename, "utf8");
+
+        // Apply preprocess hooks
+        for (const preprocess of hooks.preprocess) {
+          source = preprocess(source, filename);
+        }
 
         // Check for problematic patterns that cause runtime errors in Starlight components
         const validationError = validateStarlightComponents(source);
@@ -258,17 +307,20 @@ const unwrapVirtual = (value) =>
 
         const startTime = performance.now();
         let result;
+        let frontmatter = {};
+        let headings = [];
         if (IS_MDAST) {
           // Use parseBlocks() for mdast pipeline
           const binding = await loadMarkflowBinding();
-          const { blocks, headings } = binding.parseBlocks(source, {
+          const parseResult = binding.parseBlocks(source, {
             enable_directives: true,
           });
+          headings = parseResult.headings;
           const frontmatterResult = binding.parseFrontmatter(source);
-          const frontmatter = frontmatterResult.frontmatter || {};
+          frontmatter = frontmatterResult.frontmatter || {};
 
           result = {
-            code: blocksToJsx(blocks, frontmatter, headings),
+            code: blocksToJsx(parseResult.blocks, frontmatter, headings),
             map: null,
             frontmatter_json: JSON.stringify(frontmatter),
             headings,
@@ -277,6 +329,15 @@ const unwrapVirtual = (value) =>
         } else {
           // Use original compiler for multipass pipeline
           result = compiler.compile(source, filename, fileOptions);
+          // Extract frontmatter and headings from compiler result
+          if (result.frontmatter_json) {
+            try {
+              frontmatter = JSON.parse(result.frontmatter_json);
+            } catch {
+              frontmatter = {};
+            }
+          }
+          headings = result.headings || [];
         }
         const endTime = performance.now();
         totalProcessingTimeMs += endTime - startTime;
@@ -291,27 +352,46 @@ const unwrapVirtual = (value) =>
           }
         }
 
-        if (expressiveCode) {
-          const rewritten = rewriteExpressiveCodeBlocks(
-            result.code,
-            expressiveCode.component,
-          );
-          result.code = rewritten.code;
-          if (rewritten.changed) {
-            result.code = injectExpressiveCodeComponent(
-              result.code,
-              expressiveCode,
-            );
-          }
-        }
-        result.code = injectAstroComponents(result.code);
-        if (starlightComponents) {
-          result.code = injectStarlightComponents(result.code, starlightComponents);
-        }
-        const shiki = getShiki();
-        if (shiki) {
-          result.code = await rewriteAstroSetHtml(result.code, shiki);
-        }
+        // Build transform context
+        /** @type {import('./types.js').TransformContext} */
+        const ctx = {
+          code: result.code,
+          source,
+          filename,
+          frontmatter,
+          headings,
+          config: {
+            expressiveCode,
+            starlightComponents,
+            shiki: getShiki(),
+          },
+        };
+
+        // Run transform pipeline with hooks
+        const transformPipeline = pipe(
+          // User hooks: afterParse
+          ...hooks.afterParse,
+
+          // Built-in: ExpressiveCode rewriting
+          transformExpressiveCode,
+
+          // User hooks: beforeInject
+          ...hooks.beforeInject,
+
+          // Built-in: Component injection
+          transformInjectAstroComponents,
+          transformInjectStarlightComponents,
+
+          // Built-in: Shiki highlighting
+          transformShikiHighlight,
+
+          // User hooks: beforeOutput
+          ...hooks.beforeOutput,
+        );
+
+        const transformed = await transformPipeline(ctx);
+        result.code = transformed.code;
+
         if (Array.isArray(result?.imports)) {
           for (const dep of result.imports) {
             if (dep?.path) {
@@ -319,15 +399,15 @@ const unwrapVirtual = (value) =>
             }
           }
         }
-        const transformed = await transformWithEsbuild(result.code, id, {
+        const esbuildResult = await transformWithEsbuild(result.code, id, {
           loader: "jsx",
           jsx: "transform",
           jsxFactory: "_jsx",
           jsxFragment: "_Fragment",
         });
         return {
-          code: transformed.code,
-          map: transformed.map ?? result.map ?? undefined,
+          code: esbuildResult.code,
+          map: esbuildResult.map ?? result.map ?? undefined,
           meta: {
             vite: {
               jsx: true,
