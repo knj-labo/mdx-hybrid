@@ -342,12 +342,16 @@ const unwrapVirtual = (value) =>
 
         // Check cache first (populated in build mode by buildStart)
         const cached = compilationCache.get(filename);
-        if (cached) {
+        // Skip cache for files with user imports or JSX components that need runtime rendering
+        // The batch compiler outputs JSX components (like <Aside {...}>) that can't be used with set:html
+        const hasUserImports = cached?.hoistedImports?.length > 0;
+        const hasJsxComponents = cached?.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
+        if (cached && !hasUserImports && !hasJsxComponents) {
           // compileBatch returns CompileIrResult with 'html' field (raw HTML)
           // We need to wrap it in a JSX module structure
-          if (cached.frontmatter_json) {
+          if (cached.frontmatterJson) {
             try {
-              frontmatter = JSON.parse(cached.frontmatter_json);
+              frontmatter = JSON.parse(cached.frontmatterJson);
             } catch {
               frontmatter = {};
             }
@@ -359,7 +363,7 @@ const unwrapVirtual = (value) =>
           result = {
             code: jsxCode,
             map: null,
-            frontmatter_json: cached.frontmatter_json,
+            frontmatter_json: cached.frontmatterJson,
             headings,
             imports: [],
           };
@@ -611,6 +615,7 @@ function stripHeadingsMeta(code) {
 /**
  * Wrap raw HTML from batch compilation in a JSX module structure.
  * This creates the same output format as the single-file compiler.
+ * Only used for files without user imports (pure HTML content).
  */
 function wrapHtmlInJsxModule(html, frontmatter, headings) {
   const frontmatterJson = JSON.stringify(frontmatter);
@@ -618,7 +623,10 @@ function wrapHtmlInJsxModule(html, frontmatter, headings) {
 
   // Wrap HTML in a Fragment (using set:html for raw HTML)
   // The HTML from batch compilation is already rendered and self-contained
-  return `export const frontmatter = ${frontmatterJson};
+  return `import { Fragment, jsx as __jsx } from 'astro/jsx-runtime';
+const _Fragment = Fragment;
+
+export const frontmatter = ${frontmatterJson};
 export function getHeadings() { return ${headingsJson}; }
 export default function MarkflowContent() {
   return (
