@@ -26,6 +26,8 @@ pub struct CompilerConfig {
     pub syntax_highlighting: Option<bool>,
     /// Overrides the module used for JSX runtime helpers.
     pub jsx_import_source: Option<String>,
+    /// Component registry configuration (JSON).
+    pub registry: Option<JsonValue>,
 }
 
 /// File-specific overrides that accompany each compilation.

@@ -436,28 +436,47 @@ function stripHeadingsMeta(code) {
     .replace(/export function getHeadings\(\)\s*\{[\s\S]*?\}\r?\n/g, "");
 }
 
-function blocksToJsx(blocks, frontmatter = {}, headings = []) {
+function blocksToJsx(blocks, frontmatter = {}, headings = [], registry = defaultRegistry) {
   const fragments = [];
-  const componentImports = new Set();
+  const componentImports = new Map(); // component name -> module path
+
+  // Get supported directives from registry
+  const supportedDirectives = registry.getSupportedDirectives();
 
   for (const block of blocks) {
     if (block.type === "html") {
       fragments.push(block.content);
     } else if (block.type === "component") {
-      // Handle directive components (note, tip, caution, danger) -> Aside
-      const DIRECTIVE_TYPES = ["note", "tip", "caution", "danger"];
-      const isDirective = DIRECTIVE_TYPES.includes(block.name);
-      const componentName = isDirective ? "Aside" : block.name;
+      // Handle directive components using registry
+      const isDirective = supportedDirectives.includes(block.name);
+      let componentName = block.name;
+      let effectiveProps = block.props;
 
-      // Skip Fragment - it's a built-in Astro component, not a Starlight component
-      if (componentName !== "Fragment") {
-        componentImports.add(componentName);
+      if (isDirective) {
+        const mapping = registry.getDirectiveMapping(block.name);
+        if (mapping) {
+          componentName = mapping.component;
+          // Apply injected props from mapping
+          if (mapping.injectProps) {
+            const injectedProps = {};
+            for (const [propKey, propSource] of Object.entries(mapping.injectProps)) {
+              if (propSource.source === 'directive_name') {
+                injectedProps[propKey] = { type: "literal", value: block.name };
+              } else if (propSource.source === 'literal' && propSource.value) {
+                injectedProps[propKey] = { type: "literal", value: propSource.value };
+              }
+            }
+            effectiveProps = { ...block.props, ...injectedProps };
+          }
+        }
       }
 
-      // For directives, add the type prop
-      const effectiveProps = isDirective
-        ? { ...block.props, type: { type: "literal", value: block.name } }
-        : block.props;
+      // Skip Fragment - it's a built-in Astro component
+      if (componentName !== "Fragment") {
+        const componentDef = registry.getComponent(componentName);
+        const modulePath = componentDef?.modulePath ?? '@astrojs/starlight/components';
+        componentImports.set(componentName, modulePath);
+      }
 
       const propsStr = effectiveProps
         ? Object.entries(effectiveProps)
@@ -482,8 +501,28 @@ function blocksToJsx(blocks, frontmatter = {}, headings = []) {
     }
   }
 
-  const componentImportLines = Array.from(componentImports)
-    .map((name) => `import ${name} from '@astrojs/starlight/components/${name}.astro';`)
+  // Generate imports grouped by module path
+  const importsByModule = new Map();
+  for (const [name, modulePath] of componentImports) {
+    if (!importsByModule.has(modulePath)) {
+      importsByModule.set(modulePath, []);
+    }
+    importsByModule.get(modulePath).push(name);
+  }
+
+  const componentImportLines = Array.from(importsByModule.entries())
+    .map(([modulePath, names]) => {
+      // Check if components use named exports
+      const useNamed = names.every(name => {
+        const def = registry.getComponent(name);
+        return def?.exportType === 'named';
+      });
+      if (useNamed) {
+        return `import { ${names.join(', ')} } from '${modulePath}';`;
+      }
+      // Default to individual default imports (Starlight .astro files)
+      return names.map(name => `import ${name} from '${modulePath}/${name}.astro';`).join('\n');
+    })
     .join("\n");
 
   const frontmatterJson = JSON.stringify(frontmatter);
@@ -566,22 +605,29 @@ function createFallbackModule(filename) {
   };
 }
 
-function resolveStarlightConfig(config) {
+function resolveStarlightConfig(config, registry = defaultRegistry) {
   if (!config) return null;
+
+  // Get Starlight components from registry
+  const starlightComponents = registry.getAllComponents()
+    .filter(c => c.modulePath === '@astrojs/starlight/components')
+    .map(c => c.name);
+  const defaultModuleId = '@astrojs/starlight/components';
+
   if (config === true) {
     return {
-      components: STARLIGHT_COMPONENTS,
-      moduleId: STARLIGHT_COMPONENTS_MODULE,
+      components: starlightComponents,
+      moduleId: defaultModuleId,
     };
   }
   if (typeof config === "object") {
     const components = Array.isArray(config.components)
       ? config.components
-      : STARLIGHT_COMPONENTS;
+      : starlightComponents;
     const moduleId =
       typeof config.module === "string" && config.module.length > 0
         ? config.module
-        : STARLIGHT_COMPONENTS_MODULE;
+        : defaultModuleId;
     return { components, moduleId };
   }
   return null;
