@@ -354,8 +354,8 @@ const unwrapVirtual = (value) =>
           }
           headings = cached.headings || [];
 
-          // Extract imports from the original source and wrap HTML in JSX module
-          const jsxCode = wrapHtmlInJsxModule(cached.html, source, frontmatter, headings);
+          // Wrap HTML in JSX module (batch compilation produces self-contained HTML)
+          const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings);
           result = {
             code: jsxCode,
             map: null,
@@ -609,57 +609,16 @@ function stripHeadingsMeta(code) {
 }
 
 /**
- * Extract import statements from MDX source code.
- * Only extracts imports that are at the top level (not inside code fences).
- * Returns the import lines as a string.
- */
-function extractImports(source) {
-  const lines = source.split(/\r?\n/);
-  const importLines = [];
-  let inFrontmatter = false;
-  let inCodeFence = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-
-    // Skip frontmatter
-    if (trimmed === '---') {
-      inFrontmatter = !inFrontmatter;
-      continue;
-    }
-    if (inFrontmatter) continue;
-
-    // Track code fences - they start with ``` or ~~~
-    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
-      inCodeFence = !inCodeFence;
-      continue;
-    }
-    if (inCodeFence) continue;
-
-    // Collect import statements only at top level
-    if (trimmed.startsWith('import ') && !trimmed.startsWith('import(')) {
-      importLines.push(line);
-    }
-  }
-
-  return importLines.join('\n');
-}
-
-/**
  * Wrap raw HTML from batch compilation in a JSX module structure.
  * This creates the same output format as the single-file compiler.
  */
-function wrapHtmlInJsxModule(html, source, frontmatter, headings) {
-  // Extract imports from original source
-  const imports = extractImports(source);
-
+function wrapHtmlInJsxModule(html, frontmatter, headings) {
   const frontmatterJson = JSON.stringify(frontmatter);
   const headingsJson = JSON.stringify(headings);
 
-  // Wrap HTML in a Fragment (using dangerouslySetInnerHTML pattern for raw HTML)
-  // The HTML from batch compilation is already rendered, so we use set:html
-  return `${imports}
-export const frontmatter = ${frontmatterJson};
+  // Wrap HTML in a Fragment (using set:html for raw HTML)
+  // The HTML from batch compilation is already rendered and self-contained
+  return `export const frontmatter = ${frontmatterJson};
 export function getHeadings() { return ${headingsJson}; }
 export default function MarkflowContent() {
   return (
