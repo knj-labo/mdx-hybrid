@@ -239,6 +239,9 @@ importers:
 
   packages/vite-plugin-markflow:
     dependencies:
+      markflow:
+        specifier: workspace:*
+        version: link:../markflow
       markflow-napi:
         specifier: file:../../crates/napi
         version: link:../../crates/napi
