@@ -172,6 +172,7 @@ export function markflowPlugin(userOptions = {}) {
   const fallbackFiles = new Set();
   const fallbackReasons = new Map(); // file -> reason
   const processedFiles = new Set();
+  const compilationCache = new Map(); // filename -> batch compiled result
   let totalProcessingTimeMs = 0;
 
   const providedBinding = userOptions.binding ?? null;
@@ -238,6 +239,46 @@ const unwrapVirtual = (value) =>
         : (cfg) => new binding.MarkflowCompiler(cfg);
       compiler = createCompiler(compilerOptions);
     },
+    async buildStart() {
+      // Only batch compile in build mode (not dev/serve)
+      if (resolvedConfig.command !== 'build') return;
+
+      const { glob } = await import('glob');
+      const files = await glob('**/*.{md,mdx}', {
+        cwd: resolvedConfig.root,
+        ignore: ['node_modules/**', 'dist/**'],
+        absolute: true,
+      });
+
+      if (files.length === 0) return;
+
+      // Read all files and prepare batch inputs
+      const inputs = await Promise.all(
+        files.map(async (file) => ({
+          id: file,
+          source: await readFile(file, 'utf8'),
+          filepath: file,
+        }))
+      );
+
+      // Batch compile with parallel processing
+      const binding = providedBinding ?? (await loadMarkflowBinding());
+      const batchResult = binding.compileBatch(inputs, {
+        continueOnError: true,
+        config: compilerOptions,
+      });
+
+      // Cache successful results
+      for (const result of batchResult.results) {
+        if (result.result) {
+          compilationCache.set(result.id, result.result);
+        }
+      }
+
+      console.info(
+        `[markflow] Batch compiled ${batchResult.stats.succeeded}/${batchResult.stats.total} files in ${batchResult.stats.processingTimeMs.toFixed(0)}ms`
+      );
+    },
     async resolveId(sourceId, importer) {
       if (sourceId.startsWith(VIRTUAL_PREFIX)) {
         return sourceId;
@@ -300,7 +341,31 @@ const unwrapVirtual = (value) =>
         let result;
         let frontmatter = {};
         let headings = [];
-        if (IS_MDAST) {
+
+        // Check cache first (populated in build mode by buildStart)
+        const cached = compilationCache.get(filename);
+        if (cached) {
+          // compileBatch returns CompileIrResult with 'html' field (raw HTML)
+          // We need to wrap it in a JSX module structure
+          if (cached.frontmatter_json) {
+            try {
+              frontmatter = JSON.parse(cached.frontmatter_json);
+            } catch {
+              frontmatter = {};
+            }
+          }
+          headings = cached.headings || [];
+
+          // Wrap HTML in JSX module (batch compilation produces self-contained HTML)
+          const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings);
+          result = {
+            code: jsxCode,
+            map: null,
+            frontmatter_json: cached.frontmatter_json,
+            headings,
+            imports: [],
+          };
+        } else if (IS_MDAST) {
           // Use parseBlocks() for mdast pipeline
           const binding = await loadMarkflowBinding();
           const parseResult = binding.parseBlocks(source, {
@@ -318,7 +383,7 @@ const unwrapVirtual = (value) =>
             imports: [],
           };
         } else {
-          // Use original compiler for multipass pipeline
+          // Use original compiler for multipass pipeline (dev mode or cache miss)
           result = compiler.compile(source, filename, fileOptions);
           // Extract frontmatter and headings from compiler result
           if (result.frontmatter_json) {
@@ -534,6 +599,29 @@ function stripHeadingsMeta(code) {
   return code
     .replace(/export const headings\s*=\s*\[[\s\S]*?\];\r?\n/g, "")
     .replace(/export function getHeadings\(\)\s*\{[\s\S]*?\}\r?\n/g, "");
+}
+
+/**
+ * Wrap raw HTML from batch compilation in a JSX module structure.
+ * This creates the same output format as the single-file compiler.
+ *
+ * Note: We don't extract imports from the source because batch compilation
+ * produces self-contained HTML where all components are already rendered.
+ * Asset imports (like CSS with ?raw) are not supported in batch mode.
+ */
+function wrapHtmlInJsxModule(html, frontmatter, headings) {
+  const frontmatterJson = JSON.stringify(frontmatter);
+  const headingsJson = JSON.stringify(headings);
+
+  // Wrap HTML in a Fragment (using set:html for raw HTML)
+  return `export const frontmatter = ${frontmatterJson};
+export function getHeadings() { return ${headingsJson}; }
+export default function MarkflowContent() {
+  return (
+    <Fragment set:html={${JSON.stringify(html)}} />
+  );
+}
+`;
 }
 
 function blocksToJsx(blocks, frontmatter = {}, headings = [], registry = defaultRegistry) {
