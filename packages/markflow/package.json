@@ -12,9 +12,9 @@
       "default": "./src/browser.js"
     },
     "./registry": {
-      "types": "./src/registry/index.ts",
-      "import": "./src/registry/index.ts",
-      "default": "./src/registry/index.ts"
+      "types": "./src/registry/types.d.ts",
+      "import": "./src/registry/index.js",
+      "default": "./src/registry/index.js"
     }
   },
   "main": "./src/node.js",

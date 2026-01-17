@@ -1,6 +1,4 @@
-import type { ComponentLibrary } from '../types';
-
-export const starlightLibrary: ComponentLibrary = {
+export const starlightLibrary = {
   id: 'starlight',
   name: 'Astro Starlight',
   defaultModulePath: '@astrojs/starlight/components',

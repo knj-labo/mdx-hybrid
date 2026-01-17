@@ -1,6 +1,4 @@
-import type { ComponentLibrary } from '../types';
-
-export const astroLibrary: ComponentLibrary = {
+export const astroLibrary = {
   id: 'astro',
   name: 'Astro Core',
   defaultModulePath: 'astro/components',

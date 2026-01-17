@@ -21,3 +21,16 @@ export interface ComponentLibrary {
 export interface ComponentRegistry {
   libraries: ComponentLibrary[];
 }
+
+export interface Registry {
+  getComponent(name: string): ComponentDefinition | undefined;
+  getDirectiveMapping(directive: string): DirectiveMapping | undefined;
+  getAllComponents(): ComponentDefinition[];
+  getSupportedDirectives(): string[];
+  toRustConfig(): { components: ComponentDefinition[]; directiveMappings: DirectiveMapping[] };
+}
+
+export function createRegistry(libraries: ComponentLibrary[]): Registry;
+
+export const starlightLibrary: ComponentLibrary;
+export const astroLibrary: ComponentLibrary;
