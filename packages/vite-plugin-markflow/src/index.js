@@ -348,9 +348,6 @@ const unwrapVirtual = (value) =>
         const isMdx = filename.endsWith('.mdx');
         const hasUserImports = cached?.hoistedImports?.length > 0;
         const hasJsxComponents = cached?.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
-        if (cached) {
-          console.log(`[markflow] Cache check for ${filename}: isMdx=${isMdx}, hasUserImports=${hasUserImports} (${cached?.hoistedImports?.length}), hasJsxComponents=${hasJsxComponents}`);
-        }
         if (cached && !hasUserImports && !hasJsxComponents && !isMdx) {
           // compileBatch returns CompileIrResult with 'html' field (raw HTML)
           // We need to wrap it in a JSX module structure
