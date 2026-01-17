@@ -344,9 +344,14 @@ const unwrapVirtual = (value) =>
         const cached = compilationCache.get(filename);
         // Skip cache for files with user imports or JSX components that need runtime rendering
         // The batch compiler outputs JSX components (like <Aside {...}>) that can't be used with set:html
+        // Also skip cache for all .mdx files since they typically have imports/components
+        const isMdx = filename.endsWith('.mdx');
         const hasUserImports = cached?.hoistedImports?.length > 0;
         const hasJsxComponents = cached?.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
-        if (cached && !hasUserImports && !hasJsxComponents) {
+        if (cached) {
+          console.log(`[markflow] Cache check for ${filename}: isMdx=${isMdx}, hasUserImports=${hasUserImports} (${cached?.hoistedImports?.length}), hasJsxComponents=${hasJsxComponents}`);
+        }
+        if (cached && !hasUserImports && !hasJsxComponents && !isMdx) {
           // compileBatch returns CompileIrResult with 'html' field (raw HTML)
           // We need to wrap it in a JSX module structure
           if (cached.frontmatterJson) {
@@ -623,7 +628,7 @@ function wrapHtmlInJsxModule(html, frontmatter, headings) {
 
   // Wrap HTML in a Fragment (using set:html for raw HTML)
   // The HTML from batch compilation is already rendered and self-contained
-  return `import { Fragment, jsx as __jsx } from 'astro/jsx-runtime';
+  return `import { Fragment, jsx as _jsx } from 'astro/jsx-runtime';
 const _Fragment = Fragment;
 
 export const frontmatter = ${frontmatterJson};
