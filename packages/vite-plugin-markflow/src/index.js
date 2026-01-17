@@ -234,9 +234,12 @@ const unwrapVirtual = (value) =>
         resolved && resolved.id
           ? stripQuery(unwrapVirtual(resolved.id))
           : fallback();
+
+      // Check if file was already marked for fallback (runtime error)
       if (fallbackFiles.has(resolvedId)) {
         return null;
       }
+
       const virtualId = `${VIRTUAL_PREFIX}${resolvedId}.markflow.jsx`;
       sourceLookup.set(virtualId, resolvedId);
       return virtualId;
@@ -253,13 +256,6 @@ const unwrapVirtual = (value) =>
         stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ""));
       try {
         const source = await readFile(filename, "utf8");
-
-        // Check for problematic patterns that cause runtime errors in Starlight components
-        const validationError = validateStarlightComponents(source);
-        if (validationError) {
-          throw new Error(`Markdown parser error: ${validationError}`);
-        }
-
         const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
 
         const startTime = performance.now();
@@ -353,6 +349,16 @@ const unwrapVirtual = (value) =>
           this.warn(
             `[markflow] Falling back to Astro MDX for ${filename}: ${message}`,
           );
+
+          // Invalidate the virtual module from the cache so subsequent requests
+          // go through resolveId again (which will now return null for this file)
+          if (resolvedConfig?.server?.moduleGraph) {
+            const mod = resolvedConfig.server.moduleGraph.getModuleById(id);
+            if (mod) {
+              resolvedConfig.server.moduleGraph.invalidateModule(mod);
+            }
+          }
+
           return createFallbackModule(filename);
         }
         throw new Error(`[markflow] Compile failed for ${filename}: ${message}`);
@@ -361,14 +367,35 @@ const unwrapVirtual = (value) =>
     async buildEnd() {
       if (process.env.MARKFLOW_STATS !== "1") return;
 
+      const totalFiles = processedFiles.size + fallbackFiles.size;
+
       const stats = {
         timestamp: new Date().toISOString(),
-        totalFiles: processedFiles.size + fallbackFiles.size,
+        totalFiles,
         processedByMarkflow: processedFiles.size,
+        handledByAstro: fallbackFiles.size,
+        handledByAstroRate:
+          totalFiles > 0
+            ? `${((fallbackFiles.size / totalFiles) * 100).toFixed(2)}%`
+            : "0%",
+        // Pre-validation skips removed - was causing false positives
+        preValidationSkips: {
+          count: 0,
+          files: [],
+        },
+        // Runtime fallbacks: errors discovered during compilation in load()
+        runtimeFallbacks: {
+          count: fallbackFiles.size,
+          files: Array.from(fallbackFiles).map((file) => ({
+            file: file.replace(resolvedConfig?.root ?? "", ""),
+            reason: fallbackReasons.get(file) ?? "unknown",
+          })),
+        },
+        // Legacy fields for backwards compatibility
         fallbacks: fallbackFiles.size,
         fallbackRate:
-          processedFiles.size + fallbackFiles.size > 0
-            ? `${((fallbackFiles.size / (processedFiles.size + fallbackFiles.size)) * 100).toFixed(2)}%`
+          totalFiles > 0
+            ? `${((fallbackFiles.size / totalFiles) * 100).toFixed(2)}%`
             : "0%",
         fallbackFiles: Array.from(fallbackFiles).map((file) => ({
           file: file.replace(resolvedConfig?.root ?? "", ""),
@@ -760,19 +787,4 @@ function getText(node) {
     }
   }
   return text;
-}
-
-/**
- * Validate that Starlight components don't contain problematic patterns.
- * Returns an error message if a problem is found, null otherwise.
- * @param {string} source - The markdown source
- * @returns {string|null} Error message or null
- */
-function validateStarlightComponents(source) {
-  // Check for problematic patterns inside Steps blocks
-  // Note: With code_indented: false in the Rust parser, nested content inside Steps
-  // (JSX components, code fences, continuation paragraphs) is now handled correctly.
-  // Deep indentation is interpreted as nested list content instead of code blocks.
-
-  return null;
 }
