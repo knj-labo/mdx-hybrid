@@ -21,6 +21,9 @@
  */
 export function collectImportedNames(code) {
   const imported = new Set();
+  if (!code || typeof code !== 'string') {
+    return imported;
+  }
   const lines = code.split(/\r?\n/);
   for (const line of lines) {
     const trimmed = line.trim();
@@ -77,6 +80,9 @@ export function collectImportedNames(code) {
  * // Inserts after the React import
  */
 export function insertAfterImports(code, importLine) {
+  if (!code || typeof code !== 'string') {
+    return importLine;
+  }
   const lines = code.split(/\r?\n/);
   let idx = 0;
   while (idx < lines.length) {

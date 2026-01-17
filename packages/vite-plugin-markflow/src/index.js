@@ -169,6 +169,7 @@ export function markflowPlugin(userOptions = {}) {
   let compiler;
   let resolvedConfig;
   const sourceLookup = new Map();
+  const compilationCache = new Map(); // filename -> compiled result (build mode)
   const fallbackFiles = new Set();
   const fallbackReasons = new Map(); // file -> reason
   const processedFiles = new Set();
@@ -238,6 +239,45 @@ const unwrapVirtual = (value) =>
         : (cfg) => new binding.MarkflowCompiler(cfg);
       compiler = createCompiler(compilerOptions);
     },
+    async buildStart() {
+      // Only batch compile in build mode (not dev/serve)
+      if (resolvedConfig.command !== 'build') return;
+
+      // Find all MD/MDX files
+      const { glob } = await import('glob');
+      const files = await glob('**/*.{md,mdx}', {
+        cwd: resolvedConfig.root,
+        ignore: ['node_modules/**', 'dist/**'],
+        absolute: true,
+      });
+
+      if (files.length === 0) return;
+
+      // Read all files and prepare batch inputs
+      const inputs = await Promise.all(
+        files.map(async (file) => ({
+          id: file,
+          source: await readFile(file, 'utf8'),
+          filepath: file,
+        }))
+      );
+
+      // Batch compile with parallel processing
+      const binding = await loadMarkflowBinding();
+      const batchResult = binding.compileBatch(inputs, {
+        continueOnError: true,
+        config: compilerOptions,
+      });
+
+      // Cache successful results
+      for (const result of batchResult.results) {
+        if (result.result) {
+          compilationCache.set(result.id, result.result);
+        }
+      }
+
+      console.info(`[markflow] Batch compiled ${batchResult.stats.succeeded}/${batchResult.stats.total} files in ${batchResult.stats.processingTimeMs.toFixed(0)}ms`);
+    },
     async resolveId(sourceId, importer) {
       if (sourceId.startsWith(VIRTUAL_PREFIX)) {
         return sourceId;
@@ -299,7 +339,28 @@ const unwrapVirtual = (value) =>
         let result;
         let frontmatter = {};
         let headings = [];
-        if (IS_MDAST) {
+
+        // Check cache first (populated in build mode by buildStart)
+        const cached = compilationCache.get(filename);
+        if (cached) {
+          // compileBatch returns CompileIrResult with 'html' field, not 'code'
+          result = {
+            code: cached.html,
+            map: null,
+            frontmatter_json: cached.frontmatter_json,
+            headings: cached.headings || [],
+            imports: [],
+          };
+          // Extract frontmatter and headings from cached result
+          if (cached.frontmatter_json) {
+            try {
+              frontmatter = JSON.parse(cached.frontmatter_json);
+            } catch {
+              frontmatter = {};
+            }
+          }
+          headings = cached.headings || [];
+        } else if (IS_MDAST) {
           // Use parseBlocks() for mdast pipeline
           const binding = await loadMarkflowBinding();
           const parseResult = binding.parseBlocks(source, {
@@ -317,7 +378,8 @@ const unwrapVirtual = (value) =>
             imports: [],
           };
         } else {
-          // Use original compiler for multipass pipeline
+          // Use original compiler for multipass pipeline (dev mode or cache miss)
+          const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
           result = compiler.compile(source, filename, fileOptions);
           // Extract frontmatter and headings from compiler result
           if (result.frontmatter_json) {
@@ -332,6 +394,11 @@ const unwrapVirtual = (value) =>
         const endTime = performance.now();
         totalProcessingTimeMs += endTime - startTime;
         processedFiles.add(filename);
+
+        // Defensive check: ensure result.code is defined
+        if (result.code == null || typeof result.code !== 'string') {
+          throw new Error(`Compiler returned undefined or invalid code for ${filename}`);
+        }
 
         // Log warnings from Rust diagnostics
         if (result.diagnostics?.warnings?.length > 0) {
@@ -410,7 +477,10 @@ const unwrapVirtual = (value) =>
           message.includes("Vite module runner has been closed") ||
           message.includes("Markdown parser error") ||
           message.includes("Markdown parse error") ||
-          message.includes("Transform failed");
+          message.includes("Transform failed") ||
+          message.includes("Compiler returned undefined") ||
+          message.includes("Cannot read properties of undefined") ||
+          message.includes("Cannot read properties of null");
         if (shouldFallback) {
           fallbackFiles.add(filename);
           fallbackReasons.set(filename, message);
