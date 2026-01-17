@@ -263,7 +263,7 @@ const unwrapVirtual = (value) =>
       );
 
       // Batch compile with parallel processing
-      const binding = await loadMarkflowBinding();
+      const binding = providedBinding ?? (await loadMarkflowBinding());
       const batchResult = binding.compileBatch(inputs, {
         continueOnError: true,
         config: compilerOptions,
