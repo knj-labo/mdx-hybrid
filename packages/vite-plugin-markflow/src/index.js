@@ -343,15 +343,8 @@ const unwrapVirtual = (value) =>
         // Check cache first (populated in build mode by buildStart)
         const cached = compilationCache.get(filename);
         if (cached) {
-          // compileBatch returns CompileIrResult with 'html' field, not 'code'
-          result = {
-            code: cached.html,
-            map: null,
-            frontmatter_json: cached.frontmatter_json,
-            headings: cached.headings || [],
-            imports: [],
-          };
-          // Extract frontmatter and headings from cached result
+          // compileBatch returns CompileIrResult with 'html' field (raw HTML)
+          // We need to wrap it in a JSX module structure
           if (cached.frontmatter_json) {
             try {
               frontmatter = JSON.parse(cached.frontmatter_json);
@@ -360,6 +353,16 @@ const unwrapVirtual = (value) =>
             }
           }
           headings = cached.headings || [];
+
+          // Extract imports from the original source and wrap HTML in JSX module
+          const jsxCode = wrapHtmlInJsxModule(cached.html, source, frontmatter, headings);
+          result = {
+            code: jsxCode,
+            map: null,
+            frontmatter_json: cached.frontmatter_json,
+            headings,
+            imports: [],
+          };
         } else if (IS_MDAST) {
           // Use parseBlocks() for mdast pipeline
           const binding = await loadMarkflowBinding();
@@ -603,6 +606,67 @@ function stripHeadingsMeta(code) {
   return code
     .replace(/export const headings\s*=\s*\[[\s\S]*?\];\r?\n/g, "")
     .replace(/export function getHeadings\(\)\s*\{[\s\S]*?\}\r?\n/g, "");
+}
+
+/**
+ * Extract import statements from MDX source code.
+ * Only extracts imports that are at the top level (not inside code fences).
+ * Returns the import lines as a string.
+ */
+function extractImports(source) {
+  const lines = source.split(/\r?\n/);
+  const importLines = [];
+  let inFrontmatter = false;
+  let inCodeFence = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Skip frontmatter
+    if (trimmed === '---') {
+      inFrontmatter = !inFrontmatter;
+      continue;
+    }
+    if (inFrontmatter) continue;
+
+    // Track code fences - they start with ``` or ~~~
+    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+      inCodeFence = !inCodeFence;
+      continue;
+    }
+    if (inCodeFence) continue;
+
+    // Collect import statements only at top level
+    if (trimmed.startsWith('import ') && !trimmed.startsWith('import(')) {
+      importLines.push(line);
+    }
+  }
+
+  return importLines.join('\n');
+}
+
+/**
+ * Wrap raw HTML from batch compilation in a JSX module structure.
+ * This creates the same output format as the single-file compiler.
+ */
+function wrapHtmlInJsxModule(html, source, frontmatter, headings) {
+  // Extract imports from original source
+  const imports = extractImports(source);
+
+  const frontmatterJson = JSON.stringify(frontmatter);
+  const headingsJson = JSON.stringify(headings);
+
+  // Wrap HTML in a Fragment (using dangerouslySetInnerHTML pattern for raw HTML)
+  // The HTML from batch compilation is already rendered, so we use set:html
+  return `${imports}
+export const frontmatter = ${frontmatterJson};
+export function getHeadings() { return ${headingsJson}; }
+export default function MarkflowContent() {
+  return (
+    <Fragment set:html={${JSON.stringify(html)}} />
+  );
+}
+`;
 }
 
 function blocksToJsx(blocks, frontmatter = {}, headings = [], registry = defaultRegistry) {
