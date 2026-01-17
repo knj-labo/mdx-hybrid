@@ -344,7 +344,13 @@ const unwrapVirtual = (value) =>
 
         // Check cache first (populated in build mode by buildStart)
         const cached = compilationCache.get(filename);
-        if (cached) {
+        // Skip cache for files with user imports or JSX components that need runtime rendering
+        // The batch compiler outputs JSX components (like <Aside {...}>) that can't be used with set:html
+        // Also skip cache for all .mdx files since they typically have imports/components
+        const isMdx = filename.endsWith('.mdx');
+        const hasUserImports = cached?.hoistedImports?.length > 0;
+        const hasJsxComponents = cached?.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
+        if (cached && !hasUserImports && !hasJsxComponents && !isMdx) {
           // compileBatch returns CompileIrResult with 'html' field (raw HTML)
           // We need to wrap it in a JSX module structure
           if (cached.frontmatter_json) {
