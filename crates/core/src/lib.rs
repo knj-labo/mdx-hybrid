@@ -9,6 +9,8 @@ pub mod error;
 pub mod frontmatter;
 /// Parsing layer (markdown-rs adapter + config).
 pub mod parser;
+/// Component registry for managing component and directive mappings.
+pub mod registry;
 /// Rendering layer (MDAST-based block renderer).
 pub mod renderer;
 /// Slug generation utilities.
@@ -19,6 +21,7 @@ pub mod transform;
 pub use error::MarkflowError;
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
 pub use parser::{ParseConfig, ParseConstructs};
+pub use registry::{ComponentDef, DirectiveMapping, PropSource, RegistryConfig};
 pub use renderer::{BlocksResult, HeadingEntry, MdastOptions, PropValue, RenderBlock, to_blocks};
 pub use slug::{Slugger, slugify};
 pub use transform::{code_fence, directives};

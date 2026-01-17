@@ -3,21 +3,22 @@ import path from "node:path";
 import { transformWithEsbuild } from "vite";
 import { parseFragment, serialize } from "parse5";
 import { codeToHtml, createCssVariablesTheme } from "shiki";
+import { createRegistry, starlightLibrary, astroLibrary } from "markflow/registry";
+import { pipe, when } from "./pipeline/pipe.js";
+import {
+  transformExpressiveCode,
+  transformInjectAstroComponents,
+  transformInjectStarlightComponents,
+  transformShikiHighlight,
+} from "./transforms/index.js";
 
 const DEFAULT_EXTENSIONS = new Set([".md", ".mdx"]);
-const STARLIGHT_COMPONENTS = [
-  "Aside",
-  "Tabs",
-  "TabItem",
-  "Steps",
-  "FileTree",
-  "CardGrid",
-  "LinkCard",
-  "LinkButton",
-  "Card",
-];
+
+// Create default registry with Starlight and Astro components
+const defaultRegistry = createRegistry([starlightLibrary, astroLibrary]);
+
+// Derive component lists from registry for backward compatibility
 const STARLIGHT_COMPONENTS_MODULE = "@astrojs/starlight/components";
-const ASTRO_COMPONENTS = ["Code"];
 const ASTRO_COMPONENTS_MODULE = "astro/components";
 const EXPRESSIVE_CODE_COMPONENT = "ExpressiveCode";
 const EXPRESSIVE_CODE_MODULE = "astro-expressive-code/components";
@@ -125,12 +126,44 @@ const shouldCompile = (id) =>
   DEFAULT_EXTENSIONS.has(path.extname(stripQuery(id)));
 
 /**
+ * Collects hooks from an array of plugins, organizing them by hook type.
+ * @param {import('./types.js').MarkflowPlugin[]} plugins - Array of plugins
+ * @returns {import('./types.js').PluginHooks} Collected hooks
+ */
+function collectHooks(plugins) {
+  const hooks = {
+    afterParse: [],
+    beforeInject: [],
+    beforeOutput: [],
+    preprocess: [],
+  };
+
+  // Sort plugins: 'pre' first, then undefined, then 'post'
+  const sorted = [...plugins].sort((a, b) => {
+    const order = { pre: 0, undefined: 1, post: 2 };
+    const aOrder = order[a.enforce] ?? 1;
+    const bOrder = order[b.enforce] ?? 1;
+    return aOrder - bOrder;
+  });
+
+  for (const plugin of sorted) {
+    if (plugin.afterParse) hooks.afterParse.push(plugin.afterParse);
+    if (plugin.beforeInject) hooks.beforeInject.push(plugin.beforeInject);
+    if (plugin.beforeOutput) hooks.beforeOutput.push(plugin.beforeOutput);
+    if (plugin.preprocess) hooks.preprocess.push(plugin.preprocess);
+  }
+
+  return hooks;
+}
+
+/**
  * Creates the Markflow Vite plugin that intercepts `.md`/`.mdx` files
  * before `@astrojs/mdx` runs.
  *
  * Options:
  * - starlightComponents: true | { module?: string, components?: string[] }
  *   Auto-imports Starlight components when their JSX tags appear in output.
+ * - plugins: Array of MarkflowPlugin objects to extend transform behavior
  */
 export function markflowPlugin(userOptions = {}) {
   let compiler;
@@ -142,6 +175,11 @@ export function markflowPlugin(userOptions = {}) {
   let totalProcessingTimeMs = 0;
 
   const providedBinding = userOptions.binding ?? null;
+
+  // Collect hooks from plugins
+  /** @type {import('./types.js').MarkflowPlugin[]} */
+  const plugins = userOptions.plugins ?? [];
+  const hooks = collectHooks(plugins);
 
   // Build compiler options with default code_sample_components
   const compilerOptions = {
@@ -260,17 +298,20 @@ const unwrapVirtual = (value) =>
 
         const startTime = performance.now();
         let result;
+        let frontmatter = {};
+        let headings = [];
         if (IS_MDAST) {
           // Use parseBlocks() for mdast pipeline
           const binding = await loadMarkflowBinding();
-          const { blocks, headings } = binding.parseBlocks(source, {
+          const parseResult = binding.parseBlocks(source, {
             enable_directives: true,
           });
+          headings = parseResult.headings;
           const frontmatterResult = binding.parseFrontmatter(source);
-          const frontmatter = frontmatterResult.frontmatter || {};
+          frontmatter = frontmatterResult.frontmatter || {};
 
           result = {
-            code: blocksToJsx(blocks, frontmatter, headings),
+            code: blocksToJsx(parseResult.blocks, frontmatter, headings),
             map: null,
             frontmatter_json: JSON.stringify(frontmatter),
             headings,
@@ -279,6 +320,15 @@ const unwrapVirtual = (value) =>
         } else {
           // Use original compiler for multipass pipeline
           result = compiler.compile(source, filename, fileOptions);
+          // Extract frontmatter and headings from compiler result
+          if (result.frontmatter_json) {
+            try {
+              frontmatter = JSON.parse(result.frontmatter_json);
+            } catch {
+              frontmatter = {};
+            }
+          }
+          headings = result.headings || [];
         }
         const endTime = performance.now();
         totalProcessingTimeMs += endTime - startTime;
@@ -293,27 +343,46 @@ const unwrapVirtual = (value) =>
           }
         }
 
-        if (expressiveCode) {
-          const rewritten = rewriteExpressiveCodeBlocks(
-            result.code,
-            expressiveCode.component,
-          );
-          result.code = rewritten.code;
-          if (rewritten.changed) {
-            result.code = injectExpressiveCodeComponent(
-              result.code,
-              expressiveCode,
-            );
-          }
-        }
-        result.code = injectAstroComponents(result.code);
-        if (starlightComponents) {
-          result.code = injectStarlightComponents(result.code, starlightComponents);
-        }
-        const shiki = getShiki();
-        if (shiki) {
-          result.code = await rewriteAstroSetHtml(result.code, shiki);
-        }
+        // Build transform context
+        /** @type {import('./types.js').TransformContext} */
+        const ctx = {
+          code: result.code,
+          source,
+          filename,
+          frontmatter,
+          headings,
+          config: {
+            expressiveCode,
+            starlightComponents,
+            shiki: getShiki(),
+          },
+        };
+
+        // Run transform pipeline with hooks
+        const transformPipeline = pipe(
+          // User hooks: afterParse
+          ...hooks.afterParse,
+
+          // Built-in: ExpressiveCode rewriting
+          transformExpressiveCode,
+
+          // User hooks: beforeInject
+          ...hooks.beforeInject,
+
+          // Built-in: Component injection
+          transformInjectAstroComponents,
+          transformInjectStarlightComponents,
+
+          // Built-in: Shiki highlighting
+          transformShikiHighlight,
+
+          // User hooks: beforeOutput
+          ...hooks.beforeOutput,
+        );
+
+        const transformed = await transformPipeline(ctx);
+        result.code = transformed.code;
+
         if (Array.isArray(result?.imports)) {
           for (const dep of result.imports) {
             if (dep?.path) {
@@ -321,15 +390,15 @@ const unwrapVirtual = (value) =>
             }
           }
         }
-        const transformed = await transformWithEsbuild(result.code, id, {
+        const esbuildResult = await transformWithEsbuild(result.code, id, {
           loader: "jsx",
           jsx: "transform",
           jsxFactory: "_jsx",
           jsxFragment: "_Fragment",
         });
         return {
-          code: transformed.code,
-          map: transformed.map ?? result.map ?? undefined,
+          code: esbuildResult.code,
+          map: esbuildResult.map ?? result.map ?? undefined,
           meta: {
             vite: {
               jsx: true,
@@ -426,7 +495,11 @@ function injectStarlightComponents(code, config) {
 }
 
 function injectAstroComponents(code) {
-  return injectComponentImports(code, ASTRO_COMPONENTS, ASTRO_COMPONENTS_MODULE);
+  // Get Astro components from registry
+  const astroComponents = defaultRegistry.getAllComponents()
+    .filter(c => c.modulePath === ASTRO_COMPONENTS_MODULE)
+    .map(c => c.name);
+  return injectComponentImports(code, astroComponents, ASTRO_COMPONENTS_MODULE);
 }
 
 function injectExpressiveCodeComponent(code, config) {
@@ -463,28 +536,47 @@ function stripHeadingsMeta(code) {
     .replace(/export function getHeadings\(\)\s*\{[\s\S]*?\}\r?\n/g, "");
 }
 
-function blocksToJsx(blocks, frontmatter = {}, headings = []) {
+function blocksToJsx(blocks, frontmatter = {}, headings = [], registry = defaultRegistry) {
   const fragments = [];
-  const componentImports = new Set();
+  const componentImports = new Map(); // component name -> module path
+
+  // Get supported directives from registry
+  const supportedDirectives = registry.getSupportedDirectives();
 
   for (const block of blocks) {
     if (block.type === "html") {
       fragments.push(block.content);
     } else if (block.type === "component") {
-      // Handle directive components (note, tip, caution, danger) -> Aside
-      const DIRECTIVE_TYPES = ["note", "tip", "caution", "danger"];
-      const isDirective = DIRECTIVE_TYPES.includes(block.name);
-      const componentName = isDirective ? "Aside" : block.name;
+      // Handle directive components using registry
+      const isDirective = supportedDirectives.includes(block.name);
+      let componentName = block.name;
+      let effectiveProps = block.props;
 
-      // Skip Fragment - it's a built-in Astro component, not a Starlight component
-      if (componentName !== "Fragment") {
-        componentImports.add(componentName);
+      if (isDirective) {
+        const mapping = registry.getDirectiveMapping(block.name);
+        if (mapping) {
+          componentName = mapping.component;
+          // Apply injected props from mapping
+          if (mapping.injectProps) {
+            const injectedProps = {};
+            for (const [propKey, propSource] of Object.entries(mapping.injectProps)) {
+              if (propSource.source === 'directive_name') {
+                injectedProps[propKey] = { type: "literal", value: block.name };
+              } else if (propSource.source === 'literal' && propSource.value) {
+                injectedProps[propKey] = { type: "literal", value: propSource.value };
+              }
+            }
+            effectiveProps = { ...block.props, ...injectedProps };
+          }
+        }
       }
 
-      // For directives, add the type prop
-      const effectiveProps = isDirective
-        ? { ...block.props, type: { type: "literal", value: block.name } }
-        : block.props;
+      // Skip Fragment - it's a built-in Astro component
+      if (componentName !== "Fragment") {
+        const componentDef = registry.getComponent(componentName);
+        const modulePath = componentDef?.modulePath ?? '@astrojs/starlight/components';
+        componentImports.set(componentName, modulePath);
+      }
 
       const propsStr = effectiveProps
         ? Object.entries(effectiveProps)
@@ -509,8 +601,28 @@ function blocksToJsx(blocks, frontmatter = {}, headings = []) {
     }
   }
 
-  const componentImportLines = Array.from(componentImports)
-    .map((name) => `import ${name} from '@astrojs/starlight/components/${name}.astro';`)
+  // Generate imports grouped by module path
+  const importsByModule = new Map();
+  for (const [name, modulePath] of componentImports) {
+    if (!importsByModule.has(modulePath)) {
+      importsByModule.set(modulePath, []);
+    }
+    importsByModule.get(modulePath).push(name);
+  }
+
+  const componentImportLines = Array.from(importsByModule.entries())
+    .map(([modulePath, names]) => {
+      // Check if components use named exports
+      const useNamed = names.every(name => {
+        const def = registry.getComponent(name);
+        return def?.exportType === 'named';
+      });
+      if (useNamed) {
+        return `import { ${names.join(', ')} } from '${modulePath}';`;
+      }
+      // Default to individual default imports (Starlight .astro files)
+      return names.map(name => `import ${name} from '${modulePath}/${name}.astro';`).join('\n');
+    })
     .join("\n");
 
   const frontmatterJson = JSON.stringify(frontmatter);
@@ -593,22 +705,29 @@ function createFallbackModule(filename) {
   };
 }
 
-function resolveStarlightConfig(config) {
+function resolveStarlightConfig(config, registry = defaultRegistry) {
   if (!config) return null;
+
+  // Get Starlight components from registry
+  const starlightComponents = registry.getAllComponents()
+    .filter(c => c.modulePath === '@astrojs/starlight/components')
+    .map(c => c.name);
+  const defaultModuleId = '@astrojs/starlight/components';
+
   if (config === true) {
     return {
-      components: STARLIGHT_COMPONENTS,
-      moduleId: STARLIGHT_COMPONENTS_MODULE,
+      components: starlightComponents,
+      moduleId: defaultModuleId,
     };
   }
   if (typeof config === "object") {
     const components = Array.isArray(config.components)
       ? config.components
-      : STARLIGHT_COMPONENTS;
+      : starlightComponents;
     const moduleId =
       typeof config.module === "string" && config.module.length > 0
         ? config.module
-        : STARLIGHT_COMPONENTS_MODULE;
+        : defaultModuleId;
     return { components, moduleId };
   }
   return null;
