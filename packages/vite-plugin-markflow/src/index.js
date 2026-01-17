@@ -3,21 +3,15 @@ import path from "node:path";
 import { transformWithEsbuild } from "vite";
 import { parseFragment, serialize } from "parse5";
 import { codeToHtml, createCssVariablesTheme } from "shiki";
+import { createRegistry, starlightLibrary, astroLibrary } from "markflow/registry";
 
 const DEFAULT_EXTENSIONS = new Set([".md", ".mdx"]);
-const STARLIGHT_COMPONENTS = [
-  "Aside",
-  "Tabs",
-  "TabItem",
-  "Steps",
-  "FileTree",
-  "CardGrid",
-  "LinkCard",
-  "LinkButton",
-  "Card",
-];
+
+// Create default registry with Starlight and Astro components
+const defaultRegistry = createRegistry([starlightLibrary, astroLibrary]);
+
+// Derive component lists from registry for backward compatibility
 const STARLIGHT_COMPONENTS_MODULE = "@astrojs/starlight/components";
-const ASTRO_COMPONENTS = ["Code"];
 const ASTRO_COMPONENTS_MODULE = "astro/components";
 const EXPRESSIVE_CODE_COMPONENT = "ExpressiveCode";
 const EXPRESSIVE_CODE_MODULE = "astro-expressive-code/components";
@@ -399,7 +393,11 @@ function injectStarlightComponents(code, config) {
 }
 
 function injectAstroComponents(code) {
-  return injectComponentImports(code, ASTRO_COMPONENTS, ASTRO_COMPONENTS_MODULE);
+  // Get Astro components from registry
+  const astroComponents = defaultRegistry.getAllComponents()
+    .filter(c => c.modulePath === ASTRO_COMPONENTS_MODULE)
+    .map(c => c.name);
+  return injectComponentImports(code, astroComponents, ASTRO_COMPONENTS_MODULE);
 }
 
 function injectExpressiveCodeComponent(code, config) {
