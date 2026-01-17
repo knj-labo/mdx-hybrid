@@ -33,6 +33,9 @@ export function decodeHtmlEntities(value) {
  * @returns {{ code: string, changed: boolean }} The transformed code and whether changes were made
  */
 export function rewriteExpressiveCodeBlocks(code, componentName) {
+  if (!code || typeof code !== 'string') {
+    return { code, changed: false };
+  }
   const pattern =
     /<pre><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
   let changed = false;
@@ -55,6 +58,9 @@ export function rewriteExpressiveCodeBlocks(code, componentName) {
  * @returns {string} The transformed code with import added if needed
  */
 export function injectExpressiveCodeComponent(code, config) {
+  if (!code || typeof code !== 'string') {
+    return code;
+  }
   const importName = config.component;
   const imported = collectImportedNames(code);
   if (imported.has(importName)) {

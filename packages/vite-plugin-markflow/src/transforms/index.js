@@ -15,7 +15,7 @@ import { rewriteAstroSetHtml } from './shiki.js';
  * @returns {import('../types.js').TransformContext} Updated context
  */
 export function transformExpressiveCode(ctx) {
-  if (!ctx.config.expressiveCode) {
+  if (!ctx.config.expressiveCode || !ctx.code) {
     return ctx;
   }
   const { code, changed } = rewriteExpressiveCodeBlocks(
@@ -38,6 +38,9 @@ export function transformExpressiveCode(ctx) {
  * @returns {import('../types.js').TransformContext} Updated context
  */
 export function transformInjectAstroComponents(ctx) {
+  if (!ctx.code) {
+    return ctx;
+  }
   return {
     ...ctx,
     code: injectAstroComponents(ctx.code)
@@ -52,7 +55,7 @@ export function transformInjectAstroComponents(ctx) {
  * @returns {import('../types.js').TransformContext} Updated context
  */
 export function transformInjectStarlightComponents(ctx) {
-  if (!ctx.config.starlightComponents) {
+  if (!ctx.config.starlightComponents || !ctx.code) {
     return ctx;
   }
   return {
@@ -69,7 +72,7 @@ export function transformInjectStarlightComponents(ctx) {
  * @returns {Promise<import('../types.js').TransformContext>} Updated context
  */
 export async function transformShikiHighlight(ctx) {
-  if (!ctx.config.shiki) {
+  if (!ctx.config.shiki || !ctx.code) {
     return ctx;
   }
   const code = await rewriteAstroSetHtml(ctx.code, ctx.config.shiki);

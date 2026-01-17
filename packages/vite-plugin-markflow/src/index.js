@@ -169,6 +169,7 @@ export function markflowPlugin(userOptions = {}) {
   let compiler;
   let resolvedConfig;
   const sourceLookup = new Map();
+  const compilationCache = new Map(); // filename -> compiled result (build mode)
   const fallbackFiles = new Set();
   const fallbackReasons = new Map(); // file -> reason
   const processedFiles = new Set();
@@ -243,6 +244,7 @@ const unwrapVirtual = (value) =>
       // Only batch compile in build mode (not dev/serve)
       if (resolvedConfig.command !== 'build') return;
 
+      // Find all MD/MDX files
       const { glob } = await import('glob');
       const files = await glob('**/*.{md,mdx}', {
         cwd: resolvedConfig.root,
@@ -262,7 +264,7 @@ const unwrapVirtual = (value) =>
       );
 
       // Batch compile with parallel processing
-      const binding = providedBinding ?? (await loadMarkflowBinding());
+      const binding = await loadMarkflowBinding();
       const batchResult = binding.compileBatch(inputs, {
         continueOnError: true,
         config: compilerOptions,
@@ -275,9 +277,7 @@ const unwrapVirtual = (value) =>
         }
       }
 
-      console.info(
-        `[markflow] Batch compiled ${batchResult.stats.succeeded}/${batchResult.stats.total} files in ${batchResult.stats.processingTimeMs.toFixed(0)}ms`
-      );
+      console.info(`[markflow] Batch compiled ${batchResult.stats.succeeded}/${batchResult.stats.total} files in ${batchResult.stats.processingTimeMs.toFixed(0)}ms`);
     },
     async resolveId(sourceId, importer) {
       if (sourceId.startsWith(VIRTUAL_PREFIX)) {
@@ -335,7 +335,6 @@ const unwrapVirtual = (value) =>
         stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ""));
       try {
         const source = await readFile(filename, "utf8");
-        const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
 
         const startTime = performance.now();
         let result;
@@ -350,12 +349,15 @@ const unwrapVirtual = (value) =>
         const isMdx = filename.endsWith('.mdx');
         const hasUserImports = cached?.hoistedImports?.length > 0;
         const hasJsxComponents = cached?.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
+        if (cached) {
+          console.log(`[markflow] Cache check for ${filename}: isMdx=${isMdx}, hasUserImports=${hasUserImports} (${cached?.hoistedImports?.length}), hasJsxComponents=${hasJsxComponents}`);
+        }
         if (cached && !hasUserImports && !hasJsxComponents && !isMdx) {
           // compileBatch returns CompileIrResult with 'html' field (raw HTML)
           // We need to wrap it in a JSX module structure
-          if (cached.frontmatter_json) {
+          if (cached.frontmatterJson) {
             try {
-              frontmatter = JSON.parse(cached.frontmatter_json);
+              frontmatter = JSON.parse(cached.frontmatterJson);
             } catch {
               frontmatter = {};
             }
@@ -367,7 +369,7 @@ const unwrapVirtual = (value) =>
           result = {
             code: jsxCode,
             map: null,
-            frontmatter_json: cached.frontmatter_json,
+            frontmatter_json: cached.frontmatterJson,
             headings,
             imports: [],
           };
@@ -390,6 +392,7 @@ const unwrapVirtual = (value) =>
           };
         } else {
           // Use original compiler for multipass pipeline (dev mode or cache miss)
+          const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
           result = compiler.compile(source, filename, fileOptions);
           // Extract frontmatter and headings from compiler result
           if (result.frontmatter_json) {
@@ -404,6 +407,11 @@ const unwrapVirtual = (value) =>
         const endTime = performance.now();
         totalProcessingTimeMs += endTime - startTime;
         processedFiles.add(filename);
+
+        // Defensive check: ensure result.code is defined
+        if (result.code == null || typeof result.code !== 'string') {
+          throw new Error(`Compiler returned undefined or invalid code for ${filename}`);
+        }
 
         // Log warnings from Rust diagnostics
         if (result.diagnostics?.warnings?.length > 0) {
@@ -482,7 +490,10 @@ const unwrapVirtual = (value) =>
           message.includes("Vite module runner has been closed") ||
           message.includes("Markdown parser error") ||
           message.includes("Markdown parse error") ||
-          message.includes("Transform failed");
+          message.includes("Transform failed") ||
+          message.includes("Compiler returned undefined") ||
+          message.includes("Cannot read properties of undefined") ||
+          message.includes("Cannot read properties of null");
         if (shouldFallback) {
           fallbackFiles.add(filename);
           fallbackReasons.set(filename, message);
@@ -610,17 +621,18 @@ function stripHeadingsMeta(code) {
 /**
  * Wrap raw HTML from batch compilation in a JSX module structure.
  * This creates the same output format as the single-file compiler.
- *
- * Note: We don't extract imports from the source because batch compilation
- * produces self-contained HTML where all components are already rendered.
- * Asset imports (like CSS with ?raw) are not supported in batch mode.
+ * Only used for files without user imports (pure HTML content).
  */
 function wrapHtmlInJsxModule(html, frontmatter, headings) {
   const frontmatterJson = JSON.stringify(frontmatter);
   const headingsJson = JSON.stringify(headings);
 
   // Wrap HTML in a Fragment (using set:html for raw HTML)
-  return `export const frontmatter = ${frontmatterJson};
+  // The HTML from batch compilation is already rendered and self-contained
+  return `import { Fragment, jsx as _jsx } from 'astro/jsx-runtime';
+const _Fragment = Fragment;
+
+export const frontmatter = ${frontmatterJson};
 export function getHeadings() { return ${headingsJson}; }
 export default function MarkflowContent() {
   return (
