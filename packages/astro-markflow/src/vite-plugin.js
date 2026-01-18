@@ -4,12 +4,7 @@ import { transformWithEsbuild } from "vite";
 import { parseFragment, serialize } from "parse5";
 import { codeToHtml, createCssVariablesTheme } from "shiki";
 import { createRegistry, starlightLibrary, astroLibrary, expressiveCodeLibrary } from "markflow/registry";
-import { pipe, when } from "./pipeline/pipe.js";
-import {
-  transformExpressiveCode,
-  transformInjectComponentsFromRegistry,
-  transformShikiHighlight,
-} from "./transforms/index.js";
+import { createPipeline } from "./pipeline/index.js";
 import { blocksToJsx } from "./transforms/blocks-to-jsx.js";
 import { resolveExpressiveCodeConfig } from "./utils/config.js";
 
@@ -470,25 +465,11 @@ export function markflowPlugin(userOptions = {}) {
         };
 
         // Run transform pipeline with hooks
-        const transformPipeline = pipe(
-          // User hooks: afterParse
-          ...hooks.afterParse,
-
-          // Built-in: ExpressiveCode rewriting
-          transformExpressiveCode,
-
-          // User hooks: beforeInject
-          ...hooks.beforeInject,
-
-          // Built-in: Component injection (unified, registry-driven)
-          transformInjectComponentsFromRegistry,
-
-          // Built-in: Shiki highlighting
-          transformShikiHighlight,
-
-          // User hooks: beforeOutput
-          ...hooks.beforeOutput,
-        );
+        const transformPipeline = createPipeline({
+          afterParse: hooks.afterParse,
+          beforeInject: hooks.beforeInject,
+          beforeOutput: hooks.beforeOutput,
+        });
 
         const transformed = await transformPipeline(ctx);
         result.code = transformed.code;
