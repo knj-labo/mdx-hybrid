@@ -641,6 +641,25 @@ function hasProblematicMdxPatterns(source) {
   return hasCodeFenceInJsx || hasNestedInteractive || hasComplexSteps;
 }
 
+/**
+ * Detect MDX patterns that markdown-rs cannot parse correctly.
+ * These files should fall back to Astro MDX immediately.
+ */
+function hasProblematicMdxPatterns(source) {
+  // Pattern 1: Code fences inside JSX blocks (TabItem, Fragment with slot)
+  // The ``` inside JSX confuses the parser
+  const hasCodeFenceInJsx = /<(TabItem|Fragment[^>]*slot=)[^>]*>[\s\S]*?```[\s\S]*?<\//.test(source);
+
+  // Pattern 2: Nested interactive components (MultipleChoice > Box)
+  // markdown-rs struggles with nested JSX containing markdown
+  const hasNestedInteractive = /<MultipleChoice[\s\S]*?<Box/.test(source);
+
+  // Pattern 3: Steps/FileTree with complex nesting
+  const hasComplexSteps = /<Steps[\s\S]*?<details[\s\S]*?<\/Steps>/.test(source);
+
+  return hasCodeFenceInJsx || hasNestedInteractive || hasComplexSteps;
+}
+
 function createFallbackModule(filename) {
   return {
     code: `export { default } from ${JSON.stringify(
