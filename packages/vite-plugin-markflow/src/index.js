@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { transformWithEsbuild } from "vite";
 import { parseFragment, serialize } from "parse5";
-import { codeToHtml, createCssVariablesTheme } from "shiki";
 import { createRegistry, starlightLibrary, astroLibrary, expressiveCodeLibrary } from "markflow/registry";
 import { pipe, when } from "./pipeline/pipe.js";
 import {
@@ -12,6 +11,7 @@ import {
 } from "./transforms/index.js";
 import { blocksToJsx } from "./transforms/blocks-to-jsx.js";
 import { resolveExpressiveCodeConfig } from "./utils/config.js";
+import { ShikiWorkerPool, createPooledHighlighter } from "./workers/shiki-pool.js";
 
 const DEFAULT_EXTENSIONS = new Set([".md", ".mdx"]);
 
@@ -46,8 +46,6 @@ export function resolveLibraries(options) {
 let bindingPromise;
 const VIRTUAL_PREFIX = "\0markflow:";
 const DEBUG_BINDING = process.env.MARKFLOW_DEBUG_BINDING === "1";
-const ENABLE_SHIKI = process.env.MARKFLOW_SHIKI === "1";
-const IS_MDAST = process.env.MARKFLOW_PIPELINE === "mdast";
 
 const logBindingSource = (source) => {
   if (!DEBUG_BINDING) return;
@@ -227,15 +225,12 @@ export function markflowPlugin(userOptions = {}) {
       ? value.slice(VIRTUAL_PREFIX.length)
       : value;
 
-  let shikiReady;
+  /** @type {ShikiWorkerPool | null} */
+  let shikiPool = null;
+  /** @type {((code: string, lang: string) => Promise<string>) | null} */
+  let shikiHighlighter = null;
 
-  const getShiki = () => {
-    if (!ENABLE_SHIKI || !IS_MDAST) return null;
-    if (!shikiReady) {
-      shikiReady = createShikiHighlighter();
-    }
-    return shikiReady;
-  };
+  const getShiki = () => shikiHighlighter;
 
   return {
     name: "vite-plugin-markflow",
@@ -265,6 +260,14 @@ export function markflowPlugin(userOptions = {}) {
       compiler = createCompiler(compilerOptions);
     },
     async buildStart() {
+      // Initialize Shiki worker pool
+      shikiPool = new ShikiWorkerPool();
+      await shikiPool.ready();
+      shikiHighlighter = createPooledHighlighter(shikiPool);
+      if (process.env.MARKFLOW_STATS === '1') {
+        console.info(`[markflow] Shiki worker pool initialized with ${shikiPool.size} workers`);
+      }
+
       // Only batch compile in build mode (not dev/serve)
       if (resolvedConfig.command !== 'build') return;
 
@@ -404,7 +407,7 @@ export function markflowPlugin(userOptions = {}) {
             headings,
             imports: [],
           };
-        } else if (IS_MDAST) {
+        } else {
           // Use parseBlocks() for mdast pipeline
           const binding = await loadMarkflowBinding();
           const parseResult = binding.parseBlocks(source, {
@@ -421,19 +424,6 @@ export function markflowPlugin(userOptions = {}) {
             headings,
             imports: [],
           };
-        } else {
-          // Use original compiler for multipass pipeline (dev mode or cache miss)
-          const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
-          result = compiler.compile(source, filename, fileOptions);
-          // Extract frontmatter and headings from compiler result
-          if (result.frontmatter_json) {
-            try {
-              frontmatter = JSON.parse(result.frontmatter_json);
-            } catch {
-              frontmatter = {};
-            }
-          }
-          headings = result.headings || [];
         }
         const endTime = performance.now();
         totalProcessingTimeMs += endTime - startTime;
@@ -547,6 +537,13 @@ export function markflowPlugin(userOptions = {}) {
       }
     },
     async buildEnd() {
+      // Terminate Shiki worker pool
+      if (shikiPool) {
+        await shikiPool.terminate();
+        shikiPool = null;
+        shikiHighlighter = null;
+      }
+
       if (process.env.MARKFLOW_STATS !== "1") return;
 
       const totalFiles = processedFiles.size + fallbackFiles.size;
@@ -651,33 +648,6 @@ function createFallbackModule(filename) {
   };
 }
 
-function createShikiHighlighter() {
-  const theme = createCssVariablesTheme({
-    name: "astro-code",
-    variablePrefix: "--astro-code-",
-  });
-  const cache = new Map();
-  return async (code, lang) => {
-    const key = `${lang || "text"}`;
-    let cached = cache.get(key);
-    if (!cached) {
-      cached = { lang: lang || "text" };
-      cache.set(key, cached);
-    }
-    const html = await codeToHtml(code, {
-      lang: cached.lang,
-      theme,
-    });
-    return html.replace(/<pre class="([^"]*)"/, (match, classes) => {
-      const normalized = classes
-        .split(/\s+/)
-        .filter((value) => value && value !== "shiki")
-        .join(" ");
-      const next = normalized ? `astro-code ${normalized}` : "astro-code";
-      return `<pre class="${next}"`;
-    });
-  };
-}
 
 async function rewriteAstroSetHtml(code, highlight) {
   const marker = "<Fragment set:html={";
