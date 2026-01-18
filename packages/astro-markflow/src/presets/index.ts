@@ -1,0 +1,166 @@
+/**
+ * Astro Markflow presets for common UI libraries.
+ * @module presets
+ */
+
+import type { ComponentLibrary } from 'markflow/registry';
+import { starlightLibrary, expressiveCodeLibrary, astroLibrary } from 'markflow/registry';
+
+/**
+ * Preset configuration.
+ */
+export interface PresetConfig {
+  /** Component libraries to register */
+  libraries: ComponentLibrary[];
+  /** ExpressiveCode configuration */
+  expressiveCode?: boolean | { enabled: boolean; componentName?: string; importSource?: string };
+  /** Starlight components configuration */
+  starlightComponents?: boolean | { enabled: boolean; importSource?: string };
+}
+
+/**
+ * Options for the Starlight preset.
+ */
+export interface StarlightPresetOptions {
+  /** Enable ExpressiveCode integration (default: true) */
+  expressiveCode?: boolean;
+}
+
+/**
+ * Creates a Starlight preset with Starlight components and optionally ExpressiveCode.
+ *
+ * @example
+ * import markflow from 'astro-markflow';
+ * import { starlightPreset } from 'astro-markflow/presets';
+ *
+ * export default defineConfig({
+ *   integrations: [
+ *     markflow({
+ *       presets: [starlightPreset()],
+ *     })
+ *   ]
+ * });
+ */
+export function starlightPreset(options: StarlightPresetOptions = {}): PresetConfig {
+  const { expressiveCode = true } = options;
+
+  const libraries = [astroLibrary, starlightLibrary];
+  if (expressiveCode) {
+    libraries.push(expressiveCodeLibrary);
+  }
+
+  return {
+    libraries,
+    starlightComponents: true,
+    expressiveCode: expressiveCode ? { enabled: true } : false,
+  };
+}
+
+/**
+ * Options for the ExpressiveCode preset.
+ */
+export interface ExpressiveCodePresetOptions {
+  /** Component name to use (default: 'Code') */
+  componentName?: string;
+  /** Import source (default: 'astro-expressive-code/components') */
+  importSource?: string;
+}
+
+/**
+ * Creates an ExpressiveCode preset for syntax highlighting.
+ *
+ * @example
+ * import markflow from 'astro-markflow';
+ * import { expressiveCodePreset } from 'astro-markflow/presets';
+ *
+ * export default defineConfig({
+ *   integrations: [
+ *     markflow({
+ *       presets: [expressiveCodePreset()],
+ *     })
+ *   ]
+ * });
+ */
+export function expressiveCodePreset(options: ExpressiveCodePresetOptions = {}): PresetConfig {
+  const {
+    componentName = 'Code',
+    importSource = 'astro-expressive-code/components',
+  } = options;
+
+  return {
+    libraries: [astroLibrary, expressiveCodeLibrary],
+    expressiveCode: {
+      enabled: true,
+      componentName,
+      importSource,
+    },
+  };
+}
+
+/**
+ * Creates a base Astro preset with core components.
+ *
+ * @example
+ * import markflow from 'astro-markflow';
+ * import { astroPreset } from 'astro-markflow/presets';
+ *
+ * export default defineConfig({
+ *   integrations: [
+ *     markflow({
+ *       presets: [astroPreset()],
+ *     })
+ *   ]
+ * });
+ */
+export function astroPreset(): PresetConfig {
+  return {
+    libraries: [astroLibrary],
+  };
+}
+
+/**
+ * Merges multiple presets into a single configuration.
+ * Later presets override earlier ones for conflicting options.
+ */
+export function mergePresets(presets: PresetConfig[]): PresetConfig {
+  if (!presets || presets.length === 0) {
+    return { libraries: [astroLibrary] };
+  }
+
+  const merged: PresetConfig = {
+    libraries: [],
+    expressiveCode: false,
+    starlightComponents: false,
+  };
+
+  const libraryIds = new Set<string>();
+
+  for (const preset of presets) {
+    // Merge libraries (deduplicate by id)
+    if (Array.isArray(preset.libraries)) {
+      for (const lib of preset.libraries) {
+        if (!libraryIds.has(lib.id)) {
+          libraryIds.add(lib.id);
+          merged.libraries.push(lib);
+        }
+      }
+    }
+
+    // Merge expressiveCode (last wins)
+    if (preset.expressiveCode !== undefined) {
+      merged.expressiveCode = preset.expressiveCode;
+    }
+
+    // Merge starlightComponents (last wins)
+    if (preset.starlightComponents !== undefined) {
+      merged.starlightComponents = preset.starlightComponents;
+    }
+  }
+
+  // Ensure at least astroLibrary is present
+  if (merged.libraries.length === 0) {
+    merged.libraries.push(astroLibrary);
+  }
+
+  return merged;
+}

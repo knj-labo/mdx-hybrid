@@ -3,38 +3,44 @@
   "version": "0.0.1",
   "description": "Astro integration for Markflow - high-performance MDX compiler",
   "type": "module",
-  "main": "./index.js",
-  "types": "./index.d.ts",
+  "main": "./index.ts",
+  "types": "./index.ts",
   "exports": {
     ".": {
-      "import": "./index.js",
-      "types": "./index.d.ts"
+      "types": "./index.ts",
+      "import": "./index.ts",
+      "default": "./index.ts"
     },
     "./presets": {
-      "import": "./src/presets/index.js",
-      "default": "./src/presets/index.js"
+      "types": "./src/presets/index.ts",
+      "import": "./src/presets/index.ts",
+      "default": "./src/presets/index.ts"
     },
     "./vite-plugin": {
-      "import": "./src/vite-plugin.js",
-      "default": "./src/vite-plugin.js"
+      "types": "./src/vite-plugin.ts",
+      "import": "./src/vite-plugin.ts",
+      "default": "./src/vite-plugin.ts"
     },
     "./pipeline": {
-      "import": "./src/pipeline/index.js",
-      "default": "./src/pipeline/index.js"
+      "types": "./src/pipeline/index.ts",
+      "import": "./src/pipeline/index.ts",
+      "default": "./src/pipeline/index.ts"
     },
     "./transforms": {
-      "import": "./src/transforms/index.js",
-      "default": "./src/transforms/index.js"
+      "types": "./src/transforms/index.ts",
+      "import": "./src/transforms/index.ts",
+      "default": "./src/transforms/index.ts"
     }
   },
   "files": [
-    "index.js",
-    "index.d.ts",
+    "index.ts",
     "src"
   ],
   "scripts": {
+    "build": "tsc",
     "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test:watch": "bun test --watch",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "astro",
@@ -60,5 +66,9 @@
     "markflow-napi": "file:../../crates/napi",
     "parse5": "^7.1.2",
     "shiki": "^3.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
   }
 }

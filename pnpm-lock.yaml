@@ -49,14 +49,14 @@ importers:
   fixtures/integration/withastro-docs/repo:
     dependencies:
       '@astrojs/check':
-        specifier: ^0.9.4
+        specifier: ^0.9.6
         version: 0.9.6(prettier-plugin-astro@0.14.1)(prettier@3.7.4)(typescript@5.6.2)
       '@astrojs/sitemap':
-        specifier: ^3.5.1
+        specifier: ^3.6.0
         version: 3.7.0
       '@astrojs/starlight':
-        specifier: ^0.35.2
-        version: 0.35.3(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))
+        specifier: ^0.37.1
+        version: 0.37.3(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))
       '@expressive-code/plugin-collapsible-sections':
         specifier: ^0.41.3
         version: 0.41.6
@@ -72,9 +72,6 @@ importers:
       rehype-slug:
         specifier: ^6.0.0
         version: 6.0.0
-      remark-gfm:
-        specifier: ^4.0.1
-        version: 4.0.1
       remark-smartypants:
         specifier: ^3.0.2
         version: 3.0.2
@@ -83,7 +80,7 @@ importers:
         version: 0.34.5
       starlight-llms-txt:
         specifier: ^0.6.0
-        version: 0.6.1(@astrojs/starlight@0.35.3(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)))(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))
+        version: 0.6.1(@astrojs/starlight@0.37.3(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)))(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))
     devDependencies:
       '@actions/core':
         specifier: ^1.11.1
@@ -95,7 +92,7 @@ importers:
         specifier: 3.5.1
         version: 3.5.1(@algolia/client-search@4.25.3)(search-insights@2.17.3)
       '@eslint/js':
-        specifier: ^9.34.0
+        specifier: ^9.39.2
         version: 9.39.2
       '@types/canvas-confetti':
         specifier: ^1.6.0
@@ -110,20 +107,17 @@ importers:
         specifier: ^22.18.1
         version: 22.19.7
       '@typescript-eslint/parser':
-        specifier: ^8.42.0
+        specifier: ^8.51.0
         version: 8.53.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.6.2)
       astro:
-        specifier: ^5.13.5
+        specifier: ^5.16.6
         version: 5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)
-      astro-auto-import:
-        specifier: ^0.4.4
-        version: 0.4.6(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))
       astro-eslint-parser:
         specifier: ^1.2.2
         version: 1.2.2
       astro-og-canvas:
-        specifier: ^0.7.0
-        version: 0.7.2(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))
+        specifier: ^0.10.0
+        version: 0.10.0(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))
       canvaskit-wasm:
         specifier: ^0.40.0
         version: 0.40.0
@@ -134,20 +128,17 @@ importers:
         specifier: ^5.0.3
         version: 5.0.3
       eslint:
-        specifier: ^9.34.0
+        specifier: ^9.39.2
         version: 9.39.2(jiti@2.6.1)
       eslint-plugin-astro:
-        specifier: ^1.3.1
+        specifier: ^1.5.0
         version: 1.5.0(eslint@9.39.2(jiti@2.6.1))
       fast-glob:
         specifier: ^3.3.3
         version: 3.3.3
       globals:
-        specifier: ^16.3.0
+        specifier: ^16.5.0
         version: 16.5.0
-      hast-util-select:
-        specifier: ^6.0.4
-        version: 6.0.4
       hastscript:
         specifier: ^9.0.1
         version: 9.0.1
@@ -157,21 +148,12 @@ importers:
       kleur:
         specifier: ^4.1.5
         version: 4.1.5
-      mdast-util-to-string:
-        specifier: ^4.0.0
-        version: 4.0.0
-      p-retry:
-        specifier: ^7.0.0
-        version: 7.1.1
       prettier:
-        specifier: ^3.6.2
+        specifier: ^3.7.4
         version: 3.7.4
       prettier-plugin-astro:
         specifier: ^0.14.1
         version: 0.14.1
-      rehype:
-        specifier: ^13.0.2
-        version: 13.0.2
       textlint:
         specifier: 14.7.2
         version: 14.7.2
@@ -185,7 +167,7 @@ importers:
         specifier: 5.6.2
         version: 5.6.2
       typescript-eslint:
-        specifier: ^8.42.0
+        specifier: ^8.51.0
         version: 8.53.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.6.2)
       unified:
         specifier: ^11.0.5
@@ -378,8 +360,8 @@ packages:
   '@astrojs/sitemap@3.7.0':
     resolution: {integrity: sha512-+qxjUrz6Jcgh+D5VE1gKUJTA3pSthuPHe6Ao5JCxok794Lewx8hBFaWHtOnN0ntb2lfOf7gvOi9TefUswQ/ZVA==}
 
-  '@astrojs/starlight@0.35.3':
-    resolution: {integrity: sha512-z9MbODjZl/STU3PPU18iOTkLObJBw7PA8xMe5s+KPscQGL0LNZyQUYeClG+F1/em/k+2AsokGpVPta+aOTk1sg==}
+  '@astrojs/starlight@0.37.3':
+    resolution: {integrity: sha512-p7cqbAkBYkBTiK1NIomxAEoF9Wko+mTV503qDm5Wgh+0MGGJnSsIzCSSJ+rWm8toFk9mnzNwNbxcnjwzIBEU3w==}
     peerDependencies:
       astro: ^5.5.0
 
@@ -2231,12 +2213,6 @@ packages:
     resolution: {integrity: sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg==}
     hasBin: true
 
-  astro-auto-import@0.4.6:
-    resolution: {integrity: sha512-8EgeOTChgHX6x31s2CjeOUCDuG2s0wgT9D9zXI4CxgmljEoJeCAWIq/henhdmvZ+Y103MfH7CYNw5VW7GiM6xQ==}
-    engines: {node: '>=16.0.0'}
-    peerDependencies:
-      astro: ^2.0.0 || ^3.0.0-beta || ^4.0.0-beta || ^5.0.0-beta
-
   astro-eslint-parser@1.2.2:
     resolution: {integrity: sha512-JepyLROIad6f44uyqMF6HKE2QbunNzp3mYKRcPoDGt0QkxXmH222FAFC64WTyQu2Kg8NNEXHTN/sWuUId9sSxw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
@@ -2246,11 +2222,10 @@ packages:
     peerDependencies:
       astro: ^4.0.0-beta || ^5.0.0-beta || ^3.3.0 || ^6.0.0-beta
 
-  astro-og-canvas@0.7.2:
-    resolution: {integrity: sha512-i7sWbdpl2MMF7wUZqSfzMnhW4c7GQz6s7T4BUJ7E06MqasZRHjJytn0n6D0JJkGDeTpZnU7E00A6Ffx0pRB4kg==}
-    engines: {node: '>=18.14.1'}
+  astro-og-canvas@0.10.0:
+    resolution: {integrity: sha512-JkSIYEo2sTJiuht7iVQ2CNT38+rrlvkRpJkqjA58WDFHdymgWktoT9zLkjEkn2u9K2zeZx2GTev16IBJzIoZNQ==}
     peerDependencies:
-      astro: ^3.0.0 || ^4.0.0 || ^5.0.0
+      astro: ^5.0.0 || ^6.0.0-alpha
 
   astro@5.16.4:
     resolution: {integrity: sha512-rgXI/8/tnO3Y9tfAaUyg/8beKhlIMltbiC8Q6jCoAfEidOyaue4KYKzbe0gJIb6qEdEaG3Kf3BY3EOSLkbWOLg==}
@@ -3278,10 +3253,6 @@ packages:
     engines: {node: '>=14.16'}
     hasBin: true
 
-  is-network-error@1.3.0:
-    resolution: {integrity: sha512-6oIwpsgRfnDiyEDLMay/GqCl3HoAtH5+RUKW29gYkL0QA+ipzpDLA16yQs7/RHCSu+BwgbJaOUqa4A99qNVQVw==}
-    engines: {node: '>=16'}
-
   is-number@7.0.0:
     resolution: {integrity: sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng==}
     engines: {node: '>=0.12.0'}
@@ -3929,10 +3900,6 @@ packages:
   p-queue@8.1.1:
     resolution: {integrity: sha512-aNZ+VfjobsWryoiPnEApGGmf5WmNsCo9xu8dfaYamG5qaLP7ClhLN6NgsFe6SwJ2UbLEBK5dv9x8Mn5+RVhMWQ==}
     engines: {node: '>=18'}
-
-  p-retry@7.1.1:
-    resolution: {integrity: sha512-J5ApzjyRkkf601HpEeykoiCvzHQjWxPAHhyjFcEUP2SWq0+35NKh8TLhpLw+Dkq5TZBFvUM6UigdE9hIVYTl5w==}
-    engines: {node: '>=20'}
 
   p-timeout@6.1.4:
     resolution: {integrity: sha512-MyIV3ZA/PmyBN/ud8vV9XzwTrNtR4jFrObymZYnZqMmW0zA8Z17vnT0rBgFE/TlohB+YCHqXMgZzb3Csp49vqg==}
@@ -5474,7 +5441,7 @@ snapshots:
       stream-replace-string: 2.0.0
       zod: 3.25.76
 
-  '@astrojs/starlight@0.35.3(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))':
+  '@astrojs/starlight@0.37.3(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))':
     dependencies:
       '@astrojs/markdown-remark': 6.3.10
       '@astrojs/mdx': 4.3.13(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))
@@ -5493,6 +5460,7 @@ snapshots:
       i18next: 23.16.8
       js-yaml: 4.1.1
       klona: 2.0.6
+      magic-string: 0.30.21
       mdast-util-directive: 3.1.0
       mdast-util-to-markdown: 2.1.2
       mdast-util-to-string: 4.0.0
@@ -7203,11 +7171,6 @@ snapshots:
 
   astring@1.9.0: {}
 
-  astro-auto-import@0.4.6(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)):
-    dependencies:
-      acorn: 8.15.0
-      astro: 5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)
-
   astro-eslint-parser@1.2.2:
     dependencies:
       '@astrojs/compiler': 2.13.0
@@ -7230,7 +7193,7 @@ snapshots:
       astro: 5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)
       rehype-expressive-code: 0.41.6
 
-  astro-og-canvas@0.7.2(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)):
+  astro-og-canvas@0.10.0(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)):
     dependencies:
       astro: 5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)
       canvaskit-wasm: 0.40.0
@@ -8742,8 +8705,6 @@ snapshots:
     dependencies:
       is-docker: 3.0.0
 
-  is-network-error@1.3.0: {}
-
   is-number@7.0.0: {}
 
   is-path-inside@4.0.0: {}
@@ -9704,10 +9665,6 @@ snapshots:
       eventemitter3: 5.0.1
       p-timeout: 6.1.4
 
-  p-retry@7.1.1:
-    dependencies:
-      is-network-error: 1.3.0
-
   p-timeout@6.1.4: {}
 
   p-try@1.0.0: {}
@@ -10412,10 +10369,10 @@ snapshots:
     dependencies:
       escape-string-regexp: 2.0.0
 
-  starlight-llms-txt@0.6.1(@astrojs/starlight@0.35.3(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)))(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)):
+  starlight-llms-txt@0.6.1(@astrojs/starlight@0.37.3(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)))(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)):
     dependencies:
       '@astrojs/mdx': 4.3.13(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))
-      '@astrojs/starlight': 0.35.3(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))
+      '@astrojs/starlight': 0.37.3(astro@5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2))
       '@types/hast': 3.0.4
       '@types/micromatch': 4.0.10
       astro: 5.16.6(@types/node@22.19.7)(jiti@2.6.1)(rollup@4.54.0)(typescript@5.6.2)(yaml@2.8.2)
