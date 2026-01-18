@@ -19,7 +19,9 @@ mod types;
 pub use context::Context;
 pub use types::{AsideMeta, BlocksResult, CardMeta, HeadingEntry, PropValue, RenderBlock, Scope};
 
-use crate::transform::jsx_normalize::{collapse_multiline_wrapper_tags, normalize_mdx_jsx_indentation};
+use crate::transform::jsx_normalize::{
+    collapse_multiline_wrapper_tags, normalize_mdx_jsx_indentation,
+};
 use crate::transform::smartypants::apply_smartypants;
 use render::render_node;
 

@@ -244,5 +244,4 @@ mod tests {
         // This should NOT be collapsed because content is plain text, not a component
         assert_eq!(result, input);
     }
-
 }
