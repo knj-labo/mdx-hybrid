@@ -106,6 +106,70 @@ describe("plugin hook patterns", () => {
 
       expect(receivedFilenames).toEqual(["/path/to/file.md"]);
     });
+
+    test("multiple preprocess hooks chain correctly", () => {
+      const preprocessors = [
+        (source, filename) => source + " [step1]",
+        (source, filename) => source + " [step2]",
+        (source, filename) => source + " [step3]",
+      ];
+
+      let source = "start";
+      for (const preprocess of preprocessors) {
+        source = preprocess(source, "/test.md");
+      }
+
+      expect(source).toBe("start [step1] [step2] [step3]");
+    });
+
+    test("preprocess hooks with enforce ordering", () => {
+      const plugins = [
+        { name: "normal", enforce: undefined, preprocess: (s) => s + " [normal]" },
+        { name: "pre1", enforce: "pre", preprocess: (s) => s + " [pre1]" },
+        { name: "post1", enforce: "post", preprocess: (s) => s + " [post1]" },
+        { name: "pre2", enforce: "pre", preprocess: (s) => s + " [pre2]" },
+      ];
+
+      // Simulate collectHooks sorting
+      const sorted = [...plugins].sort((a, b) => {
+        const order = { pre: 0, undefined: 1, post: 2 };
+        const aOrder = order[a.enforce] ?? 1;
+        const bOrder = order[b.enforce] ?? 1;
+        return aOrder - bOrder;
+      });
+
+      const preprocessors = sorted.filter((p) => p.preprocess).map((p) => p.preprocess);
+
+      let source = "start";
+      for (const preprocess of preprocessors) {
+        source = preprocess(source, "/test.md");
+      }
+
+      // pre plugins first, then normal, then post
+      expect(source).toBe("start [pre1] [pre2] [normal] [post1]");
+    });
+
+    test("preprocess hooks can filter by filename extension", () => {
+      const preprocessors = [
+        (source, filename) => {
+          if (filename.endsWith(".mdx")) {
+            return source.replace(/import/g, "// import");
+          }
+          return source;
+        },
+      ];
+
+      let mdSource = "import foo from 'bar'";
+      let mdxSource = "import foo from 'bar'";
+
+      for (const preprocess of preprocessors) {
+        mdSource = preprocess(mdSource, "/test.md");
+        mdxSource = preprocess(mdxSource, "/test.mdx");
+      }
+
+      expect(mdSource).toBe("import foo from 'bar'");
+      expect(mdxSource).toBe("// import foo from 'bar'");
+    });
   });
 
   describe("conditional transforms with hooks", () => {
