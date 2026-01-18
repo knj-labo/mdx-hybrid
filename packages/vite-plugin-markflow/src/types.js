@@ -13,6 +13,7 @@
  * @property {string} filename - Source file path
  * @property {Object} frontmatter - Parsed frontmatter object
  * @property {Array} headings - Extracted headings from the document
+ * @property {import('markflow/registry').ComponentRegistry} registry - Component registry for import resolution
  * @property {TransformConfig} config - Plugin configuration for transforms
  */
 

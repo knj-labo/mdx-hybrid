@@ -4,7 +4,11 @@
  */
 
 import { rewriteExpressiveCodeBlocks, injectExpressiveCodeComponent } from './expressive-code.js';
-import { injectAstroComponents, injectStarlightComponents } from './inject-components.js';
+import {
+  injectAstroComponents,
+  injectStarlightComponents,
+  injectComponentImportsFromRegistry,
+} from './inject-components.js';
 import { rewriteAstroSetHtml } from './shiki.js';
 
 /**
@@ -77,4 +81,22 @@ export async function transformShikiHighlight(ctx) {
   }
   const code = await rewriteAstroSetHtml(ctx.code, ctx.config.shiki);
   return { ...ctx, code };
+}
+
+/**
+ * Transform that injects component imports from the registry.
+ * Unified replacement for transformInjectAstroComponents and transformInjectStarlightComponents.
+ * Uses the registry from context to find all component modules and inject missing imports.
+ *
+ * @param {import('../types.js').TransformContext} ctx - Transform context
+ * @returns {import('../types.js').TransformContext} Updated context
+ */
+export function transformInjectComponentsFromRegistry(ctx) {
+  if (!ctx.code || !ctx.registry) {
+    return ctx;
+  }
+  return {
+    ...ctx,
+    code: injectComponentImportsFromRegistry(ctx.code, ctx.registry),
+  };
 }

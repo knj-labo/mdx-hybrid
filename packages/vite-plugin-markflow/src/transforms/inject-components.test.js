@@ -3,9 +3,14 @@ import {
   injectComponentImports,
   injectStarlightComponents,
   injectAstroComponents,
+  injectComponentImportsFromRegistry,
   ASTRO_COMPONENTS,
   ASTRO_COMPONENTS_MODULE,
 } from './inject-components.js';
+import { createRegistry, starlightLibrary, astroLibrary } from 'markflow/registry';
+
+// Create test registry
+const testRegistry = createRegistry([starlightLibrary, astroLibrary]);
 
 describe('injectComponentImports', () => {
   it('should inject missing component imports', () => {
@@ -362,5 +367,103 @@ export default function Content() {
     expect(result).toContain("@astrojs/starlight/components");
     expect(result).toContain("import { Code }");
     expect(result).toContain("astro/components");
+  });
+});
+
+describe('injectComponentImportsFromRegistry', () => {
+  it('should inject missing Starlight component imports', () => {
+    const code = `
+export default function Content() {
+  return <Aside>Content</Aside>;
+}`;
+
+    const result = injectComponentImportsFromRegistry(code, testRegistry);
+
+    expect(result).toContain("import { Aside } from '@astrojs/starlight/components';");
+  });
+
+  it('should inject missing Astro component imports', () => {
+    const code = `
+export default function Content() {
+  return <Code lang="js">const x = 1;</Code>;
+}`;
+
+    const result = injectComponentImportsFromRegistry(code, testRegistry);
+
+    expect(result).toContain("import { Code } from 'astro/components';");
+  });
+
+  it('should inject components from multiple modules', () => {
+    const code = `
+export default function Content() {
+  return (
+    <>
+      <Aside>Note</Aside>
+      <Code lang="js">code</Code>
+    </>
+  );
+}`;
+
+    const result = injectComponentImportsFromRegistry(code, testRegistry);
+
+    expect(result).toContain("import { Aside } from '@astrojs/starlight/components';");
+    expect(result).toContain("import { Code } from 'astro/components';");
+  });
+
+  it('should not inject already imported components', () => {
+    const code = `
+import { Aside } from '@astrojs/starlight/components';
+
+export default function Content() {
+  return <Aside>Content</Aside>;
+}`;
+
+    const result = injectComponentImportsFromRegistry(code, testRegistry);
+
+    const importCount = (result.match(/import.*Aside/g) || []).length;
+    expect(importCount).toBe(1);
+  });
+
+  it('should return code unchanged if no registry provided', () => {
+    const code = `
+export default function Content() {
+  return <Aside>Content</Aside>;
+}`;
+
+    const result = injectComponentImportsFromRegistry(code, null);
+
+    expect(result).toBe(code);
+  });
+
+  it('should group multiple components from same module', () => {
+    const code = `
+export default function Content() {
+  return (
+    <>
+      <Aside>Note</Aside>
+      <Tabs><TabItem>Tab</TabItem></Tabs>
+    </>
+  );
+}`;
+
+    const result = injectComponentImportsFromRegistry(code, testRegistry);
+
+    // Should have grouped import
+    expect(result).toContain("import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';");
+  });
+
+  it('should strip heading metadata before scanning', () => {
+    const code = `
+export const headings = [
+  { depth: 1, slug: 'aside', text: 'Aside' }
+];
+
+export default function Content() {
+  return <Aside>Content</Aside>;
+}`;
+
+    const result = injectComponentImportsFromRegistry(code, testRegistry);
+
+    expect(result).toContain("import { Aside }");
   });
 });
