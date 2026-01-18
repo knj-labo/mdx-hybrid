@@ -616,18 +616,22 @@ export default function MarkflowContent() {
  * These files should fall back to Astro MDX immediately.
  */
 function hasProblematicMdxPatterns(source) {
-  // Pattern 1: Code fences inside JSX blocks (TabItem, Fragment with slot)
-  // The ``` inside JSX confuses the parser
-  const hasCodeFenceInJsx = /<(TabItem|Fragment[^>]*slot=)[^>]*>[\s\S]*?```[\s\S]*?<\//.test(source);
-
-  // Pattern 2: Nested interactive components (MultipleChoice > Box)
-  // markdown-rs struggles with nested JSX containing markdown
-  const hasNestedInteractive = /<MultipleChoice[\s\S]*?<Box/.test(source);
-
-  // Pattern 3: Steps/FileTree with complex nesting
-  const hasComplexSteps = /<Steps[\s\S]*?<details[\s\S]*?<\/Steps>/.test(source);
-
-  return hasCodeFenceInJsx || hasNestedInteractive || hasComplexSteps;
+  // Investigation results (2026-01-18):
+  // - Before: 733 files skipped (30%) due to preventive pattern detection
+  // - After disabling: Only 118 files (4.85%) actually fail at runtime
+  // - Improvement: 615 files (84%) were being unnecessarily skipped
+  //
+  // The runtime fallback mechanism works correctly and is fast enough.
+  // Preventive pattern detection is no longer needed.
+  //
+  // True failures fall into two categories:
+  // 1. Transform errors (~36 files): JSX generation bugs (separate issue)
+  // 2. Markdown parser errors (~82 files): Genuine markdown-rs limitations
+  //    - <MultipleChoice>...<Box> with markdown content
+  //    - <Steps>...<details> nesting
+  //    - <TabItem> with code fences
+  //    - <Fragment> inside list items
+  return false;
 }
 
 function createFallbackModule(filename) {
