@@ -1,4 +1,4 @@
-/** @type {typeof import('markflow-wasm') | null} */
+/** @type {typeof import('../wasm/markflow_wasm.js') | null} */
 let wasmModule = null;
 
 /** @type {boolean} */
@@ -6,7 +6,7 @@ let initialized = false;
 
 async function loadWasm() {
   if (!wasmModule) {
-    wasmModule = await import('markflow-wasm');
+    wasmModule = await import('../wasm/markflow_wasm.js');
   }
   if (!initialized) {
     // Initialize WASM module

@@ -1,0 +1,19 @@
+{
+  "name": "markflow-wasm",
+  "type": "module",
+  "collaborators": [
+    "jp-knj"
+  ],
+  "version": "0.0.1",
+  "license": "MIT",
+  "files": [
+    "markflow_wasm_bg.wasm",
+    "markflow_wasm.js",
+    "markflow_wasm.d.ts"
+  ],
+  "main": "markflow_wasm.js",
+  "types": "markflow_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
