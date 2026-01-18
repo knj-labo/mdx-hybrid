@@ -370,6 +370,92 @@ export default function Content() {
   });
 });
 
+describe('injectAstroComponents with registry', () => {
+  it('should inject Astro components using registry', () => {
+    const code = `
+export default function Content() {
+  return <Code lang="js">const x = 1;</Code>;
+}`;
+
+    const result = injectAstroComponents(code, testRegistry);
+
+    expect(result).toContain("import { Code }");
+    expect(result).toContain("astro/components");
+  });
+
+  it('should inject both Code and Prism using registry', () => {
+    const code = `
+export default function Content() {
+  return (
+    <>
+      <Code lang="js">const x = 1;</Code>
+      <Prism lang="python">print("hello")</Prism>
+    </>
+  );
+}`;
+
+    const result = injectAstroComponents(code, testRegistry);
+
+    expect(result).toContain("import { Code, Prism }");
+  });
+
+  it('should fall back to constants when registry has no Astro components', () => {
+    const emptyRegistry = createRegistry([]);
+    const code = `
+export default function Content() {
+  return <Code lang="js">const x = 1;</Code>;
+}`;
+
+    const result = injectAstroComponents(code, emptyRegistry);
+
+    expect(result).toContain("import { Code }");
+    expect(result).toContain("astro/components");
+  });
+});
+
+describe('injectStarlightComponents with registry', () => {
+  it('should inject Starlight components using registry', () => {
+    const code = `
+export default function Content() {
+  return <Aside>Note</Aside>;
+}`;
+
+    const result = injectStarlightComponents(code, true, testRegistry);
+
+    expect(result).toContain("import { Aside }");
+    expect(result).toContain("@astrojs/starlight/components");
+  });
+
+  it('should inject multiple Starlight components using registry', () => {
+    const code = `
+export default function Content() {
+  return (
+    <>
+      <Aside>Note</Aside>
+      <Tabs><TabItem>Tab</TabItem></Tabs>
+    </>
+  );
+}`;
+
+    const result = injectStarlightComponents(code, true, testRegistry);
+
+    expect(result).toContain("import { Aside, Tabs, TabItem }");
+  });
+
+  it('should fall back to constants when registry has no Starlight components', () => {
+    const emptyRegistry = createRegistry([]);
+    const code = `
+export default function Content() {
+  return <Aside>Note</Aside>;
+}`;
+
+    const result = injectStarlightComponents(code, true, emptyRegistry);
+
+    expect(result).toContain("import { Aside }");
+    expect(result).toContain("@astrojs/starlight/components");
+  });
+});
+
 describe('injectComponentImportsFromRegistry', () => {
   it('should inject missing Starlight component imports', () => {
     const code = `

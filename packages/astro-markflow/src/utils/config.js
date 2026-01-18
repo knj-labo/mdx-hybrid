@@ -42,6 +42,7 @@ export const EXPRESSIVE_CODE_MODULE = "astro-expressive-code/components";
  * Normalizes boolean/object config into consistent object format.
  *
  * @param {boolean|object|null} config - User configuration
+ * @param {import('markflow/registry').ComponentRegistry} [registry] - Optional component registry
  * @returns {{ component: string, moduleId: string } | null} - Resolved config
  *
  * @example
@@ -50,24 +51,41 @@ export const EXPRESSIVE_CODE_MODULE = "astro-expressive-code/components";
  *
  * resolveExpressiveCodeConfig({ component: "Code", module: "my-module" })
  * // => { component: "Code", moduleId: "my-module" }
+ *
+ * // With registry (preferred):
+ * resolveExpressiveCodeConfig(true, registry)
+ * // Gets defaults from registry.getComponentsByModule('astro-expressive-code/components')
  */
-export function resolveExpressiveCodeConfig(config) {
+export function resolveExpressiveCodeConfig(config, registry) {
   if (!config) return null;
+
+  // Get defaults from registry if available, otherwise use deprecated constants
+  let defaultComponent = EXPRESSIVE_CODE_COMPONENT;
+  let defaultModuleId = EXPRESSIVE_CODE_MODULE;
+
+  if (registry) {
+    const ecComponents = registry.getComponentsByModule(EXPRESSIVE_CODE_MODULE);
+    if (ecComponents.length > 0) {
+      defaultComponent = ecComponents[0].name;
+      defaultModuleId = ecComponents[0].modulePath;
+    }
+  }
+
   if (config === true) {
     return {
-      component: EXPRESSIVE_CODE_COMPONENT,
-      moduleId: EXPRESSIVE_CODE_MODULE,
+      component: defaultComponent,
+      moduleId: defaultModuleId,
     };
   }
   if (typeof config === "object") {
     const component =
       typeof config.component === "string" && config.component.length > 0
         ? config.component
-        : EXPRESSIVE_CODE_COMPONENT;
+        : defaultComponent;
     const moduleId =
       typeof config.module === "string" && config.module.length > 0
         ? config.module
-        : EXPRESSIVE_CODE_MODULE;
+        : defaultModuleId;
     return { component, moduleId };
   }
   return null;
@@ -78,6 +96,7 @@ export function resolveExpressiveCodeConfig(config) {
  * Normalizes boolean/object config into consistent object format.
  *
  * @param {boolean|object|null} config - User configuration
+ * @param {import('markflow/registry').ComponentRegistry} [registry] - Optional component registry
  * @returns {{ components: string[], moduleId: string } | null} - Resolved config
  *
  * @example
@@ -86,23 +105,40 @@ export function resolveExpressiveCodeConfig(config) {
  *
  * resolveStarlightConfig({ components: ["Aside"], module: "my-module" })
  * // => { components: ["Aside"], moduleId: "my-module" }
+ *
+ * // With registry (preferred):
+ * resolveStarlightConfig(true, registry)
+ * // Gets defaults from registry.getComponentsByModule('@astrojs/starlight/components')
  */
-export function resolveStarlightConfig(config) {
+export function resolveStarlightConfig(config, registry) {
   if (!config) return null;
+
+  // Get defaults from registry if available, otherwise use deprecated constants
+  let defaultComponents = STARLIGHT_COMPONENTS;
+  let defaultModuleId = STARLIGHT_COMPONENTS_MODULE;
+
+  if (registry) {
+    const slComponents = registry.getComponentsByModule(STARLIGHT_COMPONENTS_MODULE);
+    if (slComponents.length > 0) {
+      defaultComponents = slComponents.map((c) => c.name);
+      defaultModuleId = slComponents[0].modulePath;
+    }
+  }
+
   if (config === true) {
     return {
-      components: STARLIGHT_COMPONENTS,
-      moduleId: STARLIGHT_COMPONENTS_MODULE,
+      components: defaultComponents,
+      moduleId: defaultModuleId,
     };
   }
   if (typeof config === "object") {
     const components = Array.isArray(config.components)
       ? config.components
-      : STARLIGHT_COMPONENTS;
+      : defaultComponents;
     const moduleId =
       typeof config.module === "string" && config.module.length > 0
         ? config.module
-        : STARLIGHT_COMPONENTS_MODULE;
+        : defaultModuleId;
     return { components, moduleId };
   }
   return null;

@@ -73,15 +73,20 @@ export function injectComponentImports(code, components, moduleId) {
  *
  * @param {string} code - JSX code to process
  * @param {boolean|object} config - Starlight configuration
+ * @param {import('markflow/registry').ComponentRegistry} [registry] - Optional component registry
  * @returns {string} - Code with Starlight imports
  *
  * @example
  * const code = `<Aside>Note</Aside>`;
  * const result = injectStarlightComponents(code, true);
  * // Adds: import { Aside } from '@astrojs/starlight/components';
+ *
+ * // With registry (preferred):
+ * const result = injectStarlightComponents(code, true, registry);
+ * // Gets defaults from registry.getComponentsByModule('@astrojs/starlight/components')
  */
-export function injectStarlightComponents(code, config) {
-  const resolved = resolveStarlightConfig(config);
+export function injectStarlightComponents(code, config, registry) {
+  const resolved = resolveStarlightConfig(config, registry);
   if (!resolved) return code;
 
   return injectComponentImports(code, resolved.components, resolved.moduleId);
@@ -92,15 +97,32 @@ export function injectStarlightComponents(code, config) {
  * Checks for Code/Prism component usage and adds imports.
  *
  * @param {string} code - JSX code to process
+ * @param {import('markflow/registry').ComponentRegistry} [registry] - Optional component registry
  * @returns {string} - Code with Astro imports
  *
  * @example
  * const code = `<Code lang="js">const x = 1;</Code>`;
  * const result = injectAstroComponents(code);
  * // Adds: import { Code } from 'astro/components';
+ *
+ * // With registry (preferred):
+ * const result = injectAstroComponents(code, registry);
+ * // Gets component list from registry.getComponentsByModule('astro/components')
  */
-export function injectAstroComponents(code) {
-  return injectComponentImports(code, ASTRO_COMPONENTS, ASTRO_COMPONENTS_MODULE);
+export function injectAstroComponents(code, registry) {
+  // Get components from registry if available, otherwise use deprecated constants
+  let components = ASTRO_COMPONENTS;
+  let moduleId = ASTRO_COMPONENTS_MODULE;
+
+  if (registry) {
+    const astroComponents = registry.getComponentsByModule(ASTRO_COMPONENTS_MODULE);
+    if (astroComponents.length > 0) {
+      components = astroComponents.map((c) => c.name);
+      moduleId = astroComponents[0].modulePath;
+    }
+  }
+
+  return injectComponentImports(code, components, moduleId);
 }
 
 /**
