@@ -8,11 +8,13 @@ import { resolveStarlightConfig } from '../utils/config.js';
 
 /**
  * Default Astro component names
+ * @deprecated Use registry.getComponentsByModule('astro/components') instead
  */
 export const ASTRO_COMPONENTS = ["Code", "Prism"];
 
 /**
  * Default Astro components module path
+ * @deprecated Use registry from markflow/registry instead
  */
 export const ASTRO_COMPONENTS_MODULE = "astro/components";
 
@@ -99,4 +101,65 @@ export function injectStarlightComponents(code, config) {
  */
 export function injectAstroComponents(code) {
   return injectComponentImports(code, ASTRO_COMPONENTS, ASTRO_COMPONENTS_MODULE);
+}
+
+/**
+ * Inject component imports from registry based on usage.
+ * Scans code for component usage and injects missing imports
+ * using information from the registry.
+ *
+ * @param {string} code - JSX code to process
+ * @param {import('markflow/registry').ComponentRegistry} registry - Component registry
+ * @returns {string} - Code with injected imports
+ *
+ * @example
+ * const code = `<Aside>Note</Aside><Code lang="js">x</Code>`;
+ * const result = injectComponentImportsFromRegistry(code, registry);
+ * // Adds imports for both Aside and Code from their respective modules
+ */
+export function injectComponentImportsFromRegistry(code, registry) {
+  if (!code || typeof code !== 'string' || !registry) {
+    return code;
+  }
+
+  const scanTarget = stripHeadingsMeta(code);
+  const imported = collectImportedNames(code);
+  const allComponents = registry.getAllComponents();
+
+  // Find used components that are missing imports
+  const missingByModule = new Map();
+
+  for (const comp of allComponents) {
+    if (new RegExp(`<${comp.name}\\b`).test(scanTarget) && !imported.has(comp.name)) {
+      const modulePath = comp.modulePath;
+      if (!missingByModule.has(modulePath)) {
+        missingByModule.set(modulePath, []);
+      }
+      missingByModule.get(modulePath).push(comp);
+    }
+  }
+
+  if (missingByModule.size === 0) {
+    return code;
+  }
+
+  // Generate import statements grouped by module
+  let result = code;
+  for (const [modulePath, components] of missingByModule) {
+    // Check if all components use named exports
+    const allNamed = components.every((c) => c.exportType === 'named');
+    if (allNamed) {
+      const names = components.map((c) => c.name).join(', ');
+      const importLine = `import { ${names} } from '${modulePath}';`;
+      result = insertAfterImports(result, importLine);
+    } else {
+      // Individual default imports for each component
+      for (const comp of components) {
+        const importLine = `import ${comp.name} from '${modulePath}/${comp.name}.astro';`;
+        result = insertAfterImports(result, importLine);
+      }
+    }
+  }
+
+  return result;
 }

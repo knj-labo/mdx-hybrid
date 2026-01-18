@@ -5,6 +5,7 @@
 
 /**
  * Default Starlight component names
+ * @deprecated Use registry.getComponentsByModule('@astrojs/starlight/components') instead
  */
 export const STARLIGHT_COMPONENTS = [
   "Aside",
@@ -20,16 +21,19 @@ export const STARLIGHT_COMPONENTS = [
 
 /**
  * Default Starlight components module path
+ * @deprecated Use starlightLibrary.defaultModulePath from markflow/registry instead
  */
 export const STARLIGHT_COMPONENTS_MODULE = "@astrojs/starlight/components";
 
 /**
  * Default ExpressiveCode component name
+ * @deprecated Use expressiveCodeLibrary from markflow/registry instead
  */
 export const EXPRESSIVE_CODE_COMPONENT = "ExpressiveCode";
 
 /**
  * Default ExpressiveCode module path
+ * @deprecated Use expressiveCodeLibrary.defaultModulePath from markflow/registry instead
  */
 export const EXPRESSIVE_CODE_MODULE = "astro-expressive-code/components";
 

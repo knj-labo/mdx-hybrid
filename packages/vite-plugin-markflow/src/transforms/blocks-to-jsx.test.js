@@ -1,5 +1,9 @@
 import { describe, test, expect } from "bun:test";
 import { blocksToJsx } from "./blocks-to-jsx.js";
+import { createRegistry, starlightLibrary, astroLibrary } from "markflow/registry";
+
+// Create test registry for registry-aware tests
+const testRegistry = createRegistry([starlightLibrary, astroLibrary]);
 
 describe("blocksToJsx", () => {
   test("returns minimal JSX module for empty blocks", () => {
@@ -197,5 +201,53 @@ describe("blocksToJsx", () => {
     expect(aIndex).toBeLessThan(secondIndex);
     expect(secondIndex).toBeLessThan(bIndex);
     expect(bIndex).toBeLessThan(thirdIndex);
+  });
+});
+
+describe("blocksToJsx with registry", () => {
+  test("uses named imports for registered components", () => {
+    const blocks = [{ type: "component", name: "Aside" }];
+    const result = blocksToJsx(blocks, {}, [], testRegistry);
+    expect(result).toContain(
+      "import { Aside } from '@astrojs/starlight/components';",
+    );
+    expect(result).toContain("<Aside></Aside>");
+  });
+
+  test("uses named imports for Astro Code component", () => {
+    const blocks = [{ type: "component", name: "Code" }];
+    const result = blocksToJsx(blocks, {}, [], testRegistry);
+    expect(result).toContain("import { Code } from 'astro/components';");
+    expect(result).toContain("<Code></Code>");
+  });
+
+  test("groups named imports by module", () => {
+    const blocks = [
+      { type: "component", name: "Aside" },
+      { type: "component", name: "Tabs" },
+      { type: "component", name: "Code" },
+    ];
+    const result = blocksToJsx(blocks, {}, [], testRegistry);
+    // Starlight components grouped
+    expect(result).toContain("import { Aside, Tabs } from '@astrojs/starlight/components';");
+    // Astro components separate
+    expect(result).toContain("import { Code } from 'astro/components';");
+  });
+
+  test("maps directives to components via registry", () => {
+    const blocks = [{ type: "component", name: "note" }];
+    const result = blocksToJsx(blocks, {}, [], testRegistry);
+    // note directive should map to Aside component with type prop
+    expect(result).toContain("import { Aside } from '@astrojs/starlight/components';");
+    expect(result).toContain('<Aside type="note"></Aside>');
+  });
+
+  test("applies injected props for directive mappings", () => {
+    const blocks = [
+      { type: "component", name: "tip", props: { title: "Pro Tip" } },
+    ];
+    const result = blocksToJsx(blocks, {}, [], testRegistry);
+    expect(result).toContain('type="tip"');
+    expect(result).toContain('title="Pro Tip"');
   });
 });
