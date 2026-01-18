@@ -98,3 +98,4 @@ export function createRegistry(libraries) {
 export { starlightLibrary } from './presets/starlight.js';
 export { astroLibrary } from './presets/astro.js';
 export { expressiveCodeLibrary } from './presets/expressive-code.js';
+export { validateRegistry, validateLibrary } from './validation.js';

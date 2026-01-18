@@ -7,6 +7,11 @@ import {
   EXPRESSIVE_CODE_COMPONENT,
   EXPRESSIVE_CODE_MODULE,
 } from './config.js';
+import {
+  createRegistry,
+  starlightLibrary,
+  expressiveCodeLibrary,
+} from 'markflow/registry';
 
 describe('resolveExpressiveCodeConfig', () => {
   it('should return null for falsy values', () => {
@@ -214,5 +219,91 @@ describe('constants', () => {
   it('should export EXPRESSIVE_CODE_MODULE string', () => {
     expect(typeof EXPRESSIVE_CODE_MODULE).toBe('string');
     expect(EXPRESSIVE_CODE_MODULE).toBe('astro-expressive-code/components');
+  });
+});
+
+describe('resolveExpressiveCodeConfig with registry', () => {
+  const registry = createRegistry([expressiveCodeLibrary]);
+
+  it('should return default config from registry for true', () => {
+    const result = resolveExpressiveCodeConfig(true, registry);
+
+    expect(result).toEqual({
+      component: 'Code',
+      moduleId: 'astro-expressive-code/components',
+    });
+  });
+
+  it('should use registry defaults for empty object', () => {
+    const result = resolveExpressiveCodeConfig({}, registry);
+
+    expect(result).toEqual({
+      component: 'Code',
+      moduleId: 'astro-expressive-code/components',
+    });
+  });
+
+  it('should allow custom overrides with registry', () => {
+    const result = resolveExpressiveCodeConfig({
+      component: 'CustomCode',
+      module: 'my-module',
+    }, registry);
+
+    expect(result).toEqual({
+      component: 'CustomCode',
+      moduleId: 'my-module',
+    });
+  });
+
+  it('should fall back to constants when registry has no matching components', () => {
+    const emptyRegistry = createRegistry([]);
+    const result = resolveExpressiveCodeConfig(true, emptyRegistry);
+
+    expect(result).toEqual({
+      component: EXPRESSIVE_CODE_COMPONENT,
+      moduleId: EXPRESSIVE_CODE_MODULE,
+    });
+  });
+});
+
+describe('resolveStarlightConfig with registry', () => {
+  const registry = createRegistry([starlightLibrary]);
+
+  it('should return default config from registry for true', () => {
+    const result = resolveStarlightConfig(true, registry);
+
+    expect(result.moduleId).toBe('@astrojs/starlight/components');
+    expect(result.components).toContain('Aside');
+    expect(result.components).toContain('Tabs');
+    expect(result.components).toContain('TabItem');
+  });
+
+  it('should use registry defaults for empty object', () => {
+    const result = resolveStarlightConfig({}, registry);
+
+    expect(result.moduleId).toBe('@astrojs/starlight/components');
+    expect(result.components.length).toBeGreaterThan(0);
+  });
+
+  it('should allow custom overrides with registry', () => {
+    const result = resolveStarlightConfig({
+      components: ['CustomAside'],
+      module: 'my-module',
+    }, registry);
+
+    expect(result).toEqual({
+      components: ['CustomAside'],
+      moduleId: 'my-module',
+    });
+  });
+
+  it('should fall back to constants when registry has no matching components', () => {
+    const emptyRegistry = createRegistry([]);
+    const result = resolveStarlightConfig(true, emptyRegistry);
+
+    expect(result).toEqual({
+      components: STARLIGHT_COMPONENTS,
+      moduleId: STARLIGHT_COMPONENTS_MODULE,
+    });
   });
 });
