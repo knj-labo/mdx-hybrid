@@ -335,6 +335,14 @@ const unwrapVirtual = (value) =>
       try {
         const source = await readFile(filename, "utf8");
 
+        // Early detection of problematic patterns - skip to fallback
+        if (hasProblematicMdxPatterns(source)) {
+          this.warn(`[markflow] Skipping ${filename}: contains patterns incompatible with markdown-rs`);
+          fallbackFiles.add(filename);
+          fallbackReasons.set(filename, 'Detected problematic MDX patterns');
+          return createFallbackModule(filename);
+        }
+
         const startTime = performance.now();
         let result;
         let frontmatter = {};
@@ -797,6 +805,25 @@ function decodeHtmlEntities(value) {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
+}
+
+/**
+ * Detect MDX patterns that markdown-rs cannot parse correctly.
+ * These files should fall back to Astro MDX immediately.
+ */
+function hasProblematicMdxPatterns(source) {
+  // Pattern 1: Code fences inside JSX blocks (TabItem, Fragment with slot)
+  // The ``` inside JSX confuses the parser
+  const hasCodeFenceInJsx = /<(TabItem|Fragment[^>]*slot=)[^>]*>[\s\S]*?```[\s\S]*?<\//.test(source);
+
+  // Pattern 2: Nested interactive components (MultipleChoice > Box)
+  // markdown-rs struggles with nested JSX containing markdown
+  const hasNestedInteractive = /<MultipleChoice[\s\S]*?<Box/.test(source);
+
+  // Pattern 3: Steps/FileTree with complex nesting
+  const hasComplexSteps = /<Steps[\s\S]*?<details[\s\S]*?<\/Steps>/.test(source);
+
+  return hasCodeFenceInJsx || hasNestedInteractive || hasComplexSteps;
 }
 
 function createFallbackModule(filename) {
