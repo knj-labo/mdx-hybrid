@@ -4,6 +4,7 @@
  */
 
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { transformWithEsbuild, type ResolvedConfig, type Plugin } from 'vite';
 import { parseFragment, serialize } from 'parse5';
@@ -152,36 +153,42 @@ const logBindingSource = (source: string): void => {
   }
 };
 
+// Use createRequire to bypass Vite's module runner which can be closed during build
+const require = createRequire(import.meta.url);
+
+function loadMarkflowBindingSync(): MarkflowBinding {
+  let source = 'markflow-napi';
+  try {
+    // Use require to completely bypass Vite's module system
+    const binding = require('markflow-napi') as MarkflowBinding;
+    logBindingSource(source);
+    return binding;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== 'MODULE_NOT_FOUND') {
+      throw error;
+    }
+    const fallbackPath = path.resolve(
+      path.dirname(new URL(import.meta.url).pathname),
+      '../../../crates/napi/index.js'
+    );
+    source = fallbackPath;
+    try {
+      const binding = require(fallbackPath) as MarkflowBinding;
+      logBindingSource(source);
+      return binding;
+    } catch (fallbackError) {
+      console.error(
+        '[markflow] Failed to load fallback NAPI binding',
+        fallbackError
+      );
+      throw fallbackError;
+    }
+  }
+}
+
 async function loadMarkflowBinding(): Promise<MarkflowBinding> {
   if (!bindingPromise) {
-    bindingPromise = (async (): Promise<MarkflowBinding> => {
-      let source = 'markflow-napi';
-      try {
-        const binding = (await import('markflow-napi')) as MarkflowBinding;
-        logBindingSource(source);
-        return binding;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code !== 'ERR_MODULE_NOT_FOUND') {
-          throw error;
-        }
-        const fallbackUrl = new URL(
-          '../../../crates/napi/index.js',
-          import.meta.url
-        );
-        source = fallbackUrl.href;
-        const binding = await import(/* @vite-ignore */ fallbackUrl.href).catch(
-          (fallbackError: Error) => {
-            console.error(
-              '[markflow] Failed to load fallback NAPI binding',
-              fallbackError
-            );
-            throw fallbackError;
-          }
-        ) as MarkflowBinding;
-        logBindingSource(source);
-        return binding;
-      }
-    })();
+    bindingPromise = Promise.resolve(loadMarkflowBindingSync());
   }
   return bindingPromise;
 }
@@ -324,11 +331,26 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
     return shikiReady;
   };
 
+  // Lazy compiler initialization to avoid Vite module runner timing issues
+  const getCompiler = async (): Promise<MarkflowCompiler> => {
+    if (!compiler) {
+      const binding = providedBinding ?? (await loadMarkflowBinding());
+      if (providedBinding) {
+        logBindingSource('provided');
+      }
+      const createCompiler = binding.createCompiler
+        ? binding.createCompiler
+        : (cfg: Record<string, unknown>) => new binding.MarkflowCompiler!(cfg);
+      compiler = createCompiler(compilerOptions);
+    }
+    return compiler;
+  };
+
   return {
     name: 'vite-plugin-markflow',
     enforce: 'pre',
 
-    async configResolved(config) {
+    configResolved(config) {
       resolvedConfig = config;
       if (config.esbuild == null) {
         (config as { esbuild: object }).esbuild = {
@@ -344,22 +366,16 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           esbuildConfig.jsxImportSource = 'astro';
         }
       }
-      const binding = providedBinding ?? (await loadMarkflowBinding());
-      if (providedBinding) {
-        logBindingSource('provided');
-      }
-      const createCompiler = binding.createCompiler
-        ? binding.createCompiler
-        : (cfg: Record<string, unknown>) => new binding.MarkflowCompiler!(cfg);
-      compiler = createCompiler(compilerOptions);
+      // Note: Binding/compiler initialization deferred to buildStart/load hooks
+      // to avoid Vite module runner timing issues with async imports
     },
 
     async buildStart() {
       // Only batch compile in build mode (not dev/serve)
       if (resolvedConfig?.command !== 'build') return;
 
-      // Find all MD/MDX files
-      const { glob } = await import('glob');
+      // Find all MD/MDX files - use require to bypass Vite's module runner
+      const { glob } = require('glob') as { glob: (pattern: string, options: { cwd: string; ignore: string[]; absolute: boolean }) => Promise<string[]> };
       const files = await glob('**/*.{md,mdx}', {
         cwd: resolvedConfig.root,
         ignore: ['node_modules/**', 'dist/**'],
@@ -445,9 +461,8 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       if (!id.startsWith(VIRTUAL_PREFIX)) {
         return null;
       }
-      if (!compiler) {
-        throw new Error('Markflow compiler has not been initialized');
-      }
+      // Lazy initialize compiler on first use
+      const currentCompiler = await getCompiler();
       const filename =
         sourceLookup.get(id) ??
         stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ''));
@@ -518,7 +533,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           };
         } else {
           const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
-          result = compiler.compile(processedSource, filename, fileOptions);
+          result = currentCompiler.compile(processedSource, filename, fileOptions);
           if (result.frontmatter_json) {
             try {
               frontmatter = JSON.parse(result.frontmatter_json) as Record<string, unknown>;
