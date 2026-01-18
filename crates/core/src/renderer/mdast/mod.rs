@@ -19,7 +19,9 @@ mod types;
 pub use context::Context;
 pub use types::{AsideMeta, BlocksResult, CardMeta, HeadingEntry, PropValue, RenderBlock, Scope};
 
-use crate::transform::jsx_normalize::normalize_mdx_jsx_indentation;
+use crate::transform::jsx_normalize::{
+    collapse_multiline_wrapper_tags, normalize_mdx_jsx_indentation,
+};
 use crate::transform::smartypants::apply_smartypants;
 use render::render_node;
 
@@ -76,10 +78,13 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
         input.to_string()
     };
 
-    // 2. Normalize JSX indentation to prevent content from being treated as code blocks
-    let normalized = normalize_mdx_jsx_indentation(&preprocessed);
+    // 2. Collapse multiline wrapper tags to prevent tag mismatch errors
+    let collapsed = collapse_multiline_wrapper_tags(&preprocessed);
 
-    // 3. Parse markdown to MDAST with enhanced options
+    // 3. Normalize JSX indentation to prevent content from being treated as code blocks
+    let normalized = normalize_mdx_jsx_indentation(&collapsed);
+
+    // 4. Parse markdown to MDAST with enhanced options
     let parse_options = markdown::ParseOptions {
         constructs: markdown::Constructs {
             // MDX: JSX support for <Component>...</Component>
