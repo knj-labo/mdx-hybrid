@@ -21,6 +21,9 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
     let mut in_steps_directive = false;
     let mut in_filetree = false;
 
+    // Blank line tracking for component tag insertion
+    let mut last_line_was_blank = true; // Treat start of file as having a blank line
+
     for line in input.split_inclusive('\n') {
         let (line_body, line_ending) = if let Some(stripped) = line.strip_suffix('\n') {
             let stripped = stripped.strip_suffix('\r').unwrap_or(stripped);
@@ -46,12 +49,21 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
             }
             output.push_str(line_body);
             output.push_str(line_ending);
+            last_line_was_blank = trimmed.is_empty();
             continue;
         }
 
         if !in_fence {
             // Track JSX tags but preserve indentation when inside JSX blocks
             if let Some(tag) = jsx_open_tag(trimmed) {
+                // Insert blank line before top-level component tags if needed.
+                // Uppercase first letter = user-defined component (Box, Steps, Aside, etc.)
+                // Lowercase first letter = standard HTML tag (div, span, etc.) - no insertion
+                let is_component = tag.name.chars().next().is_some_and(|c| c.is_uppercase());
+                if jsx_stack.is_empty() && is_component && !last_line_was_blank {
+                    output.push('\n');
+                }
+
                 // Track entering <Steps>
                 if tag.name.eq_ignore_ascii_case("steps") {
                     in_steps = true;
@@ -72,6 +84,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
                     output.push_str(trimmed);
                 }
                 output.push_str(line_ending);
+                last_line_was_blank = false; // JSX tag line is not blank
                 continue;
             }
 
@@ -101,6 +114,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
                     output.push_str(trimmed);
                 }
                 output.push_str(line_ending);
+                last_line_was_blank = false; // JSX close tag line is not blank
                 continue;
             }
 
@@ -131,6 +145,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
                             output.push_str("   ");
                             output.push_str(trimmed);
                             output.push_str(line_ending);
+                            last_line_was_blank = false; // Directive opener is not blank
                             continue;
                         } else if is_directive_closer && in_steps_directive {
                             // End of directive - add indent and reset state
@@ -138,12 +153,14 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
                             output.push_str("   ");
                             output.push_str(trimmed);
                             output.push_str(line_ending);
+                            last_line_was_blank = false; // Directive closer is not blank
                             continue;
                         } else if in_steps_directive {
                             // Inside directive - add indent to all content
                             output.push_str("   ");
                             output.push_str(trimmed);
                             output.push_str(line_ending);
+                            last_line_was_blank = trimmed.is_empty();
                             continue;
                         } else if after_blank_in_list
                             && !trimmed.is_empty()
@@ -155,6 +172,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
                             output.push_str(trimmed);
                             output.push_str(line_ending);
                             after_blank_in_list = false;
+                            last_line_was_blank = false; // Content is not blank
                             continue;
                         }
                     }
@@ -163,12 +181,14 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
                 // Preserve original indentation for content inside JSX blocks
                 output.push_str(line_body);
                 output.push_str(line_ending);
+                last_line_was_blank = trimmed.is_empty();
                 continue;
             }
         }
 
         output.push_str(line_body);
         output.push_str(line_ending);
+        last_line_was_blank = trimmed.is_empty();
     }
 
     output
@@ -246,5 +266,45 @@ mod tests {
         let input = "<Steps>\n1. Step\n\n   <Tabs>\n   content\n   </Tabs>\n</Steps>\n";
         let output = normalize_mdx_jsx_indentation(input);
         assert!(output.contains("   <Tabs>"));
+    }
+
+    #[test]
+    fn test_inserts_blank_line_before_component() {
+        // Uppercase first letter = component → insert blank line
+        let input = "Some text\n<MyComponent>\ncontent\n</MyComponent>\n";
+        let result = normalize_mdx_jsx_indentation(input);
+        assert!(result.contains("Some text\n\n<MyComponent>"));
+    }
+
+    #[test]
+    fn test_no_blank_line_before_html_tag() {
+        // Lowercase first letter = HTML tag → no blank line insertion
+        let input = "Some text\n<div>\ncontent\n</div>\n";
+        let result = normalize_mdx_jsx_indentation(input);
+        assert!(result.contains("Some text\n<div>"));
+    }
+
+    #[test]
+    fn test_preserves_existing_blank_line() {
+        let input = "Some text\n\n<Box>\ncontent\n</Box>\n";
+        let result = normalize_mdx_jsx_indentation(input);
+        // Blank line should not be duplicated
+        assert!(!result.contains("\n\n\n"));
+    }
+
+    #[test]
+    fn test_no_blank_line_inside_fence() {
+        let input = "```\n<Box>\n```\n";
+        let result = normalize_mdx_jsx_indentation(input);
+        // Inside code fence, no changes should be made
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_no_blank_line_for_nested_component() {
+        // Nested components should not get blank line inserted
+        let input = "<Parent>\n<Child />\n</Parent>\n";
+        let result = normalize_mdx_jsx_indentation(input);
+        assert!(!result.contains("\n\n<Child"));
     }
 }
