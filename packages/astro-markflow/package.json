@@ -17,6 +17,14 @@
     "./vite-plugin": {
       "import": "./src/vite-plugin.js",
       "default": "./src/vite-plugin.js"
+    },
+    "./pipeline": {
+      "import": "./src/pipeline/index.js",
+      "default": "./src/pipeline/index.js"
+    },
+    "./transforms": {
+      "import": "./src/transforms/index.js",
+      "default": "./src/transforms/index.js"
     }
   },
   "files": [
