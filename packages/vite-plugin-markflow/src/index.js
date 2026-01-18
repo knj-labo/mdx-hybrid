@@ -375,9 +375,10 @@ export function markflowPlugin(userOptions = {}) {
 
         // Check cache first (populated in build mode by buildStart)
         const cached = compilationCache.get(filename);
-        // Skip cache for files with user imports, JSX components, or user default exports
+        // Skip cache for files with user imports or JSX components that need runtime rendering
         // The batch compiler outputs JSX components (like <Aside {...}>) that can't be used with set:html
-        // MDX files without these patterns are safe to use with set:html (same as .md)
+        // Also skip cache for all .mdx files since they typically have imports/components
+        const isMdx = filename.endsWith('.mdx');
         const hasUserImports = cached?.hoistedImports?.length > 0;
         const hasUserDefaultExport = cached?.hasUserDefaultExport === true;
         // Detect JSX patterns: spread syntax and uppercase components
