@@ -355,8 +355,14 @@ export function markflowPlugin(userOptions = {}) {
       try {
         const source = await readFile(filename, "utf8");
 
+        // Apply preprocess hooks
+        let processedSource = source;
+        for (const preprocessHook of hooks.preprocess) {
+          processedSource = preprocessHook(processedSource, filename);
+        }
+
         // Early detection of problematic patterns - skip to fallback
-        if (hasProblematicMdxPatterns(source)) {
+        if (hasProblematicMdxPatterns(processedSource)) {
           this.warn(`[markflow] Skipping ${filename}: contains patterns incompatible with markdown-rs`);
           fallbackFiles.add(filename);
           fallbackReasons.set(filename, 'Detected problematic MDX patterns');
@@ -402,11 +408,11 @@ export function markflowPlugin(userOptions = {}) {
         } else if (IS_MDAST) {
           // Use parseBlocks() for mdast pipeline
           const binding = await loadMarkflowBinding();
-          const parseResult = binding.parseBlocks(source, {
+          const parseResult = binding.parseBlocks(processedSource, {
             enable_directives: true,
           });
           headings = parseResult.headings;
-          const frontmatterResult = binding.parseFrontmatter(source);
+          const frontmatterResult = binding.parseFrontmatter(processedSource);
           frontmatter = frontmatterResult.frontmatter || {};
 
           result = {
@@ -419,7 +425,7 @@ export function markflowPlugin(userOptions = {}) {
         } else {
           // Use original compiler for multipass pipeline (dev mode or cache miss)
           const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
-          result = compiler.compile(source, filename, fileOptions);
+          result = compiler.compile(processedSource, filename, fileOptions);
           // Extract frontmatter and headings from compiler result
           if (result.frontmatter_json) {
             try {
