@@ -221,7 +221,8 @@ export function markflowPlugin(userOptions = {}) {
 
   // Resolve libraries and create registry
   const { registry } = resolveLibraries(userOptions);
-const unwrapVirtual = (value) =>
+
+  const unwrapVirtual = (value) =>
     value && value.startsWith(VIRTUAL_PREFIX)
       ? value.slice(VIRTUAL_PREFIX.length)
       : value;
@@ -620,25 +621,6 @@ export default function MarkflowContent() {
   );
 }
 `;
-}
-
-/**
- * Detect MDX patterns that markdown-rs cannot parse correctly.
- * These files should fall back to Astro MDX immediately.
- */
-function hasProblematicMdxPatterns(source) {
-  // Pattern 1: Code fences inside JSX blocks (TabItem, Fragment with slot)
-  // The ``` inside JSX confuses the parser
-  const hasCodeFenceInJsx = /<(TabItem|Fragment[^>]*slot=)[^>]*>[\s\S]*?```[\s\S]*?<\//.test(source);
-
-  // Pattern 2: Nested interactive components (MultipleChoice > Box)
-  // markdown-rs struggles with nested JSX containing markdown
-  const hasNestedInteractive = /<MultipleChoice[\s\S]*?<Box/.test(source);
-
-  // Pattern 3: Steps/FileTree with complex nesting
-  const hasComplexSteps = /<Steps[\s\S]*?<details[\s\S]*?<\/Steps>/.test(source);
-
-  return hasCodeFenceInJsx || hasNestedInteractive || hasComplexSteps;
 }
 
 /**
