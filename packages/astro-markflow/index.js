@@ -1,21 +1,8 @@
-import { markflowPlugin } from 'vite-plugin-markflow';
-
 /**
- * Astro integration for Markflow.
- * @param {import('./index').MarkflowOptions} [options]
- * @returns {import('astro').AstroIntegration}
+ * Astro integration for Markflow - high-performance MDX compiler.
+ * Main entry point - re-exports from src/index.js
+ * @module astro-markflow
  */
-export default function markflow(options = {}) {
-  return {
-    name: 'astro-markflow',
-    hooks: {
-      'astro:config:setup': ({ updateConfig }) => {
-        updateConfig({
-          vite: {
-            plugins: [markflowPlugin(options)],
-          },
-        });
-      },
-    },
-  };
-}
+
+export { default } from './src/index.js';
+export * from './src/index.js';

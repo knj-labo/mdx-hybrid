@@ -1,7 +1,7 @@
 {
   "name": "markflow",
   "version": "0.0.1",
-  "description": "High-performance streaming Markdown to HTML parser built with Rust for Astro",
+  "description": "High-performance streaming Markdown to HTML parser built with Rust",
   "type": "module",
   "exports": {
     ".": {
@@ -11,16 +11,27 @@
       "workerd": "./src/browser.js",
       "default": "./src/browser.js"
     },
+    "./browser": {
+      "types": "./src/index.d.ts",
+      "import": "./src/browser.js",
+      "default": "./src/browser.js"
+    },
     "./registry": {
       "types": "./src/registry/types.d.ts",
       "import": "./src/registry/index.js",
       "default": "./src/registry/index.js"
+    },
+    "./wasm": {
+      "types": "./wasm/markflow_wasm.d.ts",
+      "import": "./wasm/markflow_wasm.js",
+      "default": "./wasm/markflow_wasm.js"
     }
   },
   "main": "./src/node.js",
   "types": "./src/index.d.ts",
   "files": [
-    "src"
+    "src",
+    "wasm"
   ],
   "keywords": [
     "markdown",
@@ -29,7 +40,7 @@
     "streaming",
     "performance",
     "html",
-    "astro",
+    "wasm",
     "mdx"
   ],
   "author": "jp-knj",
@@ -40,8 +51,5 @@
   },
   "dependencies": {
     "markflow-napi": "workspace:*"
-  },
-  "optionalDependencies": {
-    "markflow-wasm": "workspace:*"
   }
 }

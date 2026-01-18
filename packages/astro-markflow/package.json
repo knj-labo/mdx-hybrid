@@ -9,18 +9,32 @@
     ".": {
       "import": "./index.js",
       "types": "./index.d.ts"
+    },
+    "./presets": {
+      "import": "./src/presets/index.js",
+      "default": "./src/presets/index.js"
+    },
+    "./vite-plugin": {
+      "import": "./src/vite-plugin.js",
+      "default": "./src/vite-plugin.js"
     }
   },
   "files": [
     "index.js",
-    "index.d.ts"
+    "index.d.ts",
+    "src"
   ],
+  "scripts": {
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
   "keywords": [
     "astro",
     "astro-integration",
     "mdx",
     "markdown",
-    "markflow"
+    "markflow",
+    "vite"
   ],
   "author": "jp-knj",
   "license": "MIT",
@@ -29,9 +43,14 @@
     "url": "https://github.com/knj-labo/markflow"
   },
   "peerDependencies": {
-    "astro": ">=4.0.0"
+    "astro": ">=4.0.0",
+    "vite": ">=5.0.0"
   },
   "dependencies": {
-    "vite-plugin-markflow": "workspace:*"
+    "glob": "^11.0.0",
+    "markflow": "workspace:*",
+    "markflow-napi": "file:../../crates/napi",
+    "parse5": "^7.1.2",
+    "shiki": "^3.20.0"
   }
 }
