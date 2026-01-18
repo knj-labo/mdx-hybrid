@@ -59,6 +59,56 @@ jobs:
         working-directory: crates/napi
         run: pnpm run smoke:napi -- fixtures/core/markdown/hello.md
 
+  packages:
+    name: Packages Quality Check
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+
+      - name: Install NAPI deps and build
+        working-directory: crates/napi
+        run: pnpm install --frozen-lockfile && pnpm run build:napi
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck markflow
+        working-directory: packages/markflow
+        run: pnpm run typecheck
+
+      - name: Typecheck astro-markflow
+        working-directory: packages/astro-markflow
+        run: pnpm run typecheck
+
+      - name: Lint astro-loader
+        working-directory: packages/astro-loader
+        run: pnpm run lint
+
+      - name: Build astro-loader
+        working-directory: packages/astro-loader
+        run: pnpm run build
+
   e2e-withastro-docs:
     name: E2E (withastro-docs 6000 pages)
     runs-on: ubuntu-latest
