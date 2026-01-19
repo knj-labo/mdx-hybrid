@@ -12,9 +12,7 @@ const DOCS_DIR = resolve(
 const require = createRequire(import.meta.url)
 
 export default function markflowContentPlugin() {
-  const useBaseline =
-    process.env.MARKFLOW_HARNESS_BASELINE === '1' ||
-    process.env.MARKFLOW_DISABLE === '1'
+  const useBaseline = process.env.MARKFLOW_HARNESS_BASELINE === '1'
   const skipFrontmatter = process.env.MARKFLOW_HARNESS_SKIP_FRONTMATTER === '1'
   const disableSmartypants =
     process.env.MARKFLOW_HARNESS_DISABLE_SMARTYPANTS === '1'

@@ -142,7 +142,6 @@ const VIRTUAL_PREFIX = '\0markflow:';
 const DEBUG_BINDING = process.env.MARKFLOW_DEBUG_BINDING === '1';
 const ENABLE_SHIKI = process.env.MARKFLOW_SHIKI === '1';
 const IS_MDAST = process.env.MARKFLOW_PIPELINE === 'mdast';
-const DISABLE_MARKFLOW = process.env.MARKFLOW_DISABLE === '1';
 const require = createRequire(import.meta.url);
 
 const logBindingSource = (source: string): void => {
@@ -357,9 +356,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
     enforce: 'pre',
 
     configResolved(config) {
-      if (DISABLE_MARKFLOW) {
-        return;
-      }
       resolvedConfig = config;
       if (config.esbuild == null) {
         (config as { esbuild: object }).esbuild = {
@@ -396,7 +392,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
     },
 
     async buildStart() {
-      if (DISABLE_MARKFLOW) return;
       // Only batch compile in build mode (not dev/serve)
       if (resolvedConfig?.command !== 'build') return;
 
@@ -450,7 +445,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
     },
 
     async resolveId(sourceId, importer) {
-      if (DISABLE_MARKFLOW) return null;
       if (sourceId.startsWith(VIRTUAL_PREFIX)) {
         return sourceId;
       }
@@ -496,7 +490,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
     },
 
     async load(id) {
-      if (DISABLE_MARKFLOW) return null;
       if (!id.startsWith(VIRTUAL_PREFIX)) {
         return null;
       }
