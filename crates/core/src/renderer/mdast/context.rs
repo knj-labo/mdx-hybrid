@@ -76,6 +76,8 @@ impl<'a> Context<'a> {
     ///
     /// Escapes `<`, `>`, `&`, and `` ` `` characters for safe text node rendering.
     /// Backticks are escaped to prevent template literal injection in JSX contexts.
+    /// Curly braces are also escaped so JSX text nodes cannot be interpreted as
+    /// embedded expressions (e.g. `{ foo }` inside component slots).
     fn push_escaped(&mut self, s: &str) {
         for c in s.chars() {
             match c {
@@ -83,6 +85,8 @@ impl<'a> Context<'a> {
                 '>' => self.current_html.push_str("&gt;"),
                 '&' => self.current_html.push_str("&amp;"),
                 '`' => self.current_html.push_str("&#96;"),
+                '{' => self.current_html.push_str("&#123;"),
+                '}' => self.current_html.push_str("&#125;"),
                 _ => self.current_html.push(c),
             }
         }
@@ -176,6 +180,13 @@ impl<'a> Context<'a> {
         props: &HashMap<String, PropValue>,
         slot_html: &str,
     ) {
+        // Escape braces for Fragment slots so JSX text does not become expressions.
+        let slot_html = if name == "Fragment" {
+            slot_html.replace('{', "&#123;").replace('}', "&#125;")
+        } else {
+            slot_html.to_string()
+        };
+
         self.current_html.push('<');
         self.current_html.push_str(name);
 
@@ -198,7 +209,7 @@ impl<'a> Context<'a> {
         }
 
         self.current_html.push('>');
-        self.current_html.push_str(slot_html);
+        self.current_html.push_str(&slot_html);
         self.current_html.push_str("</");
         self.current_html.push_str(name);
         self.current_html.push('>');
@@ -229,12 +240,23 @@ impl<'a> Context<'a> {
         let mut result = String::new();
         for block in child_ctx.blocks {
             match block {
-                RenderBlock::Html { content } => result.push_str(&content),
+                RenderBlock::Html { content } => {
+                    // Ensure literal braces don't create JSX expressions when this HTML
+                    // is injected into component slots.
+                    let escaped = content.replace('{', "&#123;").replace('}', "&#125;");
+                    result.push_str(&escaped);
+                }
                 RenderBlock::Component {
                     name,
                     props,
                     slot_html,
                 } => {
+                    let slot_html = if name == "Fragment" {
+                        slot_html.replace('{', "&#123;").replace('}', "&#125;")
+                    } else {
+                        slot_html
+                    };
+
                     // Render nested components as JSX with props preserved
                     result.push('<');
                     result.push_str(&name);

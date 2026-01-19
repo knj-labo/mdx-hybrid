@@ -231,7 +231,9 @@ fn render_jsx(
 
     // 6. Special handling for Fragment with slot attribute
     if tag_name == "Fragment" && props.contains_key("slot") {
-        ctx.push_component_inline(tag_name, &props, &slot_html);
+        // Keep slot fragments as standalone component blocks so downstream
+        // codegen can safely escape braces inside the slot HTML.
+        ctx.push_component(tag_name, props, slot_html);
         return;
     }
 

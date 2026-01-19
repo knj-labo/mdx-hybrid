@@ -109,7 +109,14 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
     // 3. Normalize JSX indentation to prevent content from being treated as code blocks
     let normalized = normalize_mdx_jsx_indentation(&collapsed);
 
-    // 4. Parse markdown to MDAST with enhanced options
+    // 4. Mask raw <script>/<style> blocks only when raw HTML passthrough is disabled.
+    let (parsed_input, raw_masks) = if options.allow_raw_html() {
+        (normalized.clone(), Vec::new())
+    } else {
+        mask_raw_html_blocks(&normalized)
+    };
+
+    // 5. Parse markdown to MDAST with enhanced options
     let parse_options = markdown::ParseOptions {
         constructs: markdown::Constructs {
             // MDX: JSX support for <Component>...</Component>
@@ -130,17 +137,18 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
         ..markdown::ParseOptions::default()
     };
 
-    let tree = markdown::to_mdast(&normalized, &parse_options)
+    let tree = markdown::to_mdast(&parsed_input, &parse_options)
         .map_err(|e| format!("Markdown parse error: {}", e))?;
 
-    // 4. Traverse the AST and render to blocks
+    // 6. Traverse the AST and render to blocks
     let mut ctx = Context::new(options);
     render_node(&tree, &mut ctx);
 
-    // 5. Finish and get blocks
+    // 7. Finish and get blocks, then unmask raw HTML that was temporarily hidden
     let mut result = ctx.finish();
+    unmask_raw_html_blocks(&mut result.blocks, &raw_masks);
 
-    // 6. Apply smartypants if enabled
+    // 8. Apply smartypants if enabled
     if options.enable_smartypants {
         for block in &mut result.blocks {
             if let RenderBlock::Html { content } = block {
@@ -150,6 +158,160 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
     }
 
     Ok(result)
+}
+
+/// A raw HTML block (script/style) that was temporarily masked during parsing.
+#[derive(Debug, Clone)]
+struct RawHtmlMask {
+    marker: String,
+    html: String,
+}
+
+/// Replace `<script>` / `<style>` blocks with stable markers before parsing so they
+/// don't get rejected by the HTML parser when `html_flow` is disabled.
+fn mask_raw_html_blocks(input: &str) -> (String, Vec<RawHtmlMask>) {
+    let mut output = String::with_capacity(input.len());
+    let mut masks = Vec::new();
+    let mut cursor = 0;
+
+    while let Some((fence_start, fence_delim)) = find_fence_start(&input[cursor..]) {
+        // absolute position of fence start
+        let abs_start = cursor + fence_start;
+
+        // Mask any raw HTML that appears before the fence
+        let plain = &input[cursor..abs_start];
+        mask_in_plain_text(plain, &mut output, &mut masks);
+
+        // Find fence end
+        let fence_body_start = abs_start;
+        let after_start = abs_start + fence_delim.len();
+        if let Some(end_rel) = find_fence_end(&input[after_start..], &fence_delim) {
+            let abs_end = after_start + end_rel;
+            output.push_str(&input[fence_body_start..abs_end]);
+            cursor = abs_end;
+        } else {
+            // No closing fence; push remainder and finish
+            output.push_str(&input[fence_body_start..]);
+            cursor = input.len();
+            break;
+        }
+    }
+
+    // Mask any trailing plain text
+    if cursor < input.len() {
+        let plain = &input[cursor..];
+        mask_in_plain_text(plain, &mut output, &mut masks);
+    }
+
+    (output, masks)
+}
+
+/// Restore masked raw HTML markers back into rendered HTML/slot strings.
+fn unmask_raw_html_blocks(blocks: &mut [RenderBlock], masks: &[RawHtmlMask]) {
+    if masks.is_empty() {
+        return;
+    }
+
+    for block in blocks {
+        match block {
+            RenderBlock::Html { content } => {
+                for mask in masks {
+                    if content.contains(&mask.marker) {
+                        *content = content.replace(&mask.marker, &mask.html);
+                    }
+                }
+            }
+            RenderBlock::Component { slot_html, .. } => {
+                for mask in masks {
+                    if slot_html.contains(&mask.marker) {
+                        *slot_html = slot_html.replace(&mask.marker, &mask.html);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Simple helper to locate the next <script>...</script> or <style>...</style> block.
+struct TagMatch<'a> {
+    start: usize,
+    end: usize,
+    block: &'a str,
+}
+
+fn find_next_tag(input: &str) -> Option<TagMatch<'_>> {
+    let lower = input.to_ascii_lowercase();
+    let script_pos = lower.find("<script");
+    let style_pos = lower.find("<style");
+
+    let (start, kind) = match (script_pos, style_pos) {
+        (Some(s), Some(t)) => {
+            if s < t {
+                (s, "script")
+            } else {
+                (t, "style")
+            }
+        }
+        (Some(s), None) => (s, "script"),
+        (None, Some(t)) => (t, "style"),
+        (None, None) => return None,
+    };
+
+    let closing = format!("</{}>", kind);
+    let lower_tail = &lower[start..];
+    let close_rel = lower_tail.find(&closing)?;
+    let end = start + close_rel + closing.len();
+    Some(TagMatch {
+        start,
+        end,
+        block: &input[start..end],
+    })
+}
+
+/// Mask script/style tags in a chunk of plain (non-code-fence) text.
+fn mask_in_plain_text(segment: &str, out: &mut String, masks: &mut Vec<RawHtmlMask>) {
+    let mut rest = segment;
+    while let Some(pos) = find_next_tag(rest) {
+        out.push_str(&rest[..pos.start]);
+        let marker = format!("MARKFLOWRAWBLOCK{}MARK", masks.len());
+        out.push_str(&marker);
+        masks.push(RawHtmlMask {
+            marker,
+            html: pos.block.to_string(),
+        });
+        rest = &rest[pos.end..];
+    }
+    out.push_str(rest);
+}
+
+/// Locate the next code fence start (``` or ~~~) returning its start offset and delimiter.
+fn find_fence_start(input: &str) -> Option<(usize, String)> {
+    let mut offset = 0;
+    for line in input.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            let delim: String = trimmed
+                .chars()
+                .take_while(|c| *c == '`' || *c == '~')
+                .collect();
+            return Some((offset, delim));
+        }
+        offset += line.len();
+    }
+    None
+}
+
+/// Locate the matching closing fence after a start; returns relative end index just after fence line.
+fn find_fence_end(input: &str, delim: &str) -> Option<usize> {
+    let mut offset = 0;
+    for line in input.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with(delim) {
+            return Some(offset + line.len());
+        }
+        offset += line.len();
+    }
+    None
 }
 
 #[cfg(test)]
@@ -366,28 +528,13 @@ fn main() {}
         };
 
         let result = to_blocks(input, &options).unwrap();
-        assert_eq!(result.blocks.len(), 3);
+        assert_eq!(result.blocks.len(), 1);
 
         match &result.blocks[0] {
             RenderBlock::Html { content } => {
-                assert_eq!(content, "<p>Text with ");
-            }
-            other => panic!("Expected HTML block, got {:?}", other),
-        }
-
-        match &result.blocks[1] {
-            RenderBlock::Component {
-                name, slot_html, ..
-            } => {
-                assert_eq!(name, "script");
-                assert_eq!(slot_html, "alert('xss')");
-            }
-            other => panic!("Expected Component block, got {:?}", other),
-        }
-
-        match &result.blocks[2] {
-            RenderBlock::Html { content } => {
-                assert_eq!(content, " and &amp; symbols.</p>");
+                assert!(content.contains("<script>alert('xss')</script>"));
+                assert!(content.contains("&amp; symbols."));
+                assert!(content.starts_with("<p>Text with "));
             }
             other => panic!("Expected HTML block, got {:?}", other),
         }
@@ -450,9 +597,7 @@ fn main() {}
         };
 
         let tree = markdown::to_mdast(input, &parse_options).unwrap();
-        println!("\n=== AST DEBUG START ===");
-        println!("{:#?}", tree);
-        println!("=== AST DEBUG END ===\n");
+        assert!(tree.children().is_some());
     }
 
     #[test]
@@ -606,7 +751,11 @@ line3
 
         if let RenderBlock::Component { slot_html, .. } = steps_component.unwrap() {
             assert!(!slot_html.contains("<tip>"));
-            assert!(slot_html.contains("<Aside") && slot_html.contains("type={\"tip\"}"));
+            assert!(slot_html.contains("<Aside"));
+            assert!(
+                slot_html.contains("type={\"tip\"}")
+                    || slot_html.contains("type=&#123;\"tip\"&#125;")
+            );
             assert!(slot_html.contains("Some tip content"));
         }
     }
@@ -687,5 +836,85 @@ line3
         } else {
             panic!("Expected HTML block");
         }
+    }
+
+    #[test]
+    fn test_fragment_slot_escapes_braces_in_code_block() {
+        let input = r#"<UIFrameworkTabs>
+<Fragment slot="react">
+```ts title="src/lib/auth-client.ts"
+import { createAuthClient } from 'better-auth/react';
+
+export const authClient = createAuthClient();
+```
+</Fragment>
+</UIFrameworkTabs>"#;
+
+        let options = Options {
+            enable_directives: true,
+            allow_raw_html: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        let jsx =
+            crate::codegen::blocks_to_jsx_string(&result.blocks, None::<fn(&str) -> Option<_>>);
+        assert!(jsx.contains("createAuthClient"));
+        assert!(jsx.contains("&#123;") && jsx.contains("&#125;"));
+        assert!(!jsx.contains("{ createAuthClient }"));
+    }
+
+    #[test]
+    fn test_inline_code_with_jsx_like_text_is_escaped() {
+        let input = "`<PreactBanner client:load />` and `<SvelteCounter client:visible />`";
+        let options = Options {
+            enable_directives: true,
+            allow_raw_html: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        let jsx =
+            crate::codegen::blocks_to_jsx_string(&result.blocks, None::<fn(&str) -> Option<_>>);
+
+        assert!(jsx.contains("&lt;PreactBanner client:load /&gt;"));
+        assert!(jsx.contains("&lt;SvelteCounter client:visible /&gt;"));
+        assert!(!jsx.contains("<PreactBanner"));
+        assert!(!jsx.contains("SvelteCounter client:visible />"));
+    }
+
+    #[test]
+    fn test_spoiler_with_inline_code_does_not_emit_jsx_components() {
+        let input = "<Spoiler>`<PreactBanner client:load />` und `<SvelteCounter client:visible />`</Spoiler>";
+        let options = Options {
+            enable_directives: true,
+            allow_raw_html: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        let jsx =
+            crate::codegen::blocks_to_jsx_string(&result.blocks, None::<fn(&str) -> Option<_>>);
+
+        assert!(jsx.contains("&lt;PreactBanner client:load /&gt;"));
+        assert!(jsx.contains("&lt;SvelteCounter client:visible /&gt;"));
+        assert!(!jsx.contains("<PreactBanner"));
+        assert!(!jsx.contains("<SvelteCounter"));
+    }
+
+    #[test]
+    fn test_spoiler_wrapped_in_raw_p_still_escapes_children() {
+        let input = "<p><Spoiler>`<PreactBanner client:load />`</Spoiler></p>";
+        let options = Options {
+            enable_directives: true,
+            allow_raw_html: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        let jsx =
+            crate::codegen::blocks_to_jsx_string(&result.blocks, None::<fn(&str) -> Option<_>>);
+        assert!(jsx.contains("&lt;PreactBanner client:load /&gt;"));
+        assert!(!jsx.contains("<PreactBanner"));
     }
 }

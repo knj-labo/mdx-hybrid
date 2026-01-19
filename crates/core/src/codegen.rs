@@ -82,7 +82,8 @@ where
     for block in blocks {
         match block {
             RenderBlock::Html { content } => {
-                result.push_str(content);
+                let escaped = sanitize_html_block_for_jsx(content);
+                result.push_str(&escaped);
             }
             RenderBlock::Component {
                 name,
@@ -161,6 +162,79 @@ where
         }
     }
     result
+}
+
+/// Escapes JSX-sensitive characters inside raw HTML blocks.
+///
+/// - Escapes `{` and `}` globally so they are not parsed as JSX expressions.
+/// - For backtick-delimited code spans (`, ```, etc.), wraps the contents in `<code>`
+///   and escapes `<`, `>`, `&`, and braces so code examples remain literal.
+/// - For `<script>` / `<style>` blocks we only escape braces to avoid breaking
+///   the embedded code while still keeping JSX safe.
+fn sanitize_html_block_for_jsx(content: &str) -> String {
+    let lower = content.to_ascii_lowercase();
+    let is_script_or_style =
+        lower.contains("<script") || lower.contains("<style") || lower.contains("</script>");
+
+    // Fast path: only escape braces for script/style to preserve contents.
+    if is_script_or_style {
+        return content.replace('{', "&#123;").replace('}', "&#125;");
+    }
+
+    let mut out = String::with_capacity(content.len());
+    let mut chars = content.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '`' {
+            // Count how many backticks start the span (supports ``` as well).
+            let mut tick_count = 1;
+            while let Some('`') = chars.peek() {
+                tick_count += 1;
+                chars.next();
+            }
+
+            let mut code = String::new();
+            while let Some(next) = chars.next() {
+                if next == '`' {
+                    let mut end_ticks = 1;
+                    while let Some('`') = chars.peek() {
+                        end_ticks += 1;
+                        chars.next();
+                    }
+                    if end_ticks == tick_count {
+                        break;
+                    } else {
+                        code.push_str(&"`".repeat(end_ticks));
+                        continue;
+                    }
+                } else {
+                    code.push(next);
+                }
+            }
+
+            // Escape code span contents
+            out.push_str("<code>");
+            for c in code.chars() {
+                match c {
+                    '<' => out.push_str("&lt;"),
+                    '>' => out.push_str("&gt;"),
+                    '&' => out.push_str("&amp;"),
+                    '{' => out.push_str("&#123;"),
+                    '}' => out.push_str("&#125;"),
+                    _ => out.push(c),
+                }
+            }
+            out.push_str("</code>");
+        } else {
+            match ch {
+                '{' => out.push_str("&#123;"),
+                '}' => out.push_str("&#125;"),
+                _ => out.push(ch),
+            }
+        }
+    }
+
+    out
 }
 
 fn normalize_steps_slot(slot_html: &str) -> String {

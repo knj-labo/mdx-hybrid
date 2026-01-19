@@ -84,12 +84,12 @@ pub fn parse_blocks(input: String, opts: Option<BlockOptions>) -> napi::Result<P
             enable_directives: o.enable_directives.unwrap_or(true),
             enable_smartypants: o.enable_smartypants.unwrap_or(false),
             enable_lazy_images: o.enable_lazy_images.unwrap_or(false),
-            allow_raw_html: o.allow_raw_html.unwrap_or(true),
+            allow_raw_html: o.allow_raw_html.unwrap_or(false),
         }
     } else {
         mdast::Options {
             enable_directives: true,
-            allow_raw_html: true,
+            allow_raw_html: false,
             ..Default::default()
         }
     };
