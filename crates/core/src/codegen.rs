@@ -176,9 +176,11 @@ fn sanitize_html_block_for_jsx(content: &str) -> String {
     let is_script_or_style =
         lower.contains("<script") || lower.contains("<style") || lower.contains("</script>");
 
-    // Fast path: only escape braces for script/style to preserve contents.
+    // For script/style we must keep the exact JS/CSS text (including braces) because
+    // escaping them to entities breaks the embedded code. These tags are wrapped in JSX
+    // as children text, which is allowed even when containing braces.
     if is_script_or_style {
-        return content.replace('{', "&#123;").replace('}', "&#125;");
+        return content.to_string();
     }
 
     let mut out = String::with_capacity(content.len());
@@ -239,11 +241,57 @@ fn sanitize_html_block_for_jsx(content: &str) -> String {
 
 fn normalize_steps_slot(slot_html: &str) -> String {
     let trimmed = slot_html.trim();
+
+    // If it is already a single <ol> ... </ol> with no siblings, keep it.
     if trimmed.starts_with("<ol") && trimmed.ends_with("</ol>") {
-        slot_html.to_string()
-    } else {
-        format!("<ol><li>{}</li></ol>", slot_html)
+        let first_ol = trimmed.find("<ol").unwrap_or(0);
+        let last_close = trimmed.rfind("</ol>").unwrap_or(trimmed.len());
+        let has_extra_ol = trimmed[first_ol + 3..last_close].contains("<ol");
+        let trailing = trimmed[last_close + 5..].trim(); // 5 = len("</ol>")
+        let leading = trimmed[..first_ol].trim();
+        if !has_extra_ol && leading.is_empty() && trailing.is_empty() {
+            return slot_html.to_string();
+        }
     }
+
+    // Otherwise, merge everything into a single ordered list.
+    fn push_other_as_li(buf: &mut String, fragment: &str) {
+        let frag = fragment.trim();
+        if frag.is_empty() {
+            return;
+        }
+        buf.push_str("<li>");
+        buf.push_str(frag);
+        buf.push_str("</li>");
+    }
+
+    let mut items = String::new();
+    let mut rest = trimmed;
+
+    while let Some(start) = rest.find("<ol") {
+        let before = &rest[..start];
+        push_other_as_li(&mut items, before);
+
+        let after_ol = &rest[start..];
+        if let Some(end_idx) = after_ol.find("</ol>") {
+            let body_start = after_ol
+                .find('>')
+                .map(|i| i + 1)
+                .unwrap_or_else(|| "<ol".len());
+            let body = &after_ol[body_start..end_idx];
+            items.push_str(body); // keep inner <li> list items as-is
+            rest = &after_ol[end_idx + "</ol>".len()..];
+        } else {
+            // Malformed; wrap remainder
+            push_other_as_li(&mut items, after_ol);
+            rest = "";
+            break;
+        }
+    }
+
+    push_other_as_li(&mut items, rest);
+
+    format!("<ol>{}</ol>", items)
 }
 
 fn normalize_filetree_slot(slot_html: &str) -> String {
