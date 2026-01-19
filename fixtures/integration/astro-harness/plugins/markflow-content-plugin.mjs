@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve, relative } from 'node:path'
+import { createRequire } from 'node:module'
 import matter from 'gray-matter'
 import { parse as markflowParse, parseWithOptions } from '../../../../crates/napi/index.js'
 
@@ -7,8 +8,13 @@ const DOCS_DIR = resolve(
   new URL('../content/docs/', import.meta.url).pathname,
 )
 
+// ESM-compatible require helper for baseline compiler deps
+const require = createRequire(import.meta.url)
+
 export default function markflowContentPlugin() {
-  const useBaseline = process.env.MARKFLOW_HARNESS_BASELINE === '1'
+  const useBaseline =
+    process.env.MARKFLOW_HARNESS_BASELINE === '1' ||
+    process.env.MARKFLOW_DISABLE === '1'
   const skipFrontmatter = process.env.MARKFLOW_HARNESS_SKIP_FRONTMATTER === '1'
   const disableSmartypants =
     process.env.MARKFLOW_HARNESS_DISABLE_SMARTYPANTS === '1'
@@ -23,6 +29,15 @@ export default function markflowContentPlugin() {
     },
     async load(id) {
       if (id !== '\0markflow-docs') return null
+
+      const usingBaseline =
+        useBaseline ||
+        typeof markflowParse !== 'function' ||
+        typeof parseWithOptions !== 'function';
+
+      if (usingBaseline) {
+        return 'export const docs = [];'
+      }
 
       const files = collectMdxFiles(DOCS_DIR)
       const docs = []
@@ -81,13 +96,14 @@ function collectMdxFiles(dir, base = dir) {
 }
 
 async function createBaselineCompiler() {
-  const { unified } = await import('unified')
-  const { default: remarkParse } = await import('remark-parse')
-  const { default: remarkGfm } = await import('remark-gfm')
-  const { default: remarkSmartypants } = await import('remark-smartypants')
-  const { default: remarkRehype } = await import('remark-rehype')
-  const { default: rehypeSlug } = await import('rehype-slug')
-  const { default: rehypeStringify } = await import('rehype-stringify')
+  // Use CJS require to avoid Vite SSR module runner issues in harness baseline mode
+  const { unified } = require('unified')
+  const remarkParse = require('remark-parse')
+  const remarkGfm = require('remark-gfm')
+  const remarkSmartypants = require('remark-smartypants')
+  const remarkRehype = require('remark-rehype')
+  const rehypeSlug = require('rehype-slug')
+  const rehypeStringify = require('rehype-stringify')
 
   return unified()
     .use(remarkParse)

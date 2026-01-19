@@ -375,11 +375,15 @@ pub fn render_node(node: &Node, ctx: &mut Context) {
         }
 
         Node::Html(html) => {
-            log::warn!(
-                "Raw HTML in markdown will be escaped for security: {}",
-                html.value
-            );
-            ctx.push_text(&html.value);
+            if ctx.raw_html_allowed() {
+                ctx.push_raw(&html.value);
+            } else {
+                log::warn!(
+                    "Raw HTML in markdown will be escaped for security: {}",
+                    html.value
+                );
+                ctx.push_text(&html.value);
+            }
         }
 
         Node::Delete(delete) => {

@@ -26,7 +26,7 @@ use crate::transform::smartypants::apply_smartypants;
 use render::render_node;
 
 /// Rendering options for the mdast renderer.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Options {
     /// Whether directive processing is enabled.
     #[serde(default)]
@@ -37,12 +37,37 @@ pub struct Options {
     /// Whether to add loading="lazy" to images.
     #[serde(default)]
     pub enable_lazy_images: bool,
+    /// Whether to allow raw HTML (<script>, <style>, etc.) to pass through.
+    /// When enabled, markdown-rs parses these as HTML nodes instead of MDX JSX,
+    /// avoiding parse errors on trusted docs content that mixes raw tags.
+    #[serde(default = "default_allow_raw_html")]
+    pub allow_raw_html: bool,
 }
 
 impl Options {
     /// Returns whether lazy image loading is enabled.
     pub fn lazy_images(&self) -> bool {
         self.enable_lazy_images
+    }
+
+    /// Returns whether raw HTML passthrough is enabled.
+    pub fn allow_raw_html(&self) -> bool {
+        self.allow_raw_html
+    }
+}
+
+fn default_allow_raw_html() -> bool {
+    true
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            enable_directives: false,
+            enable_smartypants: false,
+            enable_lazy_images: false,
+            allow_raw_html: default_allow_raw_html(),
+        }
     }
 }
 
@@ -90,9 +115,9 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
             // MDX: JSX support for <Component>...</Component>
             mdx_jsx_flow: true,
             mdx_jsx_text: true,
-            // HTML: DISABLED - directives are now rendered as internal JSX tags
-            html_flow: false,
-            html_text: false,
+            // HTML: allow raw tags when configured (trusted docs content)
+            html_flow: options.allow_raw_html(),
+            html_text: options.allow_raw_html(),
             // Enable frontmatter (--- ... ---)
             frontmatter: true,
             // GitHub Flavored Markdown features
@@ -623,6 +648,42 @@ line3
 
         if let RenderBlock::Html { content } = &result.blocks[0] {
             assert!(content.contains("<td>before <Aside type={\"note\"}>tip</Aside> after</td>"));
+        } else {
+            panic!("Expected HTML block");
+        }
+    }
+
+    #[test]
+    fn test_raw_html_passthrough() {
+        let input = r#"
+# Title
+
+<script is:inline>
+  const value = "hello {world}";
+  console.log(value);
+</script>
+
+<style>
+  body { color: red; }
+</style>
+"#;
+
+        let options = Options {
+            allow_raw_html: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        assert_eq!(result.blocks.len(), 1);
+
+        if let RenderBlock::Html { content } = &result.blocks[0] {
+            assert!(content.contains("<script is:inline>"));
+            assert!(content.contains("console.log(value);"));
+            assert!(content.contains("</script>"));
+            assert!(content.contains("<style>"));
+            assert!(content.contains("body { color: red; }"));
+            assert!(content.contains("</style>"));
+            assert!(!content.contains("&lt;script")); // ensure not escaped
         } else {
             panic!("Expected HTML block");
         }

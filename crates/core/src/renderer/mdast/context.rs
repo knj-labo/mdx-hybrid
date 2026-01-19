@@ -283,6 +283,11 @@ impl<'a> Context<'a> {
         self.options.lazy_images()
     }
 
+    /// Returns whether raw HTML passthrough is enabled.
+    pub fn raw_html_allowed(&self) -> bool {
+        self.options.allow_raw_html()
+    }
+
     /// Consumes the context and returns the list of rendering blocks.
     pub fn finish(mut self) -> BlocksResult {
         self.flush_html();
