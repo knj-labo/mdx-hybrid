@@ -97,6 +97,12 @@ pub enum Scope {
     Paragraph,
     /// Inside a list element (`<ul>` or `<ol>`).
     List,
+    /// Inside a table element (`<table>`).
+    Table,
+    /// Inside a table row element (`<tr>`).
+    TableRow,
+    /// Inside a table cell element (`<td>` or `<th>`).
+    TableCell,
     /// Inside an Aside component with associated metadata.
     Aside(AsideMeta),
     /// Inside a Card component with associated metadata.
