@@ -91,6 +91,15 @@ export function blocksToJsx(
           effectiveSlot = `<ol><li>${effectiveSlot}</li></ol>`;
         }
       }
+      // Normalize FileTree slot to a single <ul> child (Starlight requirement)
+      if (componentName === 'FileTree') {
+        const trimmed = effectiveSlot.trim();
+        if (!trimmed) {
+          effectiveSlot = '<ul></ul>';
+        } else if (!(trimmed.startsWith('<ul') && trimmed.endsWith('</ul>'))) {
+          effectiveSlot = `<ul>${effectiveSlot}</ul>`;
+        }
+      }
 
       // Skip Fragment - it's a built-in Astro component
       if (componentName !== 'Fragment') {
