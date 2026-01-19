@@ -92,6 +92,8 @@ where
                 // Normalize Steps slot to single <ol> child (Starlight requirement)
                 let slot_html = if name == "Steps" {
                     normalize_steps_slot(slot_html)
+                } else if name == "FileTree" {
+                    normalize_filetree_slot(slot_html)
                 } else {
                     slot_html.clone()
                 };
@@ -165,6 +167,28 @@ fn normalize_steps_slot(slot_html: &str) -> String {
         slot_html.to_string()
     } else {
         format!("<ol><li>{}</li></ol>", slot_html)
+    }
+}
+
+fn normalize_filetree_slot(slot_html: &str) -> String {
+    let trimmed = slot_html.trim();
+    let has_li = trimmed.contains("<li");
+
+    if trimmed.is_empty() {
+        return "<ul><li></li></ul>".to_string();
+    }
+
+    if trimmed.starts_with("<ul") && trimmed.ends_with("</ul>") {
+        if has_li {
+            return slot_html.to_string();
+        }
+        return trimmed.replace("</ul>", "<li></li></ul>");
+    }
+
+    if has_li {
+        format!("<ul>{}</ul>", slot_html)
+    } else {
+        format!("<ul><li>{}</li></ul>", slot_html)
     }
 }
 

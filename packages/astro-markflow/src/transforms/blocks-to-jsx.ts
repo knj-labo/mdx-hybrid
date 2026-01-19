@@ -94,10 +94,15 @@ export function blocksToJsx(
       // Normalize FileTree slot to a single <ul> child (Starlight requirement)
       if (componentName === 'FileTree') {
         const trimmed = effectiveSlot.trim();
+        const hasLi = /<li[\s>]/i.test(trimmed);
         if (!trimmed) {
-          effectiveSlot = '<ul></ul>';
-        } else if (!(trimmed.startsWith('<ul') && trimmed.endsWith('</ul>'))) {
-          effectiveSlot = `<ul>${effectiveSlot}</ul>`;
+          effectiveSlot = '<ul><li></li></ul>';
+        } else if (trimmed.startsWith('<ul') && trimmed.endsWith('</ul>')) {
+          effectiveSlot = hasLi ? effectiveSlot : trimmed.replace('</ul>', '<li></li></ul>');
+        } else {
+          effectiveSlot = hasLi
+            ? `<ul>${effectiveSlot}</ul>`
+            : `<ul><li>${effectiveSlot}</li></ul>`;
         }
       }
 

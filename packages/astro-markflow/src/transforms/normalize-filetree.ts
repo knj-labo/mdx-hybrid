@@ -14,15 +14,28 @@ export function normalizeFileTree(code: string): { code: string; changed: boolea
 
   const next = code.replace(pattern, (match, attrs = '', inner = '') => {
     const trimmed = inner.trim();
+    const containsLi = /<li[\s>]/i.test(trimmed);
+
+    // Empty slot: inject ul with an empty li
     if (!trimmed) {
       changed = true;
-      return `<FileTree${attrs}><ul></ul></FileTree>`;
+      return `<FileTree${attrs}><ul><li></li></ul></FileTree>`;
     }
+
+    // Already a ul wrapper
     if (trimmed.startsWith('<ul') && trimmed.endsWith('</ul>')) {
-      return match; // already compliant
+      if (containsLi) return match; // compliant
+      // add a placeholder li
+      changed = true;
+      return `<FileTree${attrs}>${trimmed.replace('</ul>', '<li></li></ul>')}</FileTree>`;
     }
+
+    // Wrap and ensure at least one li
     changed = true;
-    return `<FileTree${attrs}><ul>${inner}</ul></FileTree>`;
+    if (containsLi) {
+      return `<FileTree${attrs}><ul>${inner}</ul></FileTree>`;
+    }
+    return `<FileTree${attrs}><ul><li>${inner}</li></ul></FileTree>`;
   });
 
   return { code: next, changed };
