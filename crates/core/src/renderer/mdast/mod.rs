@@ -585,4 +585,46 @@ line3
             assert!(slot_html.contains("Some tip content"));
         }
     }
+
+    #[test]
+    fn test_jsx_component_inside_table_cell() {
+        let input = r#"| Header |
+| --- |
+| <Box>content</Box> |"#;
+
+        let options = Options {
+            enable_directives: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        assert_eq!(result.blocks.len(), 1);
+
+        if let RenderBlock::Html { content } = &result.blocks[0] {
+            assert!(content.contains("<td><Box>content</Box></td>"));
+        } else {
+            panic!("Expected HTML block");
+        }
+    }
+
+    #[test]
+    fn test_mixed_text_and_component_inside_table_cell() {
+        let input = r#"| Col |
+| --- |
+| before <Aside type="note">tip</Aside> after |"#;
+
+        let options = Options {
+            enable_directives: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        assert_eq!(result.blocks.len(), 1);
+
+        if let RenderBlock::Html { content } = &result.blocks[0] {
+            assert!(content.contains("<td>before <Aside type={\"note\"}>tip</Aside> after</td>"));
+        } else {
+            panic!("Expected HTML block");
+        }
+    }
 }

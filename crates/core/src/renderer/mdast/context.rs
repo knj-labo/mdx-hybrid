@@ -117,6 +117,16 @@ impl<'a> Context<'a> {
         self.stack.iter().any(|scope| matches!(scope, Scope::List))
     }
 
+    /// Returns true if any scope in the stack is within a table structure.
+    ///
+    /// Table content must remain phrasing content; inserting block
+    /// boundaries inside <table>/<tr>/<td> produces invalid HTML.
+    pub fn is_in_table(&self) -> bool {
+        self.stack
+            .iter()
+            .any(|scope| matches!(scope, Scope::Table | Scope::TableRow | Scope::TableCell))
+    }
+
     /// Enters a new scope by pushing it onto the stack.
     pub fn enter(&mut self, scope: Scope) {
         self.stack.push(scope);

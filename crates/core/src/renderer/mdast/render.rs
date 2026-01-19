@@ -102,6 +102,7 @@ fn render_table_row(
     aligns: &[markdown::mdast::AlignKind],
 ) {
     ctx.push_raw("<tr>");
+    ctx.enter(Scope::TableRow);
 
     for (i, cell) in row.children.iter().enumerate() {
         if let Node::TableCell(c) = cell {
@@ -119,15 +120,18 @@ fn render_table_row(
             };
 
             ctx.push_raw(&format!("<{}{}>", tag, align_attr));
+            ctx.enter(Scope::TableCell);
 
             for child in &c.children {
                 render_node(child, ctx);
             }
 
+            ctx.exit(); // TableCell
             ctx.push_raw(&format!("</{}>", tag));
         }
     }
 
+    ctx.exit(); // TableRow
     ctx.push_raw("</tr>");
 }
 
@@ -225,7 +229,7 @@ fn render_jsx(
     }
 
     // 7. Push as component block
-    if ctx.is_in_list() {
+    if ctx.is_in_list() || ctx.is_in_table() {
         ctx.push_component_inline(tag_name, &props, &slot_html);
     } else {
         ctx.push_component(tag_name, props, slot_html);
@@ -387,6 +391,7 @@ pub fn render_node(node: &Node, ctx: &mut Context) {
         }
 
         Node::Table(table) => {
+            ctx.enter(Scope::Table);
             ctx.push_raw("<table>");
 
             ctx.push_raw("<thead>");
@@ -406,6 +411,7 @@ pub fn render_node(node: &Node, ctx: &mut Context) {
             }
 
             ctx.push_raw("</table>");
+            ctx.exit(); // Table
         }
 
         Node::TableRow(_) => {}
