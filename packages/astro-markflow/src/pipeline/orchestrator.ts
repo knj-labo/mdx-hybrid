@@ -10,6 +10,7 @@ import {
   transformInjectComponentsFromRegistry,
   transformShikiHighlight,
 } from '../transforms/index.js';
+import { normalizeSteps } from '../transforms/normalize-steps.js';
 
 /**
  * Default context values for transforms.
@@ -95,6 +96,14 @@ export function createPipeline(options: PipelineOptions = {}): Transform {
 
     // Built-in: Shiki highlighting
     transformShikiHighlight,
+
+    // Built-in: Normalize Steps to single <ol>
+    (ctx) => {
+      if (!ctx.code) return ctx;
+      const { code, changed } = normalizeSteps(ctx.code);
+      if (!changed) return ctx;
+      return { ...ctx, code };
+    },
 
     // User hooks: beforeOutput
     ...beforeOutput
