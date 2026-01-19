@@ -57,7 +57,7 @@ impl Options {
 }
 
 fn default_allow_raw_html() -> bool {
-    true
+    false
 }
 
 impl Default for Options {
