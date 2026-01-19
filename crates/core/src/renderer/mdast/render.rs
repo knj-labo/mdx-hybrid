@@ -250,11 +250,57 @@ fn render_jsx(
 /// Otherwise, the entire slot is wrapped in `<ol><li>...</li></ol>`.
 fn normalize_steps_slot(slot_html: &str) -> String {
     let trimmed = slot_html.trim();
+    // Fast-path: exactly one <ol> … </ol> wrapping everything.
     if trimmed.starts_with("<ol") && trimmed.ends_with("</ol>") {
-        // Likely already a single ordered list
-        return slot_html.to_string();
+        let first_ol = trimmed.find("<ol").unwrap_or(0);
+        let last_close = trimmed.rfind("</ol>").unwrap_or(trimmed.len());
+        let has_extra_ol = trimmed[first_ol + 3..last_close].contains("<ol");
+        let trailing = trimmed[last_close + 5..].trim(); // 5 = len("</ol>")
+        let leading = trimmed[..first_ol].trim();
+        if !has_extra_ol && leading.is_empty() && trailing.is_empty() {
+            return slot_html.to_string();
+        }
     }
-    format!("<ol><li>{}</li></ol>", slot_html)
+
+    // Otherwise, merge all ol/li content into a single <ol>. Any non-ol content
+    // becomes its own <li> to keep Steps happy with a single ordered-list root.
+    fn push_other_as_li(buf: &mut String, fragment: &str) {
+        let frag = fragment.trim();
+        if frag.is_empty() {
+            return;
+        }
+        buf.push_str("<li>");
+        buf.push_str(frag);
+        buf.push_str("</li>");
+    }
+
+    let mut items = String::new();
+    let mut rest = trimmed;
+
+    while let Some(start) = rest.find("<ol") {
+        let before = &rest[..start];
+        push_other_as_li(&mut items, before);
+
+        let after_ol = &rest[start..];
+        if let Some(end_idx) = after_ol.find("</ol>") {
+            let body_start = after_ol
+                .find('>')
+                .map(|i| i + 1)
+                .unwrap_or_else(|| "<ol".len());
+            let body = &after_ol[body_start..end_idx];
+            items.push_str(body); // keep existing <li>... from nested ol
+            rest = &after_ol[end_idx + "</ol>".len()..];
+        } else {
+            // Malformed; just wrap the remainder
+            push_other_as_li(&mut items, after_ol);
+            rest = "";
+            break;
+        }
+    }
+
+    push_other_as_li(&mut items, rest);
+
+    format!("<ol>{}</ol>", items)
 }
 
 /// Recursively renders an AST node to HTML, updating the context state.

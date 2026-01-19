@@ -16,16 +16,39 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
     // Simple bracket counting to skip logic inside nested structures if needed,
     // but for now strictly generic line-based processing.
     let mut last_line_was_blank = true;
+    let mut prev_nonblank_is_list_marker = false;
+    let mut prev_nonblank_indent = 0;
 
     for line in input.split_inclusive('\n') {
-        let (line_body, line_ending) = if let Some(stripped) = line.strip_suffix('\n') {
+        let (raw_body, line_ending) = if let Some(stripped) = line.strip_suffix('\n') {
             let stripped = stripped.strip_suffix('\r').unwrap_or(stripped);
             (stripped, &line[stripped.len()..])
         } else {
             (line, "")
         };
 
-        let trimmed = line_body.trim_start();
+        // Allow mutations to the current line (e.g., dedenting component lines)
+        let mut line_body = raw_body.to_string();
+
+        // Trim indentation for indented JSX components so markdown-rs doesn't
+        // treat them as indented code blocks (common inside list items).
+        let mut trimmed = line_body.trim_start();
+        if !in_fence {
+            let leading = line_body.len() - trimmed.len();
+
+            // Heuristic: lines that look like JSX (opening or closing) and are
+            // indented by 4+ spaces are downgraded by 2 spaces. That keeps them
+            // inside list items (still indented) while avoiding the 4-space
+            // "code block" threshold in Markdown.
+            if leading >= 4 && is_componentish(trimmed) && !prev_nonblank_is_list_marker {
+                let new_indent = leading - 2;
+                let mut buf = String::with_capacity(line_body.len());
+                buf.push_str(&" ".repeat(new_indent));
+                buf.push_str(trimmed);
+                line_body = buf;
+                trimmed = line_body.trim_start();
+            }
+        }
 
         // 1. Code Fence Tracking
         let fence = trimmed.starts_with("```") || trimmed.starts_with("~~~");
@@ -41,7 +64,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
                 fence_marker = marker;
             }
             // Pass through fencing lines exactly as is
-            output.push_str(line_body);
+            output.push_str(&line_body);
             output.push_str(line_ending);
             last_line_was_blank = trimmed.is_empty();
             continue;
@@ -62,7 +85,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
 
                 // We are not tracking specific component names anymore.
                 // Just pass the line through.
-                output.push_str(line_body);
+                output.push_str(&line_body);
                 output.push_str(line_ending);
 
                 // The line we just added is obviously not blank
@@ -72,10 +95,16 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
         }
 
         // Pass through regular lines
-        output.push_str(line_body);
+        output.push_str(&line_body);
         output.push_str(line_ending);
 
-        last_line_was_blank = trimmed.is_empty();
+        if trimmed.is_empty() {
+            last_line_was_blank = true;
+        } else {
+            last_line_was_blank = false;
+            prev_nonblank_is_list_marker = is_list_marker(trimmed);
+            prev_nonblank_indent = line_body.len() - trimmed.len();
+        }
     }
 
     output
@@ -184,6 +213,50 @@ fn jsx_open_tag(trimmed: &str) -> Option<JsxTag> {
     Some(JsxTag { name, self_closing })
 }
 
+/// Returns true if the line looks like an opening/closing JSX component tag.
+/// Componentish means the tag name starts with an uppercase letter.
+fn is_componentish(trimmed: &str) -> bool {
+    if !trimmed.starts_with('<') || trimmed.starts_with("<!") || trimmed.starts_with("<?") {
+        return false;
+    }
+
+    // Skip initial `<` and an optional `/`
+    let mut chars = trimmed.chars().skip(1);
+    if let Some('/') = chars.clone().next() {
+        chars.next();
+    }
+
+    match chars.next() {
+        Some(c) if c.is_uppercase() => true,
+        _ => false,
+    }
+}
+
+fn is_list_marker(trimmed: &str) -> bool {
+    // Matches "- item", "* item", "+ item", "1. item", "23) item" etc.
+    let mut chars = trimmed.chars().peekable();
+    if let Some(first) = chars.peek() {
+        match first {
+            '-' | '+' | '*' => {
+                chars.next();
+                return chars.next().is_some_and(|c| c.is_whitespace());
+            }
+            '0'..='9' => {
+                while let Some('0'..='9') = chars.peek() {
+                    chars.next();
+                }
+                if let Some(sep) = chars.next() {
+                    if sep == '.' || sep == ')' {
+                        return chars.next().is_some_and(|c| c.is_whitespace());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Detects simple HTML wrapper tags like <p>, <div>, <span>
 /// Returns the tag name if it's a simple lowercase tag
 fn detect_simple_html_wrapper(trimmed: &str) -> Option<&str> {
@@ -243,5 +316,22 @@ mod tests {
         let result = collapse_multiline_wrapper_tags(input);
         // This should NOT be collapsed because content is plain text, not a component
         assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_indented_component_is_dedented_out_of_code_block() {
+        let input = "- item\n    <MyComponent>\n    </MyComponent>\n";
+        let result = normalize_mdx_jsx_indentation(input);
+        // Component lines should be indented by 2 spaces (not 4) so they stay inside the list
+        assert!(result.contains("\n  <MyComponent>\n  </MyComponent>\n"));
+    }
+
+    #[test]
+    fn test_component_in_list_keeps_indent_if_list_marker_precedes() {
+        // Previous regression: dedenting inside a list caused content to fall out of <li>
+        let input = "- step\n    <Tabs>\n    </Tabs>\n";
+        let result = normalize_mdx_jsx_indentation(input);
+        // Because previous nonblank was a list marker, we should NOT dedent; stays at 4 spaces.
+        assert!(result.contains("\n    <Tabs>\n    </Tabs>\n"));
     }
 }
