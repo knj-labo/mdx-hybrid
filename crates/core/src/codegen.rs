@@ -89,6 +89,13 @@ where
                 props,
                 slot_html,
             } => {
+                // Normalize Steps slot to single <ol> child (Starlight requirement)
+                let slot_html = if name == "Steps" {
+                    normalize_steps_slot(slot_html)
+                } else {
+                    slot_html.clone()
+                };
+
                 // Apply directive mapping if provided
                 let (tag_name, type_prop) = if let Some(ref mapper) = directive_mapper {
                     if let Some(mapping) = mapper(name) {
@@ -142,7 +149,7 @@ where
                 }
 
                 result.push('>');
-                result.push_str(slot_html);
+                result.push_str(&slot_html);
                 result.push_str("</");
                 result.push_str(&tag_name);
                 result.push('>');
@@ -150,6 +157,15 @@ where
         }
     }
     result
+}
+
+fn normalize_steps_slot(slot_html: &str) -> String {
+    let trimmed = slot_html.trim();
+    if trimmed.starts_with("<ol") && trimmed.ends_with("</ol>") {
+        slot_html.to_string()
+    } else {
+        format!("<ol><li>{}</li></ol>", slot_html)
+    }
 }
 
 /// Options for Astro module generation.
