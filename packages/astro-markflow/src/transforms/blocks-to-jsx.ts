@@ -105,6 +105,10 @@ export function blocksToJsx(
             : `<ul><li>${effectiveSlot}</li></ul>`;
         }
       }
+      // Escape raw JSX braces inside slot HTML to prevent expression evaluation
+      effectiveSlot = effectiveSlot
+        .replaceAll('{', '&#123;')
+        .replaceAll('}', '&#125;');
 
       // Skip Fragment - it's a built-in Astro component
       if (componentName !== 'Fragment') {

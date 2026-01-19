@@ -97,6 +97,8 @@ where
                 } else {
                     slot_html.clone()
                 };
+                // Escape raw braces in slot HTML to avoid JSX expression parsing
+                let slot_html = slot_html.replace('{', "&#123;").replace('}', "&#125;");
 
                 // Apply directive mapping if provided
                 let (tag_name, type_prop) = if let Some(ref mapper) = directive_mapper {
