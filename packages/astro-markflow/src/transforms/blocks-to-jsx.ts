@@ -63,6 +63,7 @@ export function blocksToJsx(
       const isDirective = block.name ? supportedDirectives.includes(block.name) : false;
       let componentName = block.name ?? '';
       let effectiveProps = block.props;
+      let effectiveSlot = block.slotHtml ?? '';
 
       if (isDirective && registry && block.name) {
         const mapping = registry.getDirectiveMapping(block.name);
@@ -80,6 +81,14 @@ export function blocksToJsx(
             }
             effectiveProps = { ...block.props, ...injectedProps };
           }
+        }
+      }
+
+      // Normalize Steps slot to a single <ol> child (Starlight requirement)
+      if (componentName === 'Steps') {
+        const trimmed = effectiveSlot.trim();
+        if (!(trimmed.startsWith('<ol') && trimmed.endsWith('</ol>'))) {
+          effectiveSlot = `<ol><li>${effectiveSlot}</li></ol>`;
         }
       }
 
@@ -113,7 +122,7 @@ export function blocksToJsx(
       const openTag = propsStr
         ? `<${componentName} ${propsStr}>`
         : `<${componentName}>`;
-      fragments.push(`${openTag}${block.slotHtml || ''}</${componentName}>`);
+      fragments.push(`${openTag}${effectiveSlot}</${componentName}>`);
     }
   }
 
