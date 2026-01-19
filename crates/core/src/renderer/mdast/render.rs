@@ -222,6 +222,13 @@ fn render_jsx(
     // 5. Render children to HTML string
     let slot_html = ctx.render_children_to_string(children);
 
+    // Special-case Steps: ensure single <ol> child to satisfy Starlight expectations.
+    let slot_html = if tag_name == "Steps" {
+        normalize_steps_slot(&slot_html)
+    } else {
+        slot_html
+    };
+
     // 6. Special handling for Fragment with slot attribute
     if tag_name == "Fragment" && props.contains_key("slot") {
         ctx.push_component_inline(tag_name, &props, &slot_html);
@@ -234,6 +241,18 @@ fn render_jsx(
     } else {
         ctx.push_component(tag_name, props, slot_html);
     }
+}
+
+/// Ensures the Steps component receives a single `<ol>` child as required by Starlight.
+/// If the slot already starts with `<ol` and ends with `</ol>` (single root), it is returned unchanged.
+/// Otherwise, the entire slot is wrapped in `<ol><li>...</li></ol>`.
+fn normalize_steps_slot(slot_html: &str) -> String {
+    let trimmed = slot_html.trim();
+    if trimmed.starts_with("<ol") && trimmed.ends_with("</ol>") {
+        // Likely already a single ordered list
+        return slot_html.to_string();
+    }
+    format!("<ol><li>{}</li></ol>", slot_html)
 }
 
 /// Recursively renders an AST node to HTML, updating the context state.
