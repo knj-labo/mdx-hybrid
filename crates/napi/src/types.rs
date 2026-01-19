@@ -168,6 +168,8 @@ pub struct BlockOptions {
     pub enable_smartypants: Option<bool>,
     /// Enable lazy loading for images. Defaults to false.
     pub enable_lazy_images: Option<bool>,
+    /// Allow raw HTML (<script>, <style>, etc.) to pass through. Defaults to true.
+    pub allow_raw_html: Option<bool>,
 }
 
 /// Represents a rendering block returned by parse_blocks().
