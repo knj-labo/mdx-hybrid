@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -180,6 +181,122 @@ jobs:
           build_time=$((end_time - start_time))
           echo "build_time=${build_time}" >> $GITHUB_OUTPUT
           echo "::notice::Build completed in ${build_time} seconds"
+
+  e2e-withastro-docs-semantic-diff:
+    name: E2E Semantic Diff (baseline vs markflow)
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+          cache-dependency-path: |
+            crates/napi/pnpm-lock.yaml
+            fixtures/integration/withastro-docs/repo/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+
+      - name: Install NAPI deps
+        working-directory: crates/napi
+        run: pnpm install --frozen-lockfile
+
+      - name: Build NAPI binding
+        working-directory: crates/napi
+        run: pnpm run build:napi
+
+      - name: Clone withastro-docs repository
+        run: ./scripts/setup-withastro-docs.sh
+
+      - name: Install all workspace deps
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Run Semantic Diff (baseline vs markflow)
+        env:
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: pnpm compare:withastro-docs -- --mode=semantic
+
+      - name: Upload diff summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semantic-diff-summary
+          path: fixtures/integration/withastro-docs/harness-summary.json
+
+  e2e-withastro-docs-visual-diff:
+    name: E2E Visual Diff (Playwright screenshots)
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 60
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'visual-diff')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+          cache-dependency-path: |
+            crates/napi/pnpm-lock.yaml
+            fixtures/integration/withastro-docs/repo/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+
+      - name: Install NAPI deps
+        working-directory: crates/napi
+        run: pnpm install --frozen-lockfile
+
+      - name: Build NAPI binding
+        working-directory: crates/napi
+        run: pnpm run build:napi
+
+      - name: Clone withastro-docs repository
+        run: ./scripts/setup-withastro-docs.sh
+
+      - name: Install all workspace deps
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Install Playwright
+        run: npx playwright install chromium
+
+      - name: Run Visual Diff
+        run: pnpm visual:withastro-docs -- --build --routes fixtures/integration/withastro-docs/visual-routes.txt --max-diff 0.01
+
+      - name: Upload visual diff artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diff-results
+          path: |
+            fixtures/integration/withastro-docs/visual-diff/summary.json
+            fixtures/integration/withastro-docs/visual-diff/diff/
 
   e2e-harness:
     name: E2E Harness Tests

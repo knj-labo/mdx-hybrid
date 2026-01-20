@@ -1,7 +1,8 @@
-# Routes for semantic diff comparison
+# Routes for visual diff comparison
 # Excludes pages with dynamic content (courses, random elements)
+# Focus on content pages where markdown rendering matters
 
-# Core content pages
+# Core documentation pages
 /en/basics/astro-components/
 /en/basics/project-structure/
 /en/guides/markdown-content/
@@ -11,8 +12,15 @@
 /en/reference/api-reference/
 /en/reference/astro-syntax/
 /en/reference/directives-reference/
-/en/recipes/
 
-# Japanese locale
+# 404 pages (static)
+/404/
+/en/404/
+
+# Japanese locale pages
 /ja/guides/syntax-highlighting/
 /ja/basics/astro-components/
+
+# Recipe pages
+/en/recipes/
+/en/recipes/streaming-improve-page-performance/
