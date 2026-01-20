@@ -412,13 +412,25 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       if (files.length === 0) return;
 
       // Read all files and prepare batch inputs
-      const inputs = await Promise.all(
-        files.map(async (file) => ({
-          id: file,
-          source: await readFile(file, 'utf8'),
-          filepath: file,
-        }))
-      );
+      const inputs: Array<{ id: string; source: string; filepath: string }> = [];
+      for (const file of files) {
+        const source = await readFile(file, 'utf8');
+        // Pre-detect problematic patterns - these files will be handled by Astro's MDX plugin
+        if (hasProblematicMdxPatterns(source)) {
+          fallbackFiles.add(file);
+          fallbackReasons.set(file, 'Pre-detected problematic MDX patterns');
+        } else {
+          inputs.push({ id: file, source, filepath: file });
+        }
+      }
+
+      if (fallbackFiles.size > 0) {
+        console.info(
+          `[markflow] Pre-detected ${fallbackFiles.size} files with patterns incompatible with markdown-rs (delegating to Astro MDX)`
+        );
+      }
+
+      if (inputs.length === 0) return;
 
       try {
         // Batch compile with parallel processing
@@ -480,7 +492,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           ? stripQuery(unwrapVirtual(resolved.id) ?? resolved.id)
           : fallback();
 
-      // Check if file was already marked for fallback (runtime error)
+      // If file was pre-detected as needing fallback, let Astro's MDX plugin handle it
       if (fallbackFiles.has(resolvedId)) {
         return null;
       }
@@ -499,6 +511,12 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       const filename =
         sourceLookup.get(id) ??
         stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ''));
+
+      // If file was already marked for fallback, return fallback module immediately
+      if (fallbackFiles.has(filename)) {
+        return createFallbackModule(filename);
+      }
+
       try {
         const source = await readFile(filename, 'utf8');
 
@@ -753,6 +771,8 @@ export default function MarkflowContent() {
 }
 
 function createFallbackModule(filename: string): { code: string } {
+  // Note: This function is used for runtime fallbacks (compilation errors).
+  // Files with problematic patterns are pre-detected in buildStart and handled by Astro's MDX plugin.
   return {
     code: `export { default } from ${JSON.stringify(
       filename
