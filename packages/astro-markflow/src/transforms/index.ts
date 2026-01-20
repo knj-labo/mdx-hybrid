@@ -11,6 +11,8 @@ import {
 } from './inject-components.js';
 import { rewriteAstroSetHtml } from './shiki.js';
 import type { TransformContext } from '../types.js';
+import { normalizeSteps } from './normalize-steps.js';
+import { normalizeFileTree } from './normalize-filetree.js';
 
 /**
  * Transform that rewrites <pre><code> blocks to ExpressiveCode components.
@@ -99,3 +101,5 @@ export {
 } from './inject-components.js';
 export { rewriteAstroSetHtml, highlightHtmlBlocks } from './shiki.js';
 export { blocksToJsx } from './blocks-to-jsx.js';
+export { normalizeSteps } from './normalize-steps.js';
+export { normalizeFileTree } from './normalize-filetree.js';

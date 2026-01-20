@@ -6,6 +6,7 @@
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { transformWithEsbuild, type ResolvedConfig, type Plugin } from 'vite';
 import { parseFragment, serialize } from 'parse5';
 import { codeToHtml, createCssVariablesTheme } from 'shiki';
@@ -21,6 +22,7 @@ import {
 import { createPipeline } from './pipeline/index.js';
 import { blocksToJsx } from './transforms/blocks-to-jsx.js';
 import { resolveExpressiveCodeConfig, type ExpressiveCodeConfig } from './utils/config.js';
+import { hasProblematicMdxPatterns } from './utils/mdx-detection.js';
 import type { MarkflowPlugin, PluginHooks, TransformContext } from './types.js';
 
 type DocumentFragment = DefaultTreeAdapterMap['documentFragment'];
@@ -141,6 +143,7 @@ const VIRTUAL_PREFIX = '\0markflow:';
 const DEBUG_BINDING = process.env.MARKFLOW_DEBUG_BINDING === '1';
 const ENABLE_SHIKI = process.env.MARKFLOW_SHIKI === '1';
 const IS_MDAST = process.env.MARKFLOW_PIPELINE === 'mdast';
+const require = createRequire(import.meta.url);
 
 const logBindingSource = (source: string): void => {
   if (!DEBUG_BINDING) return;
@@ -153,42 +156,45 @@ const logBindingSource = (source: string): void => {
   }
 };
 
-// Use createRequire to bypass Vite's module runner which can be closed during build
-const require = createRequire(import.meta.url);
-
-function loadMarkflowBindingSync(): MarkflowBinding {
-  let source = 'markflow-napi';
-  try {
-    // Use require to completely bypass Vite's module system
-    const binding = require('markflow-napi') as MarkflowBinding;
-    logBindingSource(source);
-    return binding;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code !== 'MODULE_NOT_FOUND') {
-      throw error;
-    }
-    const fallbackPath = path.resolve(
-      path.dirname(new URL(import.meta.url).pathname),
-      '../../../crates/napi/index.js'
-    );
-    source = fallbackPath;
-    try {
-      const binding = require(fallbackPath) as MarkflowBinding;
-      logBindingSource(source);
-      return binding;
-    } catch (fallbackError) {
-      console.error(
-        '[markflow] Failed to load fallback NAPI binding',
-        fallbackError
-      );
-      throw fallbackError;
-    }
-  }
-}
-
 async function loadMarkflowBinding(): Promise<MarkflowBinding> {
   if (!bindingPromise) {
-    bindingPromise = Promise.resolve(loadMarkflowBindingSync());
+    bindingPromise = (async () => {
+      // Load native binding directly via require() on the .node binary to bypass Vite SSR runner.
+      const require = createRequire(import.meta.url);
+      const pkgRoot = path.dirname(require.resolve('markflow-napi/package.json'));
+
+      const guessBinaryName = () => {
+        const triplet = `${process.platform}-${process.arch}`;
+        return [
+          `markflow.${triplet}.node`,
+          `markflow-${triplet}.node`,
+          `markflow.${process.platform}-${process.arch}.node`,
+        ];
+      };
+
+      const findBinaryPath = (): string => {
+        const candidates = guessBinaryName().map((name) =>
+          path.resolve(pkgRoot, name)
+        );
+        for (const candidate of candidates) {
+          if (require('node:fs').existsSync(candidate)) {
+            return candidate;
+          }
+        }
+        // Fallback: first .node in package root
+        const entries = require('node:fs').readdirSync(pkgRoot);
+        const nodeFile = entries.find((f: string) => f.endsWith('.node'));
+        if (nodeFile) {
+          return path.resolve(pkgRoot, nodeFile);
+        }
+        throw new Error('markflow-napi native binary not found');
+      };
+
+      const binaryPath = findBinaryPath();
+      const binding = require(binaryPath) as MarkflowBinding;
+      logBindingSource(binaryPath);
+      return binding;
+    })();
   }
   return bindingPromise;
 }
@@ -366,6 +372,22 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           esbuildConfig.jsxImportSource = 'astro';
         }
       }
+      // Ensure native binding is treated as external to avoid Vite SSR runner involvement
+      const optimizeDeps = (config as Record<string, any>).optimizeDeps ?? {};
+      const exclude: string[] = optimizeDeps.exclude ?? [];
+      if (!exclude.includes('markflow-napi')) {
+        exclude.push('markflow-napi');
+      }
+      optimizeDeps.exclude = exclude;
+      (config as Record<string, any>).optimizeDeps = optimizeDeps;
+
+      const ssr = (config as Record<string, any>).ssr ?? {};
+      const ssrExternal: string[] = ssr.external ?? [];
+      if (!ssrExternal.includes('markflow-napi')) {
+        ssrExternal.push('markflow-napi');
+      }
+      ssr.external = ssrExternal;
+      (config as Record<string, any>).ssr = ssr;
       // Note: Binding/compiler initialization deferred to buildStart/load hooks
       // to avoid Vite module runner timing issues with async imports
     },
@@ -374,8 +396,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       // Only batch compile in build mode (not dev/serve)
       if (resolvedConfig?.command !== 'build') return;
 
-      // Find all MD/MDX files - use require to bypass Vite's module runner
-      const { glob } = require('glob') as { glob: (pattern: string, options: { cwd: string; ignore: string[]; absolute: boolean }) => Promise<string[]> };
+      // Find all MD/MDX files (use CJS require to avoid Vite's module runner)
+      const { glob } = require('glob') as {
+        glob: (
+          pattern: string,
+          options: { cwd: string; ignore: string[]; absolute: boolean }
+        ) => Promise<string[]>;
+      };
       const files = await glob('**/*.{md,mdx}', {
         cwd: resolvedConfig.root,
         ignore: ['node_modules/**', 'dist/**'],
@@ -393,23 +420,29 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         }))
       );
 
-      // Batch compile with parallel processing
-      const binding = providedBinding ?? (await loadMarkflowBinding());
-      const batchResult = binding.compileBatch(inputs, {
-        continueOnError: true,
-        config: compilerOptions,
-      });
+      try {
+        // Batch compile with parallel processing
+        const binding = providedBinding ?? (await loadMarkflowBinding());
+        const batchResult = binding.compileBatch(inputs, {
+          continueOnError: true,
+          config: compilerOptions,
+        });
 
-      // Cache successful results
-      for (const result of batchResult.results) {
-        if (result.result) {
-          compilationCache.set(result.id, result.result);
+        // Cache successful results
+        for (const result of batchResult.results) {
+          if (result.result) {
+            compilationCache.set(result.id, result.result);
+          }
         }
-      }
 
-      console.info(
-        `[markflow] Batch compiled ${batchResult.stats.succeeded}/${batchResult.stats.total} files in ${batchResult.stats.processingTimeMs.toFixed(0)}ms`
-      );
+        console.info(
+          `[markflow] Batch compiled ${batchResult.stats.succeeded}/${batchResult.stats.total} files in ${batchResult.stats.processingTimeMs.toFixed(0)}ms`
+        );
+      } catch (err) {
+        this.warn(
+          `[markflow] Batch compile skipped due to binding load failure: ${err}`
+        );
+      }
     },
 
     async resolveId(sourceId, importer) {
@@ -717,13 +750,6 @@ export default function MarkflowContent() {
   );
 }
 `;
-}
-
-/**
- * Detect MDX patterns that markdown-rs cannot parse correctly.
- */
-function hasProblematicMdxPatterns(_source: string): boolean {
-  return false;
 }
 
 function createFallbackModule(filename: string): { code: string } {

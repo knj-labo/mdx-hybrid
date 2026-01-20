@@ -82,13 +82,25 @@ where
     for block in blocks {
         match block {
             RenderBlock::Html { content } => {
-                result.push_str(content);
+                let escaped = sanitize_html_block_for_jsx(content);
+                result.push_str(&escaped);
             }
             RenderBlock::Component {
                 name,
                 props,
                 slot_html,
             } => {
+                // Normalize Steps slot to single <ol> child (Starlight requirement)
+                let slot_html = if name == "Steps" {
+                    normalize_steps_slot(slot_html)
+                } else if name == "FileTree" {
+                    normalize_filetree_slot(slot_html)
+                } else {
+                    slot_html.clone()
+                };
+                // Escape raw braces in slot HTML to avoid JSX expression parsing
+                let slot_html = slot_html.replace('{', "&#123;").replace('}', "&#125;");
+
                 // Apply directive mapping if provided
                 let (tag_name, type_prop) = if let Some(ref mapper) = directive_mapper {
                     if let Some(mapping) = mapper(name) {
@@ -142,7 +154,7 @@ where
                 }
 
                 result.push('>');
-                result.push_str(slot_html);
+                result.push_str(&slot_html);
                 result.push_str("</");
                 result.push_str(&tag_name);
                 result.push('>');
@@ -150,6 +162,158 @@ where
         }
     }
     result
+}
+
+/// Escapes JSX-sensitive characters inside raw HTML blocks.
+///
+/// - Escapes `{` and `}` globally so they are not parsed as JSX expressions.
+/// - For backtick-delimited code spans (`, ```, etc.), wraps the contents in `<code>`
+///   and escapes `<`, `>`, `&`, and braces so code examples remain literal.
+/// - For `<script>` / `<style>` blocks we only escape braces to avoid breaking
+///   the embedded code while still keeping JSX safe.
+fn sanitize_html_block_for_jsx(content: &str) -> String {
+    let lower = content.to_ascii_lowercase();
+    let is_script_or_style =
+        lower.contains("<script") || lower.contains("<style") || lower.contains("</script>");
+
+    // For script/style we must keep the exact JS/CSS text (including braces) because
+    // escaping them to entities breaks the embedded code. These tags are wrapped in JSX
+    // as children text, which is allowed even when containing braces.
+    if is_script_or_style {
+        return content.to_string();
+    }
+
+    let mut out = String::with_capacity(content.len());
+    let mut chars = content.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '`' {
+            // Count how many backticks start the span (supports ``` as well).
+            let mut tick_count = 1;
+            while let Some('`') = chars.peek() {
+                tick_count += 1;
+                chars.next();
+            }
+
+            let mut code = String::new();
+            while let Some(next) = chars.next() {
+                if next == '`' {
+                    let mut end_ticks = 1;
+                    while let Some('`') = chars.peek() {
+                        end_ticks += 1;
+                        chars.next();
+                    }
+                    if end_ticks == tick_count {
+                        break;
+                    } else {
+                        code.push_str(&"`".repeat(end_ticks));
+                        continue;
+                    }
+                } else {
+                    code.push(next);
+                }
+            }
+
+            // Escape code span contents
+            out.push_str("<code>");
+            for c in code.chars() {
+                match c {
+                    '<' => out.push_str("&lt;"),
+                    '>' => out.push_str("&gt;"),
+                    '&' => out.push_str("&amp;"),
+                    '{' => out.push_str("&#123;"),
+                    '}' => out.push_str("&#125;"),
+                    _ => out.push(c),
+                }
+            }
+            out.push_str("</code>");
+        } else {
+            match ch {
+                '{' => out.push_str("&#123;"),
+                '}' => out.push_str("&#125;"),
+                _ => out.push(ch),
+            }
+        }
+    }
+
+    out
+}
+
+fn normalize_steps_slot(slot_html: &str) -> String {
+    let trimmed = slot_html.trim();
+
+    // If it is already a single <ol> ... </ol> with no siblings, keep it.
+    if trimmed.starts_with("<ol") && trimmed.ends_with("</ol>") {
+        let first_ol = trimmed.find("<ol").unwrap_or(0);
+        let last_close = trimmed.rfind("</ol>").unwrap_or(trimmed.len());
+        let has_extra_ol = trimmed[first_ol + 3..last_close].contains("<ol");
+        let trailing = trimmed[last_close + 5..].trim(); // 5 = len("</ol>")
+        let leading = trimmed[..first_ol].trim();
+        if !has_extra_ol && leading.is_empty() && trailing.is_empty() {
+            return slot_html.to_string();
+        }
+    }
+
+    // Otherwise, merge everything into a single ordered list.
+    fn push_other_as_li(buf: &mut String, fragment: &str) {
+        let frag = fragment.trim();
+        if frag.is_empty() {
+            return;
+        }
+        buf.push_str("<li>");
+        buf.push_str(frag);
+        buf.push_str("</li>");
+    }
+
+    let mut items = String::new();
+    let mut rest = trimmed;
+
+    while let Some(start) = rest.find("<ol") {
+        let before = &rest[..start];
+        push_other_as_li(&mut items, before);
+
+        let after_ol = &rest[start..];
+        if let Some(end_idx) = after_ol.find("</ol>") {
+            let body_start = after_ol
+                .find('>')
+                .map(|i| i + 1)
+                .unwrap_or_else(|| "<ol".len());
+            let body = &after_ol[body_start..end_idx];
+            items.push_str(body); // keep inner <li> list items as-is
+            rest = &after_ol[end_idx + "</ol>".len()..];
+        } else {
+            // Malformed; wrap remainder
+            push_other_as_li(&mut items, after_ol);
+            rest = "";
+            break;
+        }
+    }
+
+    push_other_as_li(&mut items, rest);
+
+    format!("<ol>{}</ol>", items)
+}
+
+fn normalize_filetree_slot(slot_html: &str) -> String {
+    let trimmed = slot_html.trim();
+    let has_li = trimmed.contains("<li");
+
+    if trimmed.is_empty() {
+        return "<ul><li></li></ul>".to_string();
+    }
+
+    if trimmed.starts_with("<ul") && trimmed.ends_with("</ul>") {
+        if has_li {
+            return slot_html.to_string();
+        }
+        return trimmed.replace("</ul>", "<li></li></ul>");
+    }
+
+    if has_li {
+        format!("<ul>{}</ul>", slot_html)
+    } else {
+        format!("<ul><li>{}</li></ul>", slot_html)
+    }
 }
 
 /// Options for Astro module generation.

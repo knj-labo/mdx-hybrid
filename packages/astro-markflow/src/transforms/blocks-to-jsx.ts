@@ -35,6 +35,14 @@ function escapeJsString(value: string): string {
 }
 
 /**
+ * Sanitizes raw HTML content for JSX embedding.
+ * Escapes { and } to prevent esbuild from interpreting them as JSX expressions.
+ */
+function sanitizeHtmlForJsx(content: string): string {
+  return content.replaceAll('{', '&#123;').replaceAll('}', '&#125;');
+}
+
+/**
  * Converts blocks array from Rust compiler into JSX code with component imports and exports.
  *
  * @param blocks - Array of blocks from compiler
@@ -57,12 +65,13 @@ export function blocksToJsx(
 
   for (const block of blocks) {
     if (block.type === 'html') {
-      fragments.push(block.content ?? '');
+      fragments.push(sanitizeHtmlForJsx(block.content ?? ''));
     } else if (block.type === 'component') {
       // Handle directive components using registry
       const isDirective = block.name ? supportedDirectives.includes(block.name) : false;
       let componentName = block.name ?? '';
       let effectiveProps = block.props;
+      let effectiveSlot = block.slotHtml ?? '';
 
       if (isDirective && registry && block.name) {
         const mapping = registry.getDirectiveMapping(block.name);
@@ -82,6 +91,32 @@ export function blocksToJsx(
           }
         }
       }
+
+      // Normalize Steps slot to a single <ol> child (Starlight requirement)
+      if (componentName === 'Steps') {
+        const trimmed = effectiveSlot.trim();
+        if (!(trimmed.startsWith('<ol') && trimmed.endsWith('</ol>'))) {
+          effectiveSlot = `<ol><li>${effectiveSlot}</li></ol>`;
+        }
+      }
+      // Normalize FileTree slot to a single <ul> child (Starlight requirement)
+      if (componentName === 'FileTree') {
+        const trimmed = effectiveSlot.trim();
+        const hasLi = /<li[\s>]/i.test(trimmed);
+        if (!trimmed) {
+          effectiveSlot = '<ul><li></li></ul>';
+        } else if (trimmed.startsWith('<ul') && trimmed.endsWith('</ul>')) {
+          effectiveSlot = hasLi ? effectiveSlot : trimmed.replace('</ul>', '<li></li></ul>');
+        } else {
+          effectiveSlot = hasLi
+            ? `<ul>${effectiveSlot}</ul>`
+            : `<ul><li>${effectiveSlot}</li></ul>`;
+        }
+      }
+      // Escape raw JSX braces inside slot HTML to prevent expression evaluation
+      effectiveSlot = effectiveSlot
+        .replaceAll('{', '&#123;')
+        .replaceAll('}', '&#125;');
 
       // Skip Fragment - it's a built-in Astro component
       if (componentName !== 'Fragment') {
@@ -113,7 +148,7 @@ export function blocksToJsx(
       const openTag = propsStr
         ? `<${componentName} ${propsStr}>`
         : `<${componentName}>`;
-      fragments.push(`${openTag}${block.slotHtml || ''}</${componentName}>`);
+      fragments.push(`${openTag}${effectiveSlot}</${componentName}>`);
     }
   }
 

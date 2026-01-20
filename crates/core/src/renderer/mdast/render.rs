@@ -222,9 +222,18 @@ fn render_jsx(
     // 5. Render children to HTML string
     let slot_html = ctx.render_children_to_string(children);
 
+    // Special-case Steps: ensure single <ol> child to satisfy Starlight expectations.
+    let slot_html = if tag_name == "Steps" {
+        normalize_steps_slot(&slot_html)
+    } else {
+        slot_html
+    };
+
     // 6. Special handling for Fragment with slot attribute
     if tag_name == "Fragment" && props.contains_key("slot") {
-        ctx.push_component_inline(tag_name, &props, &slot_html);
+        // Keep slot fragments as standalone component blocks so downstream
+        // codegen can safely escape braces inside the slot HTML.
+        ctx.push_component(tag_name, props, slot_html);
         return;
     }
 
@@ -234,6 +243,64 @@ fn render_jsx(
     } else {
         ctx.push_component(tag_name, props, slot_html);
     }
+}
+
+/// Ensures the Steps component receives a single `<ol>` child as required by Starlight.
+/// If the slot already starts with `<ol` and ends with `</ol>` (single root), it is returned unchanged.
+/// Otherwise, the entire slot is wrapped in `<ol><li>...</li></ol>`.
+fn normalize_steps_slot(slot_html: &str) -> String {
+    let trimmed = slot_html.trim();
+    // Fast-path: exactly one <ol> … </ol> wrapping everything.
+    if trimmed.starts_with("<ol") && trimmed.ends_with("</ol>") {
+        let first_ol = trimmed.find("<ol").unwrap_or(0);
+        let last_close = trimmed.rfind("</ol>").unwrap_or(trimmed.len());
+        let has_extra_ol = trimmed[first_ol + 3..last_close].contains("<ol");
+        let trailing = trimmed[last_close + 5..].trim(); // 5 = len("</ol>")
+        let leading = trimmed[..first_ol].trim();
+        if !has_extra_ol && leading.is_empty() && trailing.is_empty() {
+            return slot_html.to_string();
+        }
+    }
+
+    // Otherwise, merge all ol/li content into a single <ol>. Any non-ol content
+    // becomes its own <li> to keep Steps happy with a single ordered-list root.
+    fn push_other_as_li(buf: &mut String, fragment: &str) {
+        let frag = fragment.trim();
+        if frag.is_empty() {
+            return;
+        }
+        buf.push_str("<li>");
+        buf.push_str(frag);
+        buf.push_str("</li>");
+    }
+
+    let mut items = String::new();
+    let mut rest = trimmed;
+
+    while let Some(start) = rest.find("<ol") {
+        let before = &rest[..start];
+        push_other_as_li(&mut items, before);
+
+        let after_ol = &rest[start..];
+        if let Some(end_idx) = after_ol.find("</ol>") {
+            let body_start = after_ol
+                .find('>')
+                .map(|i| i + 1)
+                .unwrap_or_else(|| "<ol".len());
+            let body = &after_ol[body_start..end_idx];
+            items.push_str(body); // keep existing <li>... from nested ol
+            rest = &after_ol[end_idx + "</ol>".len()..];
+        } else {
+            // Malformed; just wrap the remainder
+            push_other_as_li(&mut items, after_ol);
+            rest = "";
+            break;
+        }
+    }
+
+    push_other_as_li(&mut items, rest);
+
+    format!("<ol>{}</ol>", items)
 }
 
 /// Recursively renders an AST node to HTML, updating the context state.
@@ -375,11 +442,16 @@ pub fn render_node(node: &Node, ctx: &mut Context) {
         }
 
         Node::Html(html) => {
-            log::warn!(
-                "Raw HTML in markdown will be escaped for security: {}",
-                html.value
-            );
-            ctx.push_text(&html.value);
+            if ctx.raw_html_allowed() {
+                ctx.push_raw(&html.value);
+            } else {
+                // Reduce noise: escape silently when raw HTML is disabled.
+                log::debug!(
+                    "Raw HTML in markdown will be escaped for security: {}",
+                    html.value
+                );
+                ctx.push_text(&html.value);
+            }
         }
 
         Node::Delete(delete) => {
