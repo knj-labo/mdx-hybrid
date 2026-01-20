@@ -4,6 +4,10 @@ import {
   Content as GettingStartedContent,
   frontmatter as gettingStartedMeta,
 } from '../content/docs/getting-started.mdx'
+import {
+  Content as DirectivesContent,
+  frontmatter as directivesMeta,
+} from '../../content/docs/directives.mdx'
 ---
 <html lang="en">
   <head>
@@ -34,6 +38,12 @@ import {
           <p>{gettingStartedMeta.description}</p>
         </header>
         <GettingStartedContent />
+      </section>
+      <section class="mdx-preview">
+        <header>
+          <h2>{directivesMeta.title}</h2>
+        </header>
+        <DirectivesContent />
       </section>
     </main>
     <footer>
