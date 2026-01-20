@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { transformWithEsbuild, type ResolvedConfig, type Plugin } from 'vite';
+import { compile as compileMdx } from '@mdx-js/mdx';
 import { parseFragment, serialize } from 'parse5';
 import { codeToHtml, createCssVariablesTheme } from 'shiki';
 import type { DefaultTreeAdapterMap } from 'parse5';
@@ -414,7 +415,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       // Read all files and prepare batch inputs
       const inputs: Array<{ id: string; source: string; filepath: string }> = [];
       for (const file of files) {
-        const source = await readFile(file, 'utf8');
+        let source = await readFile(file, 'utf8');
+
+        // Apply preprocess hooks (same as load hook does)
+        for (const preprocessHook of hooks.preprocess) {
+          source = preprocessHook(source, file);
+        }
+
         // Pre-detect problematic patterns - these files will be handled by Astro's MDX plugin
         if (hasProblematicMdxPatterns(source)) {
           fallbackFiles.add(file);
@@ -492,7 +499,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           ? stripQuery(unwrapVirtual(resolved.id) ?? resolved.id)
           : fallback();
 
-      // If file was pre-detected as needing fallback, let Astro's MDX plugin handle it
+      // If file was pre-detected as needing fallback, let other plugins (like @astrojs/mdx) handle it
       if (fallbackFiles.has(resolvedId)) {
         return null;
       }
@@ -512,11 +519,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         sourceLookup.get(id) ??
         stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ''));
 
-      // If file was already marked for fallback, return fallback module immediately
-      if (fallbackFiles.has(filename)) {
-        return createFallbackModule(filename);
-      }
-
       try {
         const source = await readFile(filename, 'utf8');
 
@@ -527,13 +529,16 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         }
 
         // Early detection of problematic patterns - skip to fallback
+        // Note: Pre-detected files from buildStart are handled by resolveId returning null
+        // This catches files that weren't pre-detected (e.g., preprocess hooks revealed the pattern)
         if (hasProblematicMdxPatterns(processedSource)) {
           this.warn(
             `[markflow] Skipping ${filename}: contains patterns incompatible with markdown-rs`
           );
           fallbackFiles.add(filename);
           fallbackReasons.set(filename, 'Detected problematic MDX patterns');
-          return createFallbackModule(filename);
+          // Use @mdx-js/mdx as fallback compiler for runtime-detected files
+          return compileFallbackModule(filename, processedSource, id);
         }
 
         const startTime = performance.now();
@@ -671,7 +676,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         if (shouldFallback) {
           fallbackFiles.add(filename);
           fallbackReasons.set(filename, message);
-          this.warn(`[markflow] Falling back to Astro MDX for ${filename}: ${message}`);
+          this.warn(`[markflow] Falling back to @mdx-js/mdx for ${filename}: ${message}`);
 
           // Try to invalidate the module in dev server mode
           const config = resolvedConfig as unknown as {
@@ -689,7 +694,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             }
           }
 
-          return createFallbackModule(filename);
+          // Re-read and process the file for fallback compilation
+          const fallbackSource = await readFile(filename, 'utf8');
+          let processedFallbackSource = fallbackSource;
+          for (const preprocessHook of hooks.preprocess) {
+            processedFallbackSource = preprocessHook(processedFallbackSource, filename);
+          }
+          return compileFallbackModule(filename, processedFallbackSource, id);
         }
         throw new Error(`[markflow] Compile failed for ${filename}: ${message}`);
       }
@@ -770,13 +781,49 @@ export default function MarkflowContent() {
 `;
 }
 
-function createFallbackModule(filename: string): { code: string } {
-  // Note: This function is used for runtime fallbacks (compilation errors).
-  // Files with problematic patterns are pre-detected in buildStart and handled by Astro's MDX plugin.
+async function compileFallbackModule(
+  filename: string,
+  source: string,
+  virtualId: string
+): Promise<{ code: string; map?: unknown }> {
+  // Use @mdx-js/mdx to compile files that markflow can't handle
+  // (e.g., files with import/export statements)
+  const compiled = await compileMdx(source, {
+    jsxImportSource: 'astro',
+    // Don't use providerImportSource as it requires @mdx-js/react
+    // which may not be installed
+  });
+
+  // The compiled output is a VFile, get the string value
+  const mdxCode = String(compiled);
+
+  // Wrap in Astro-compatible module format
+  // @mdx-js/mdx outputs ESM with `export default function MDXContent(...)`
+  // We need to add Content, frontmatter and getHeadings exports for Astro compatibility
+  // Note: MDXContent is the default export function from @mdx-js/mdx
+  const wrappedCode = `
+${mdxCode}
+
+// Re-export for Astro compatibility
+// MDXContent is defined by @mdx-js/mdx as the default export
+export const Content = MDXContent;
+export const file = ${JSON.stringify(filename)};
+export const url = undefined;
+export function getHeadings() { return []; }
+export const frontmatter = {};
+`;
+
+  // Transform JSX through esbuild (same as the main compilation path)
+  const esbuildResult = await transformWithEsbuild(wrappedCode, virtualId, {
+    loader: 'jsx',
+    jsx: 'transform',
+    jsxFactory: '_jsx',
+    jsxFragment: '_Fragment',
+  });
+
   return {
-    code: `export { default } from ${JSON.stringify(
-      filename
-    )};\nexport * from ${JSON.stringify(filename)};`,
+    code: esbuildResult.code,
+    map: esbuildResult.map ?? undefined,
   };
 }
 
