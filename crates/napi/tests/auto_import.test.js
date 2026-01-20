@@ -3,17 +3,23 @@ import { createCompiler } from '../index.js';
 
 const compiler = createCompiler();
 
-test('compile injects Aside import when directive is present', async (t) => {
+test('compile converts directive to Aside component', (t) => {
   const source = ':::note\nBody\n:::';
-  const result = await compiler.compile(source, '/virtual.mdx');
+  const result = compiler.compile(source, '/virtual.mdx');
 
-  t.true(result.code.includes("import { Aside } from '@astrojs/starlight/components';"));
+  // Directive should be converted to Aside component
+  t.true(result.code.includes('<Aside'));
+  t.true(result.code.includes('"type": "note"'));
 });
 
-test('compile does not duplicate existing Aside import', async (t) => {
+test('compile preserves existing Aside import without duplication', (t) => {
   const source = "import { Aside } from '@astrojs/starlight/components';\n\n:::note\nBody\n:::";
-  const result = await compiler.compile(source, '/virtual.mdx');
+  const result = compiler.compile(source, '/virtual.mdx');
 
+  // User-provided import should be preserved
+  t.true(result.code.includes("import { Aside } from '@astrojs/starlight/components';"));
+
+  // Should not be duplicated
   const occurrences = result.code.split("import { Aside } from '@astrojs/starlight/components';").length - 1;
   t.is(occurrences, 1);
 });

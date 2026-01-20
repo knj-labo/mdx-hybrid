@@ -26,7 +26,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "pnpm"
           cache-dependency-path: crates/napi/pnpm-lock.yaml
 
@@ -59,6 +59,10 @@ jobs:
         working-directory: crates/napi
         run: pnpm run smoke:napi -- fixtures/core/markdown/hello.md
 
+      - name: Run NAPI tests (AVA)
+        working-directory: crates/napi
+        run: pnpm test
+
   packages:
     name: Packages Quality Check
     runs-on: ubuntu-latest
@@ -76,7 +80,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
 
@@ -109,6 +113,19 @@ jobs:
         working-directory: packages/astro-loader
         run: pnpm run build
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Test markflow package
+        working-directory: packages/markflow
+        run: bun test
+
+      - name: Test astro-markflow package
+        working-directory: packages/astro-markflow
+        run: bun test
+
   e2e-withastro-docs:
     name: E2E (withastro-docs 6000 pages)
     runs-on: ubuntu-latest
@@ -127,7 +144,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "pnpm"
           cache-dependency-path: |
             crates/napi/pnpm-lock.yaml
@@ -153,6 +170,55 @@ jobs:
       - name: Install all workspace deps
         run: pnpm install --no-frozen-lockfile
 
-      - name: Build withastro-docs (Regression Check)
+      - name: Build withastro-docs (Performance Regression Check)
+        id: build
         working-directory: fixtures/integration/withastro-docs/repo
-        run: pnpm build
+        run: |
+          start_time=$(date +%s)
+          pnpm build
+          end_time=$(date +%s)
+          build_time=$((end_time - start_time))
+          echo "build_time=${build_time}" >> $GITHUB_OUTPUT
+          echo "::notice::Build completed in ${build_time} seconds"
+
+  e2e-harness:
+    name: E2E Harness Tests
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+          cache-dependency-path: |
+            crates/napi/pnpm-lock.yaml
+            fixtures/integration/astro-harness/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+
+      - name: Install NAPI deps and build
+        working-directory: crates/napi
+        run: pnpm install --frozen-lockfile && pnpm run build:napi
+
+      - name: Install harness dependencies
+        working-directory: fixtures/integration/astro-harness
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Run E2E harness tests
+        env:
+          MARKFLOW_HARNESS_E2E: "1"
+        run: node fixtures/integration/astro-harness/tests/directives.aside.test.mjs

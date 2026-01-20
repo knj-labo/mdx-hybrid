@@ -1,8 +1,9 @@
 ---
-const { title = 'Note' } = Astro.props
+const { type = 'note', title } = Astro.props
+const displayTitle = title ?? type.charAt(0).toUpperCase() + type.slice(1)
 ---
-<aside class="aside">
-  <strong>{title}</strong>
+<aside class={`aside aside--${type}`}>
+  <strong>{displayTitle}</strong>
   <slot />
 </aside>
 
