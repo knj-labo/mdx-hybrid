@@ -28,4 +28,8 @@ export const starlightLibrary: ComponentLibrary = {
     { directive: 'warning', component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
     { directive: 'danger', component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
   ],
+  slotNormalizations: [
+    { component: 'Steps', strategy: 'wrap_in_ol' },
+    { component: 'FileTree', strategy: 'wrap_in_ul', wrapperClass: 'filetree' },
+  ],
 };

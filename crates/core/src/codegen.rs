@@ -3,8 +3,9 @@
 //! This module provides shared functionality for generating JavaScript/JSX code
 //! from parsed markdown content, eliminating duplication between binding layers.
 
-use crate::PropValue;
+use crate::registry::defaults::default_starlight_registry;
 use crate::renderer::mdast::RenderBlock;
+use crate::{PropValue, RegistryConfig};
 use std::fmt::Write as FmtWrite;
 
 /// Converts a Rust string to a JavaScript string literal.
@@ -78,6 +79,28 @@ pub fn blocks_to_jsx_string<F>(blocks: &[RenderBlock], directive_mapper: Option<
 where
     F: Fn(&str) -> Option<DirectiveMappingResult>,
 {
+    blocks_to_jsx_string_with_registry(blocks, directive_mapper, None)
+}
+
+/// Converts RenderBlocks to a JSX string with registry-based slot normalization.
+///
+/// # Arguments
+///
+/// * `blocks` - The render blocks to convert
+/// * `directive_mapper` - Optional closure that maps directive names to component names
+/// * `registry` - Optional registry for slot normalization rules. If None, uses default Starlight registry.
+pub fn blocks_to_jsx_string_with_registry<F>(
+    blocks: &[RenderBlock],
+    directive_mapper: Option<F>,
+    registry: Option<&RegistryConfig>,
+) -> String
+where
+    F: Fn(&str) -> Option<DirectiveMappingResult>,
+{
+    // Use provided registry or default to Starlight
+    let default_registry = default_starlight_registry();
+    let registry = registry.unwrap_or(&default_registry);
+
     let mut result = String::new();
     for block in blocks {
         match block {
@@ -90,14 +113,8 @@ where
                 props,
                 slot_html,
             } => {
-                // Normalize Steps slot to single <ol> child (Starlight requirement)
-                let slot_html = if name == "Steps" {
-                    normalize_steps_slot(slot_html)
-                } else if name == "FileTree" {
-                    normalize_filetree_slot(slot_html)
-                } else {
-                    slot_html.clone()
-                };
+                // Apply slot normalization based on registry configuration
+                let slot_html = normalize_slot_by_registry(name, slot_html, registry);
                 // Escape raw braces in slot HTML to avoid JSX expression parsing
                 let slot_html = slot_html.replace('{', "&#123;").replace('}', "&#125;");
 
@@ -239,7 +256,30 @@ fn sanitize_html_block_for_jsx(content: &str) -> String {
     out
 }
 
-fn normalize_steps_slot(slot_html: &str) -> String {
+/// Applies slot normalization based on registry configuration.
+///
+/// This function looks up the component in the registry's slot_normalizations
+/// and applies the appropriate transformation strategy.
+fn normalize_slot_by_registry(
+    component: &str,
+    slot_html: &str,
+    registry: &RegistryConfig,
+) -> String {
+    if let Some(normalization) = registry.get_slot_normalization(component) {
+        match normalization.strategy.as_str() {
+            "wrap_in_ol" => normalize_wrap_in_ol(slot_html),
+            "wrap_in_ul" => normalize_wrap_in_ul(slot_html, normalization.wrapper_class.as_deref()),
+            _ => slot_html.to_string(),
+        }
+    } else {
+        slot_html.to_string()
+    }
+}
+
+/// Normalizes slot content by wrapping in a single `<ol>` element.
+///
+/// This is used for components like Steps that require ordered list structure.
+fn normalize_wrap_in_ol(slot_html: &str) -> String {
     let trimmed = slot_html.trim();
 
     // If it is already a single <ol> ... </ol> with no siblings, keep it.
@@ -294,25 +334,43 @@ fn normalize_steps_slot(slot_html: &str) -> String {
     format!("<ol>{}</ol>", items)
 }
 
-fn normalize_filetree_slot(slot_html: &str) -> String {
+/// Normalizes slot content by wrapping in a single `<ul>` element.
+///
+/// This is used for components like FileTree that require unordered list structure.
+fn normalize_wrap_in_ul(slot_html: &str, wrapper_class: Option<&str>) -> String {
     let trimmed = slot_html.trim();
     let has_li = trimmed.contains("<li");
 
+    let class_attr = wrapper_class
+        .map(|c| format!(" class=\"{}\"", c))
+        .unwrap_or_default();
+
     if trimmed.is_empty() {
-        return "<ul><li></li></ul>".to_string();
+        return format!("<ul{}><li></li></ul>", class_attr);
     }
 
+    // If already wrapped in <ul>, check if we need to add class or li
     if trimmed.starts_with("<ul") && trimmed.ends_with("</ul>") {
-        if has_li {
+        if has_li && wrapper_class.is_none() {
             return slot_html.to_string();
         }
-        return trimmed.replace("</ul>", "<li></li></ul>");
+        // Need to add class or handle missing li
+        if has_li {
+            // Just add class to existing ul
+            return format!("<ul{}>{}", class_attr, &trimmed[3..]);
+        }
+        // Add empty li
+        return format!(
+            "<ul{}>{}<li></li></ul>",
+            class_attr,
+            &trimmed[trimmed.find('>').map(|i| i + 1).unwrap_or(3)..trimmed.len() - 5]
+        );
     }
 
     if has_li {
-        format!("<ul>{}</ul>", slot_html)
+        format!("<ul{}>{}</ul>", class_attr, slot_html)
     } else {
-        format!("<ul><li>{}</li></ul>", slot_html)
+        format!("<ul{}><li>{}</li></ul>", class_attr, slot_html)
     }
 }
 

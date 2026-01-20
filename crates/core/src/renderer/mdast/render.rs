@@ -172,6 +172,14 @@ fn render_jsx(
             }
         }
 
+        // Look up the component name from the registry, defaulting to "Aside"
+        // Clone to avoid borrow conflicts with ctx
+        let component_name = ctx
+            .registry()
+            .get_directive_component(&directive_type)
+            .unwrap_or("Aside")
+            .to_string();
+
         let slot_html = ctx.render_children_to_string(children);
 
         let mut props = HashMap::new();
@@ -181,17 +189,28 @@ fn render_jsx(
         }
 
         if ctx.is_in_list() {
-            ctx.push_component_inline("Aside", &props, &slot_html);
+            ctx.push_component_inline(&component_name, &props, &slot_html);
         } else {
-            ctx.push_component("Aside", props, slot_html);
+            ctx.push_component(&component_name, props, slot_html);
         }
         return;
     }
 
-    // 3. Handle FileTree: transform to plain HTML <ul class="filetree">
-    if tag_name == "FileTree" {
+    // 3. Handle FileTree: apply slot normalization if configured in registry
+    // Extract normalization info before borrowing ctx mutably
+    let ul_normalization = ctx
+        .registry()
+        .get_slot_normalization(tag_name)
+        .filter(|n| n.strategy == "wrap_in_ul")
+        .map(|n| n.wrapper_class.clone());
+
+    if let Some(wrapper_class) = ul_normalization {
         let slot_html = ctx.render_children_to_string(children);
-        ctx.push_raw("<ul class=\"filetree\">");
+        let class_attr = wrapper_class
+            .as_ref()
+            .map(|c| format!(" class=\"{}\"", c))
+            .unwrap_or_default();
+        ctx.push_raw(&format!("<ul{}>", class_attr));
         ctx.push_raw(&slot_html);
         ctx.push_raw("</ul>");
         return;
@@ -220,14 +239,9 @@ fn render_jsx(
     }
 
     // 5. Render children to HTML string
+    // Note: Slot normalization (Steps → <ol>, FileTree → <ul>) is handled in codegen.rs
+    // based on registry configuration, not here.
     let slot_html = ctx.render_children_to_string(children);
-
-    // Special-case Steps: ensure single <ol> child to satisfy Starlight expectations.
-    let slot_html = if tag_name == "Steps" {
-        normalize_steps_slot(&slot_html)
-    } else {
-        slot_html
-    };
 
     // 6. Special handling for Fragment with slot attribute
     if tag_name == "Fragment" && props.contains_key("slot") {
@@ -243,64 +257,6 @@ fn render_jsx(
     } else {
         ctx.push_component(tag_name, props, slot_html);
     }
-}
-
-/// Ensures the Steps component receives a single `<ol>` child as required by Starlight.
-/// If the slot already starts with `<ol` and ends with `</ol>` (single root), it is returned unchanged.
-/// Otherwise, the entire slot is wrapped in `<ol><li>...</li></ol>`.
-fn normalize_steps_slot(slot_html: &str) -> String {
-    let trimmed = slot_html.trim();
-    // Fast-path: exactly one <ol> … </ol> wrapping everything.
-    if trimmed.starts_with("<ol") && trimmed.ends_with("</ol>") {
-        let first_ol = trimmed.find("<ol").unwrap_or(0);
-        let last_close = trimmed.rfind("</ol>").unwrap_or(trimmed.len());
-        let has_extra_ol = trimmed[first_ol + 3..last_close].contains("<ol");
-        let trailing = trimmed[last_close + 5..].trim(); // 5 = len("</ol>")
-        let leading = trimmed[..first_ol].trim();
-        if !has_extra_ol && leading.is_empty() && trailing.is_empty() {
-            return slot_html.to_string();
-        }
-    }
-
-    // Otherwise, merge all ol/li content into a single <ol>. Any non-ol content
-    // becomes its own <li> to keep Steps happy with a single ordered-list root.
-    fn push_other_as_li(buf: &mut String, fragment: &str) {
-        let frag = fragment.trim();
-        if frag.is_empty() {
-            return;
-        }
-        buf.push_str("<li>");
-        buf.push_str(frag);
-        buf.push_str("</li>");
-    }
-
-    let mut items = String::new();
-    let mut rest = trimmed;
-
-    while let Some(start) = rest.find("<ol") {
-        let before = &rest[..start];
-        push_other_as_li(&mut items, before);
-
-        let after_ol = &rest[start..];
-        if let Some(end_idx) = after_ol.find("</ol>") {
-            let body_start = after_ol
-                .find('>')
-                .map(|i| i + 1)
-                .unwrap_or_else(|| "<ol".len());
-            let body = &after_ol[body_start..end_idx];
-            items.push_str(body); // keep existing <li>... from nested ol
-            rest = &after_ol[end_idx + "</ol>".len()..];
-        } else {
-            // Malformed; just wrap the remainder
-            push_other_as_li(&mut items, after_ol);
-            rest = "";
-            break;
-        }
-    }
-
-    push_other_as_li(&mut items, rest);
-
-    format!("<ol>{}</ol>", items)
 }
 
 /// Recursively renders an AST node to HTML, updating the context state.

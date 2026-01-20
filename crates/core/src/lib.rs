@@ -21,7 +21,11 @@ pub mod transform;
 pub use error::MarkflowError;
 pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
 pub use parser::{ParseConfig, ParseConstructs};
-pub use registry::{ComponentDef, DirectiveMapping, PropSource, RegistryConfig};
+#[allow(deprecated)]
+pub use registry::{
+    ComponentDef, ComponentDefinition, DirectiveMapping, PropSource, RegistryConfig,
+    SlotNormalization,
+};
 pub use renderer::{BlocksResult, HeadingEntry, MdastOptions, PropValue, RenderBlock, to_blocks};
 pub use slug::{Slugger, slugify};
 pub use transform::{code_fence, directives};
