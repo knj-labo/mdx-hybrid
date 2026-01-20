@@ -84,7 +84,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
                 fence_marker = marker;
             }
             // Pass through fencing lines exactly as is
-            output.push_str(&line_body);
+            output.push_str(line_body);
             output.push_str(line_ending);
             last_line_was_blank = trimmed.is_empty();
             continue;
@@ -105,7 +105,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
 
                 // We are not tracking specific component names anymore.
                 // Just pass the line through.
-                output.push_str(&line_body);
+                output.push_str(line_body);
                 output.push_str(line_ending);
 
                 // The line we just added is obviously not blank
@@ -115,7 +115,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
         }
 
         // Pass through regular lines
-        output.push_str(&line_body);
+        output.push_str(line_body);
         output.push_str(line_ending);
 
         last_line_was_blank = trimmed.is_empty();
@@ -214,60 +214,60 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
         let indent = line.len() - trimmed.len();
 
         // Only process indented lines (list context)
-        if indent > 0 {
-            if let Some(tag_info) = parse_jsx_tag(trimmed).filter(is_list_jsx_component) {
-                // Check if we need a blank line before
-                if i > 0 && needs_blank_line_before(&lines, i) {
+        if indent > 0
+            && let Some(tag_info) = parse_jsx_tag(trimmed).filter(is_list_jsx_component)
+        {
+            // Check if we need a blank line before
+            if i > 0 && needs_blank_line_before(&lines, i) {
+                output.push('\n');
+            }
+
+            output.push_str(line);
+            output.push('\n');
+
+            // For self-closing tags or opening tags, check if we need blank line after
+            if tag_info.is_opening && !tag_info.self_closing {
+                // Find the closing tag
+                let close_tag = format!("</{}>", tag_info.name);
+                let mut j = i + 1;
+                let mut depth = 1;
+                while j < lines.len() && depth > 0 {
+                    let inner_trimmed = lines[j].trim();
+                    if inner_trimmed.starts_with(&format!("<{}", tag_info.name))
+                        && !inner_trimmed.ends_with("/>")
+                    {
+                        depth += 1;
+                    }
+                    if inner_trimmed.contains(&close_tag) {
+                        depth -= 1;
+                        if depth == 0 {
+                            // Output lines from i+1 to j (inclusive)
+                            for inner_line in lines.iter().take(j + 1).skip(i + 1) {
+                                output.push_str(inner_line);
+                                output.push('\n');
+                            }
+                            // Check if we need blank line after closing tag
+                            if j + 1 < lines.len() && needs_blank_line_after(&lines, j) {
+                                output.push('\n');
+                            }
+                            i = j + 1;
+                            break;
+                        }
+                    }
+                    j += 1;
+                }
+                if depth > 0 {
+                    // No closing tag found, just continue normally
+                    i += 1;
+                }
+                continue;
+            } else if tag_info.self_closing {
+                // Self-closing tag, check if we need blank line after
+                if i + 1 < lines.len() && needs_blank_line_after(&lines, i) {
                     output.push('\n');
                 }
-
-                output.push_str(line);
-                output.push('\n');
-
-                // For self-closing tags or opening tags, check if we need blank line after
-                if tag_info.is_opening && !tag_info.self_closing {
-                    // Find the closing tag
-                    let close_tag = format!("</{}>", tag_info.name);
-                    let mut j = i + 1;
-                    let mut depth = 1;
-                    while j < lines.len() && depth > 0 {
-                        let inner_trimmed = lines[j].trim();
-                        if inner_trimmed.starts_with(&format!("<{}", tag_info.name))
-                            && !inner_trimmed.ends_with("/>")
-                        {
-                            depth += 1;
-                        }
-                        if inner_trimmed.contains(&close_tag) {
-                            depth -= 1;
-                            if depth == 0 {
-                                // Output lines from i+1 to j (inclusive)
-                                for k in (i + 1)..=j {
-                                    output.push_str(lines[k]);
-                                    output.push('\n');
-                                }
-                                // Check if we need blank line after closing tag
-                                if j + 1 < lines.len() && needs_blank_line_after(&lines, j) {
-                                    output.push('\n');
-                                }
-                                i = j + 1;
-                                break;
-                            }
-                        }
-                        j += 1;
-                    }
-                    if depth > 0 {
-                        // No closing tag found, just continue normally
-                        i += 1;
-                    }
-                    continue;
-                } else if tag_info.self_closing {
-                    // Self-closing tag, check if we need blank line after
-                    if i + 1 < lines.len() && needs_blank_line_after(&lines, i) {
-                        output.push('\n');
-                    }
-                    i += 1;
-                    continue;
-                }
+                i += 1;
+                continue;
             }
         }
 
