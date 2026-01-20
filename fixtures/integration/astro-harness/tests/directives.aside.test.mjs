@@ -14,13 +14,13 @@ if (!process.env.MARKFLOW_HARNESS_E2E) {
 
 const repoRoot = resolve(__dirname, '../../../..')
 
-const { runHarnessBuild } = await import(resolve(repoRoot, 'scripts/run-astro-harness.mjs'))
+const { runHarness } = await import(resolve(repoRoot, 'scripts/run-astro-harness.mjs'))
 const { createCompiler } = await import(resolve(repoRoot, 'crates/napi/index.js'))
 
 const directivesPath = resolve(__dirname, '../content/docs/directives.mdx')
 
 // 1) Build the Astro harness (markflow mode) and check rendered HTML contains Aside output.
-await runHarnessBuild('astro', 'markflow', { inheritLogs: false })
+await runHarness('markflow', { skipInstall: true })
 
 const distHtml = resolve(__dirname, '../dist/index.html')
 const html = readFileSync(distHtml, 'utf8')
