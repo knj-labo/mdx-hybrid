@@ -1,5 +1,47 @@
 //! JSX indentation normalization utilities.
 
+/// Information about a parsed JSX tag.
+#[derive(Debug, Clone)]
+struct JsxTagInfo {
+    /// The tag name (e.g., "MyComponent", "div", "Fragment")
+    name: String,
+    /// Whether this is an opening tag (vs closing tag)
+    is_opening: bool,
+    /// Whether this is a self-closing tag (ends with `/>`)
+    self_closing: bool,
+    /// Whether this tag has a `slot=` attribute
+    has_slot_attr: bool,
+}
+
+/// Parses a JSX tag from a trimmed line.
+/// Returns None for non-JSX content, closing tags, or comments.
+fn parse_jsx_tag(trimmed: &str) -> Option<JsxTagInfo> {
+    // Must start with '<' but not '</' (closing) or '<!' (comment)
+    if !trimmed.starts_with('<') || trimmed.starts_with("</") || trimmed.starts_with("<!") {
+        return None;
+    }
+
+    let rest = &trimmed[1..];
+    let name_end = rest
+        .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+        .unwrap_or(rest.len());
+    let name = &rest[..name_end];
+
+    if name.is_empty() {
+        return None;
+    }
+
+    let self_closing = trimmed.trim_end().ends_with("/>");
+    let has_slot_attr = trimmed.contains("slot=");
+
+    Some(JsxTagInfo {
+        name: name.to_string(),
+        is_opening: true,
+        self_closing,
+        has_slot_attr,
+    })
+}
+
 /// Normalizes JSX indentation and spacing.
 ///
 /// 1. Inserts a blank line before any block-level JSX component (Capitalized tag)
@@ -25,9 +67,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
             (line, "")
         };
 
-        // Allow mutations to the current line (e.g., dedenting component lines)
-        let mut line_body = raw_body.to_string();
-
+        let line_body = raw_body;
         let trimmed = line_body.trim_start();
 
         // 1. Code Fence Tracking
@@ -53,7 +93,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
         // 2. Normalization Logic (Only outside fences)
         if !in_fence {
             // Check for JSX opening tags
-            if let Some(tag) = jsx_open_tag(trimmed) {
+            if let Some(tag) = parse_jsx_tag(trimmed) {
                 // Heuristic: Capitalized tag = Component. Lowercase = HTML.
                 // If it's a Component and previous line wasn't blank, insert blank line.
                 let is_component = tag.name.chars().next().is_some_and(|c| c.is_uppercase());
@@ -175,7 +215,7 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
 
         // Only process indented lines (list context)
         if indent > 0 {
-            if let Some(tag_info) = detect_list_jsx_component(trimmed) {
+            if let Some(tag_info) = parse_jsx_tag(trimmed).filter(is_list_jsx_component) {
                 // Check if we need a blank line before
                 if i > 0 && needs_blank_line_before(&lines, i) {
                     output.push('\n');
@@ -244,53 +284,18 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
     output
 }
 
-struct ListJsxTag {
-    name: String,
-    is_opening: bool,
-    self_closing: bool,
-}
+/// List of tab component names that need special handling in list context.
+const LIST_JSX_COMPONENTS: &[&str] = &[
+    "PackageManagerTabs",
+    "StaticSsrTabs",
+    "UIFrameworkTabs",
+    "TabItem",
+];
 
-/// Detects if a trimmed line starts with a list-embedded JSX component.
-fn detect_list_jsx_component(trimmed: &str) -> Option<ListJsxTag> {
-    if !trimmed.starts_with('<') || trimmed.starts_with("</") {
-        return None;
-    }
-
-    let tab_components = [
-        "PackageManagerTabs",
-        "StaticSsrTabs",
-        "UIFrameworkTabs",
-        "TabItem",
-    ];
-
-    // Parse tag name
-    let rest = &trimmed[1..];
-    let name_end = rest
-        .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
-        .unwrap_or(rest.len());
-    let name = &rest[..name_end];
-
-    // Check tab components
-    if tab_components.contains(&name) {
-        let self_closing = trimmed.trim_end().ends_with("/>");
-        return Some(ListJsxTag {
-            name: name.to_string(),
-            is_opening: true,
-            self_closing,
-        });
-    }
-
-    // Check Fragment with slot= attribute
-    if name == "Fragment" && trimmed.contains("slot=") {
-        let self_closing = trimmed.trim_end().ends_with("/>");
-        return Some(ListJsxTag {
-            name: name.to_string(),
-            is_opening: true,
-            self_closing,
-        });
-    }
-
-    None
+/// Checks if a tag is a list-embedded JSX component that needs special handling.
+fn is_list_jsx_component(tag: &JsxTagInfo) -> bool {
+    LIST_JSX_COMPONENTS.contains(&tag.name.as_str())
+        || (tag.name == "Fragment" && tag.has_slot_attr)
 }
 
 /// Checks if a blank line should be inserted before the component at index i.
@@ -330,7 +335,10 @@ fn needs_blank_line_after(lines: &[&str], i: usize) -> bool {
     }
 
     // Don't insert if next line is an opening component tag (they flow together)
-    if let Some(_) = detect_list_jsx_component(next_trimmed) {
+    if parse_jsx_tag(next_trimmed)
+        .filter(is_list_jsx_component)
+        .is_some()
+    {
         return false;
     }
 
@@ -340,38 +348,6 @@ fn needs_blank_line_after(lines: &[&str], i: usize) -> bool {
     }
 
     true
-}
-
-struct JsxTag {
-    name: String,
-    #[allow(dead_code)]
-    self_closing: bool,
-}
-
-fn jsx_open_tag(trimmed: &str) -> Option<JsxTag> {
-    // Basic JSX tag detection: <Name ...
-    if !trimmed.starts_with('<') || trimmed.starts_with("</") || trimmed.starts_with("<!") {
-        return None;
-    }
-
-    let mut chars = trimmed.chars().peekable();
-    chars.next(); // skip '<'
-
-    let mut name = String::new();
-    while let Some(&ch) = chars.peek() {
-        if ch.is_whitespace() || ch == '>' || ch == '/' {
-            break;
-        }
-        name.push(ch);
-        chars.next();
-    }
-
-    if name.is_empty() {
-        return None;
-    }
-
-    let self_closing = trimmed.trim_end().ends_with("/>");
-    Some(JsxTag { name, self_closing })
 }
 
 /// Detects simple HTML wrapper tags like <p>, <div>, <span>
