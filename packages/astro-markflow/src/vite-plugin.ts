@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { transformWithEsbuild, type ResolvedConfig, type Plugin } from 'vite';
+import type { SourceMapInput } from 'rollup';
 import { compile as compileMdx } from '@mdx-js/mdx';
 import { parseFragment, serialize } from 'parse5';
 import { codeToHtml, createCssVariablesTheme } from 'shiki';
@@ -785,7 +786,7 @@ async function compileFallbackModule(
   filename: string,
   source: string,
   virtualId: string
-): Promise<{ code: string; map?: unknown }> {
+): Promise<{ code: string; map?: SourceMapInput }> {
   // Use @mdx-js/mdx to compile files that markflow can't handle
   // (e.g., files with import/export statements)
   const compiled = await compileMdx(source, {
@@ -823,7 +824,7 @@ export const frontmatter = {};
 
   return {
     code: esbuildResult.code,
-    map: esbuildResult.map ?? undefined,
+    map: esbuildResult.map as SourceMapInput | undefined,
   };
 }
 
