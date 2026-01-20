@@ -2,8 +2,8 @@
 
 use super::Options;
 use super::types::{BlocksResult, HeadingEntry, PropValue, RenderBlock, Scope};
-use crate::registry::defaults::default_starlight_registry;
 use crate::RegistryConfig;
+use crate::registry::defaults::default_starlight_registry;
 use markdown::mdast::Node;
 use std::collections::HashMap;
 

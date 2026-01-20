@@ -130,10 +130,12 @@ mod tests {
     #[test]
     fn test_default_registry_has_aside() {
         let registry = default_starlight_registry();
-        assert!(registry
-            .components
-            .iter()
-            .any(|c| c.name == "Aside" && c.module_path == "@astrojs/starlight/components"));
+        assert!(
+            registry
+                .components
+                .iter()
+                .any(|c| c.name == "Aside" && c.module_path == "@astrojs/starlight/components")
+        );
     }
 
     #[test]
