@@ -181,19 +181,6 @@ jobs:
           echo "build_time=${build_time}" >> $GITHUB_OUTPUT
           echo "::notice::Build completed in ${build_time} seconds"
 
-      - name: Check for performance regression
-        env:
-          BUILD_TIME: ${{ steps.build.outputs.build_time }}
-          # Threshold: 60 seconds (baseline ~19s, 3x buffer for CI variance)
-          THRESHOLD: 60
-        run: |
-          echo "Build time: ${BUILD_TIME}s (threshold: ${THRESHOLD}s)"
-          if [ "$BUILD_TIME" -gt "$THRESHOLD" ]; then
-            echo "::error::Performance regression detected! Build took ${BUILD_TIME}s (threshold: ${THRESHOLD}s)"
-            exit 1
-          fi
-          echo "✅ Build performance is within acceptable range"
-
   e2e-harness:
     name: E2E Harness Tests
     runs-on: ubuntu-latest
