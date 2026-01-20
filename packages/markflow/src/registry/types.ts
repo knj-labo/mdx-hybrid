@@ -38,6 +38,26 @@ export interface DirectiveMapping {
 }
 
 /**
+ * Slot normalization configuration for components that require specific slot structures.
+ *
+ * Some components (like Starlight's Steps and FileTree) require their slot content
+ * to be wrapped in specific HTML structures. This configuration allows the registry
+ * to define these requirements without hardcoding them.
+ */
+export interface SlotNormalization {
+  /** Component name this normalization applies to (e.g., "Steps", "FileTree") */
+  component: string;
+  /**
+   * Normalization strategy to apply:
+   * - "wrap_in_ol": Wrap content in a single `<ol>` element
+   * - "wrap_in_ul": Wrap content in a single `<ul>` element
+   */
+  strategy: 'wrap_in_ol' | 'wrap_in_ul';
+  /** Optional CSS class to add to the wrapper element */
+  wrapperClass?: string;
+}
+
+/**
  * A component library preset containing components and directive mappings.
  */
 export interface ComponentLibrary {
@@ -51,6 +71,8 @@ export interface ComponentLibrary {
   components: ComponentDefinition[];
   /** Directive mappings for this library */
   directiveMappings?: DirectiveMapping[];
+  /** Slot normalization rules for this library */
+  slotNormalizations?: SlotNormalization[];
 }
 
 /**
@@ -61,10 +83,14 @@ export interface Registry {
   getComponent(name: string): ComponentDefinition | undefined;
   /** Get a directive mapping by directive name */
   getDirectiveMapping(directive: string): DirectiveMapping | undefined;
+  /** Get slot normalization for a component */
+  getSlotNormalization(component: string): SlotNormalization | undefined;
   /** Get all registered components */
   getAllComponents(): ComponentDefinition[];
   /** Get all supported directive names */
   getSupportedDirectives(): string[];
+  /** Get all slot normalizations */
+  getAllSlotNormalizations(): SlotNormalization[];
   /** Get all components that belong to a specific module */
   getComponentsByModule(modulePath: string): ComponentDefinition[];
   /** Check if a component exists in the registry */
@@ -72,7 +98,11 @@ export interface Registry {
   /** Get the import path for a component */
   getImportPath(name: string): string | undefined;
   /** Convert registry to Rust-compatible configuration format */
-  toRustConfig(): { components: ComponentDefinition[]; directiveMappings: DirectiveMapping[] };
+  toRustConfig(): {
+    components: ComponentDefinition[];
+    directiveMappings: DirectiveMapping[];
+    slotNormalizations: SlotNormalization[];
+  };
 }
 
 /**

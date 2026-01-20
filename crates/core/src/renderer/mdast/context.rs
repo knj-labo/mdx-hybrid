@@ -2,6 +2,8 @@
 
 use super::Options;
 use super::types::{BlocksResult, HeadingEntry, PropValue, RenderBlock, Scope};
+use crate::registry::defaults::default_starlight_registry;
+use crate::RegistryConfig;
 use markdown::mdast::Node;
 use std::collections::HashMap;
 
@@ -26,10 +28,21 @@ pub struct Context<'a> {
     stack: Vec<Scope>,
     #[allow(dead_code)]
     options: &'a Options,
+
+    /// Component registry for directive and component mappings.
+    registry: RegistryConfig,
 }
 
 impl<'a> Context<'a> {
+    /// Creates a new context with default Starlight registry.
     pub fn new(options: &'a Options) -> Self {
+        Self::with_registry(options, None)
+    }
+
+    /// Creates a new context with a custom registry.
+    ///
+    /// If `registry` is None, the default Starlight registry is used.
+    pub fn with_registry(options: &'a Options, registry: Option<RegistryConfig>) -> Self {
         Self {
             blocks: Vec::new(),
             current_html: String::with_capacity(4096),
@@ -37,7 +50,13 @@ impl<'a> Context<'a> {
             slugger: crate::Slugger::new(),
             stack: vec![Scope::Root],
             options,
+            registry: registry.unwrap_or_else(default_starlight_registry),
         }
+    }
+
+    /// Returns a reference to the component registry.
+    pub fn registry(&self) -> &RegistryConfig {
+        &self.registry
     }
 
     /// Writes a raw string to the current HTML buffer without escaping (for safe HTML tags).
@@ -226,7 +245,8 @@ impl<'a> Context<'a> {
         // Import render_node here to avoid circular dependency at module level
         use super::render::render_node;
 
-        let mut child_ctx = Context::new(self.options);
+        // Clone registry to pass to child context
+        let mut child_ctx = Context::with_registry(self.options, Some(self.registry.clone()));
 
         for child in children {
             render_node(child, &mut child_ctx);

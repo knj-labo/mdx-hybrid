@@ -2,11 +2,21 @@
 
 use std::fmt::Write as _;
 
+use crate::registry::RegistryConfig;
 use crate::transform::code_fence::{FenceState, advance_fence_state};
 
 /// Ensures Aside import is present when directives were rewritten.
 /// If `count > 0` and no existing import from `@astrojs/starlight/components` is present,
 /// it pushes the import into the `hoisted` list.
+///
+/// # Deprecated
+///
+/// This function is deprecated. Use `ensure_directive_imports` with a registry instead,
+/// which supports custom component mappings.
+#[deprecated(
+    since = "0.5.0",
+    note = "Use ensure_directive_imports with a registry instead"
+)]
 pub fn ensure_aside_import(hoisted: &mut Vec<String>, directive_count: usize) {
     if directive_count == 0 {
         return;
@@ -21,6 +31,47 @@ pub fn ensure_aside_import(hoisted: &mut Vec<String>, directive_count: usize) {
             0,
             "import { Aside } from '@astrojs/starlight/components';".to_string(),
         );
+    }
+}
+
+/// Ensures necessary imports are present for components used in directive mappings.
+///
+/// This function uses the registry to determine which components need to be imported
+/// based on the directives used in the document.
+///
+/// # Arguments
+///
+/// * `hoisted` - Mutable reference to the list of hoisted import statements
+/// * `used_directives` - List of directive names that were used in the document
+/// * `registry` - The component registry for looking up component import paths
+pub fn ensure_directive_imports(
+    hoisted: &mut Vec<String>,
+    used_directives: &[&str],
+    registry: &RegistryConfig,
+) {
+    use std::collections::HashSet;
+
+    // Collect unique component names needed for the used directives
+    let mut components_needed: HashSet<&str> = HashSet::new();
+    for directive in used_directives {
+        if let Some(component) = registry.get_directive_component(directive) {
+            components_needed.insert(component);
+        }
+    }
+
+    // For each component, check if import exists and add if needed
+    for component in components_needed {
+        if let Some(module_path) = registry.get_component_module(component) {
+            let import_fragment = format!("from '{}'", module_path);
+            let already_imported = hoisted.iter().any(|line| line.contains(&import_fragment));
+
+            if !already_imported {
+                hoisted.insert(
+                    0,
+                    format!("import {{ {} }} from '{}';", component, module_path),
+                );
+            }
+        }
     }
 }
 
