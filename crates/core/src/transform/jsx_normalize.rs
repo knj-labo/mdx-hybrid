@@ -413,7 +413,8 @@ mod tests {
 
     #[test]
     fn test_normalize_list_jsx_inserts_blank_before_tabs() {
-        let input = "1. List item\n    <PackageManagerTabs>\n    content\n    </PackageManagerTabs>\n";
+        let input =
+            "1. List item\n    <PackageManagerTabs>\n    content\n    </PackageManagerTabs>\n";
         let result = normalize_list_jsx_components(input);
         assert!(
             result.contains("1. List item\n\n    <PackageManagerTabs>"),
