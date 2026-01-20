@@ -349,15 +349,12 @@ fn normalize_wrap_in_ul(slot_html: &str, wrapper_class: Option<&str>) -> String 
         return format!("<ul{}><li></li></ul>", class_attr);
     }
 
-    // If already wrapped in <ul>, check if we need to add class or li
+    // If already wrapped in <ul>, check if we need to add li
     if trimmed.starts_with("<ul") && trimmed.ends_with("</ul>") {
-        if has_li && wrapper_class.is_none() {
-            return slot_html.to_string();
-        }
-        // Need to add class or handle missing li
         if has_li {
-            // Just add class to existing ul
-            return format!("<ul{}>{}", class_attr, &trimmed[3..]);
+            // Already properly wrapped with li items, return unchanged
+            // (Starlight FileTree component handles styling internally)
+            return slot_html.to_string();
         }
         // Add empty li
         return format!(
