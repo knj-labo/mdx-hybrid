@@ -6,6 +6,7 @@
 import type {
   ComponentDefinition,
   DirectiveMapping,
+  SlotNormalization,
   ComponentLibrary,
   Registry,
 } from './types.js';
@@ -25,6 +26,7 @@ import type {
 export function createRegistry(libraries: ComponentLibrary[]): Registry {
   const components = new Map<string, ComponentDefinition>();
   const directives = new Map<string, DirectiveMapping>();
+  const slotNormalizations = new Map<string, SlotNormalization>();
 
   for (const lib of libraries) {
     for (const comp of lib.components) {
@@ -32,6 +34,9 @@ export function createRegistry(libraries: ComponentLibrary[]): Registry {
     }
     for (const dir of lib.directiveMappings ?? []) {
       directives.set(dir.directive, dir);
+    }
+    for (const norm of lib.slotNormalizations ?? []) {
+      slotNormalizations.set(norm.component, norm);
     }
   }
 
@@ -47,6 +52,12 @@ export function createRegistry(libraries: ComponentLibrary[]): Registry {
     getDirectiveMapping: (directive: string): DirectiveMapping | undefined => directives.get(directive),
 
     /**
+     * Get slot normalization for a component.
+     */
+    getSlotNormalization: (component: string): SlotNormalization | undefined =>
+      slotNormalizations.get(component),
+
+    /**
      * Get all registered components.
      */
     getAllComponents: (): ComponentDefinition[] => Array.from(components.values()),
@@ -55,6 +66,11 @@ export function createRegistry(libraries: ComponentLibrary[]): Registry {
      * Get all supported directive names.
      */
     getSupportedDirectives: (): string[] => Array.from(directives.keys()),
+
+    /**
+     * Get all slot normalizations.
+     */
+    getAllSlotNormalizations: (): SlotNormalization[] => Array.from(slotNormalizations.values()),
 
     /**
      * Get all components that belong to a specific module.
@@ -82,6 +98,7 @@ export function createRegistry(libraries: ComponentLibrary[]): Registry {
     toRustConfig: () => ({
       components: Array.from(components.values()),
       directiveMappings: Array.from(directives.values()),
+      slotNormalizations: Array.from(slotNormalizations.values()),
     }),
   };
 }
@@ -90,6 +107,7 @@ export function createRegistry(libraries: ComponentLibrary[]): Registry {
 export type {
   ComponentDefinition,
   DirectiveMapping,
+  SlotNormalization,
   ComponentLibrary,
   Registry,
   ValidationError,

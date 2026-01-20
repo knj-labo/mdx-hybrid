@@ -8,21 +8,49 @@ use std::collections::HashMap;
 #[serde(rename_all = "camelCase")]
 pub struct RegistryConfig {
     /// Available components.
-    pub components: Vec<ComponentDef>,
+    pub components: Vec<ComponentDefinition>,
     /// Directive to component mappings.
     pub directive_mappings: Vec<DirectiveMapping>,
+    /// Slot normalization rules for components like Steps, FileTree.
+    #[serde(default)]
+    pub slot_normalizations: Vec<SlotNormalization>,
 }
 
 /// A single component definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ComponentDef {
+pub struct ComponentDefinition {
     /// Component name (e.g., "Aside", "Tabs").
     pub name: String,
     /// Module path for import (e.g., "@astrojs/starlight/components").
     pub module_path: String,
     /// Export type: "named" or "default".
     pub export_type: String,
+}
+
+/// Deprecated alias for `ComponentDefinition`.
+///
+/// Use `ComponentDefinition` instead for new code.
+#[deprecated(since = "0.5.0", note = "Use ComponentDefinition instead")]
+pub type ComponentDef = ComponentDefinition;
+
+/// Slot normalization configuration for components that require specific slot structures.
+///
+/// Some components (like Starlight's Steps and FileTree) require their slot content
+/// to be wrapped in specific HTML structures. This configuration allows the registry
+/// to define these requirements without hardcoding them in the core renderer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotNormalization {
+    /// Component name this normalization applies to (e.g., "Steps", "FileTree").
+    pub component: String,
+    /// Normalization strategy to apply.
+    /// - "wrap_in_ol": Wrap content in a single `<ol>` element
+    /// - "wrap_in_ul": Wrap content in a single `<ul>` element
+    pub strategy: String,
+    /// Optional CSS class to add to the wrapper element.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrapper_class: Option<String>,
 }
 
 /// Mapping from a directive name to a component.
@@ -76,5 +104,12 @@ impl RegistryConfig {
         self.directive_mappings
             .iter()
             .find(|m| m.directive == directive)
+    }
+
+    /// Get slot normalization configuration for a component.
+    pub fn get_slot_normalization(&self, component: &str) -> Option<&SlotNormalization> {
+        self.slot_normalizations
+            .iter()
+            .find(|n| n.component == component)
     }
 }
