@@ -16,8 +16,6 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
     // Simple bracket counting to skip logic inside nested structures if needed,
     // but for now strictly generic line-based processing.
     let mut last_line_was_blank = true;
-    let mut prev_nonblank_is_list_marker = false;
-    let mut prev_nonblank_indent = 0;
 
     for line in input.split_inclusive('\n') {
         let (raw_body, line_ending) = if let Some(stripped) = line.strip_suffix('\n') {
@@ -30,25 +28,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
         // Allow mutations to the current line (e.g., dedenting component lines)
         let mut line_body = raw_body.to_string();
 
-        // Trim indentation for indented JSX components so markdown-rs doesn't
-        // treat them as indented code blocks (common inside list items).
-        let mut trimmed = line_body.trim_start();
-        if !in_fence {
-            let leading = line_body.len() - trimmed.len();
-
-            // Heuristic: lines that look like JSX (opening or closing) and are
-            // indented by 4+ spaces are downgraded by 2 spaces. That keeps them
-            // inside list items (still indented) while avoiding the 4-space
-            // "code block" threshold in Markdown.
-            if leading >= 4 && is_componentish(trimmed) && !prev_nonblank_is_list_marker {
-                let new_indent = leading - 2;
-                let mut buf = String::with_capacity(line_body.len());
-                buf.push_str(&" ".repeat(new_indent));
-                buf.push_str(trimmed);
-                line_body = buf;
-                trimmed = line_body.trim_start();
-            }
-        }
+        let trimmed = line_body.trim_start();
 
         // 1. Code Fence Tracking
         let fence = trimmed.starts_with("```") || trimmed.starts_with("~~~");
@@ -98,13 +78,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
         output.push_str(&line_body);
         output.push_str(line_ending);
 
-        if trimmed.is_empty() {
-            last_line_was_blank = true;
-        } else {
-            last_line_was_blank = false;
-            prev_nonblank_is_list_marker = is_list_marker(trimmed);
-            prev_nonblank_indent = line_body.len() - trimmed.len();
-        }
+        last_line_was_blank = trimmed.is_empty();
     }
 
     output
@@ -181,6 +155,193 @@ pub fn collapse_multiline_wrapper_tags(input: &str) -> String {
     output
 }
 
+/// Normalizes list-embedded JSX components (tab components) to prevent tag mismatch errors.
+///
+/// Tab components inside lists cause markdown-rs to misinterpret list boundaries.
+/// This function inserts blank lines around indented tab components to force proper parsing.
+///
+/// Target components:
+/// - `PackageManagerTabs`, `StaticSsrTabs`, `UIFrameworkTabs`, `TabItem`
+/// - `Fragment` (when `slot=` attribute is present)
+pub fn normalize_list_jsx_components(input: &str) -> String {
+    let lines: Vec<&str> = input.lines().collect();
+    let mut output = String::with_capacity(input.len() + 100);
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+
+        // Only process indented lines (list context)
+        if indent > 0 {
+            if let Some(tag_info) = detect_list_jsx_component(trimmed) {
+                // Check if we need a blank line before
+                if i > 0 && needs_blank_line_before(&lines, i) {
+                    output.push('\n');
+                }
+
+                output.push_str(line);
+                output.push('\n');
+
+                // For self-closing tags or opening tags, check if we need blank line after
+                if tag_info.is_opening && !tag_info.self_closing {
+                    // Find the closing tag
+                    let close_tag = format!("</{}>", tag_info.name);
+                    let mut j = i + 1;
+                    let mut depth = 1;
+                    while j < lines.len() && depth > 0 {
+                        let inner_trimmed = lines[j].trim();
+                        if inner_trimmed.starts_with(&format!("<{}", tag_info.name))
+                            && !inner_trimmed.ends_with("/>")
+                        {
+                            depth += 1;
+                        }
+                        if inner_trimmed.contains(&close_tag) {
+                            depth -= 1;
+                            if depth == 0 {
+                                // Output lines from i+1 to j (inclusive)
+                                for k in (i + 1)..=j {
+                                    output.push_str(lines[k]);
+                                    output.push('\n');
+                                }
+                                // Check if we need blank line after closing tag
+                                if j + 1 < lines.len() && needs_blank_line_after(&lines, j) {
+                                    output.push('\n');
+                                }
+                                i = j + 1;
+                                break;
+                            }
+                        }
+                        j += 1;
+                    }
+                    if depth > 0 {
+                        // No closing tag found, just continue normally
+                        i += 1;
+                    }
+                    continue;
+                } else if tag_info.self_closing {
+                    // Self-closing tag, check if we need blank line after
+                    if i + 1 < lines.len() && needs_blank_line_after(&lines, i) {
+                        output.push('\n');
+                    }
+                    i += 1;
+                    continue;
+                }
+            }
+        }
+
+        output.push_str(line);
+        output.push('\n');
+        i += 1;
+    }
+
+    // Handle case where input doesn't end with newline
+    if !input.ends_with('\n') && !output.is_empty() && output.ends_with('\n') {
+        output.pop();
+    }
+
+    output
+}
+
+struct ListJsxTag {
+    name: String,
+    is_opening: bool,
+    self_closing: bool,
+}
+
+/// Detects if a trimmed line starts with a list-embedded JSX component.
+fn detect_list_jsx_component(trimmed: &str) -> Option<ListJsxTag> {
+    if !trimmed.starts_with('<') || trimmed.starts_with("</") {
+        return None;
+    }
+
+    let tab_components = [
+        "PackageManagerTabs",
+        "StaticSsrTabs",
+        "UIFrameworkTabs",
+        "TabItem",
+    ];
+
+    // Parse tag name
+    let rest = &trimmed[1..];
+    let name_end = rest
+        .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+        .unwrap_or(rest.len());
+    let name = &rest[..name_end];
+
+    // Check tab components
+    if tab_components.contains(&name) {
+        let self_closing = trimmed.trim_end().ends_with("/>");
+        return Some(ListJsxTag {
+            name: name.to_string(),
+            is_opening: true,
+            self_closing,
+        });
+    }
+
+    // Check Fragment with slot= attribute
+    if name == "Fragment" && trimmed.contains("slot=") {
+        let self_closing = trimmed.trim_end().ends_with("/>");
+        return Some(ListJsxTag {
+            name: name.to_string(),
+            is_opening: true,
+            self_closing,
+        });
+    }
+
+    None
+}
+
+/// Checks if a blank line should be inserted before the component at index i.
+fn needs_blank_line_before(lines: &[&str], i: usize) -> bool {
+    // Look backwards for the previous non-blank line
+    let mut prev_idx = i.saturating_sub(1);
+    while prev_idx > 0 && lines[prev_idx].trim().is_empty() {
+        prev_idx -= 1;
+    }
+
+    let prev_trimmed = lines[prev_idx].trim();
+
+    // Don't insert if already blank or if previous is a closing component tag
+    if prev_trimmed.is_empty() {
+        return false;
+    }
+
+    // If previous line is a closing tag like </Fragment>, </TabItem>, etc., don't add blank
+    if prev_trimmed.starts_with("</") {
+        return false;
+    }
+
+    true
+}
+
+/// Checks if a blank line should be inserted after the component at index i.
+fn needs_blank_line_after(lines: &[&str], i: usize) -> bool {
+    if i + 1 >= lines.len() {
+        return false;
+    }
+
+    let next_trimmed = lines[i + 1].trim();
+
+    // Don't insert if next line is already blank
+    if next_trimmed.is_empty() {
+        return false;
+    }
+
+    // Don't insert if next line is an opening component tag (they flow together)
+    if let Some(_) = detect_list_jsx_component(next_trimmed) {
+        return false;
+    }
+
+    // Don't insert if next line is a closing tag
+    if next_trimmed.starts_with("</") {
+        return false;
+    }
+
+    true
+}
+
 struct JsxTag {
     name: String,
     #[allow(dead_code)]
@@ -211,50 +372,6 @@ fn jsx_open_tag(trimmed: &str) -> Option<JsxTag> {
 
     let self_closing = trimmed.trim_end().ends_with("/>");
     Some(JsxTag { name, self_closing })
-}
-
-/// Returns true if the line looks like an opening/closing JSX component tag.
-/// Componentish means the tag name starts with an uppercase letter.
-fn is_componentish(trimmed: &str) -> bool {
-    if !trimmed.starts_with('<') || trimmed.starts_with("<!") || trimmed.starts_with("<?") {
-        return false;
-    }
-
-    // Skip initial `<` and an optional `/`
-    let mut chars = trimmed.chars().skip(1);
-    if let Some('/') = chars.clone().next() {
-        chars.next();
-    }
-
-    match chars.next() {
-        Some(c) if c.is_uppercase() => true,
-        _ => false,
-    }
-}
-
-fn is_list_marker(trimmed: &str) -> bool {
-    // Matches "- item", "* item", "+ item", "1. item", "23) item" etc.
-    let mut chars = trimmed.chars().peekable();
-    if let Some(first) = chars.peek() {
-        match first {
-            '-' | '+' | '*' => {
-                chars.next();
-                return chars.next().is_some_and(|c| c.is_whitespace());
-            }
-            '0'..='9' => {
-                while let Some('0'..='9') = chars.peek() {
-                    chars.next();
-                }
-                if let Some(sep) = chars.next() {
-                    if sep == '.' || sep == ')' {
-                        return chars.next().is_some_and(|c| c.is_whitespace());
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    false
 }
 
 /// Detects simple HTML wrapper tags like <p>, <div>, <span>
@@ -319,19 +436,40 @@ mod tests {
     }
 
     #[test]
-    fn test_indented_component_is_dedented_out_of_code_block() {
-        let input = "- item\n    <MyComponent>\n    </MyComponent>\n";
-        let result = normalize_mdx_jsx_indentation(input);
-        // Component lines should be indented by 2 spaces (not 4) so they stay inside the list
-        assert!(result.contains("\n  <MyComponent>\n  </MyComponent>\n"));
+    fn test_normalize_list_jsx_inserts_blank_before_tabs() {
+        let input = "1. List item\n    <PackageManagerTabs>\n    content\n    </PackageManagerTabs>\n";
+        let result = normalize_list_jsx_components(input);
+        assert!(
+            result.contains("1. List item\n\n    <PackageManagerTabs>"),
+            "Should insert blank line before indented PackageManagerTabs. Got: {}",
+            result
+        );
     }
 
     #[test]
-    fn test_component_in_list_keeps_indent_if_list_marker_precedes() {
-        // Previous regression: dedenting inside a list caused content to fall out of <li>
-        let input = "- step\n    <Tabs>\n    </Tabs>\n";
-        let result = normalize_mdx_jsx_indentation(input);
-        // Because previous nonblank was a list marker, we should NOT dedent; stays at 4 spaces.
-        assert!(result.contains("\n    <Tabs>\n    </Tabs>\n"));
+    fn test_normalize_list_jsx_preserves_blank_after_closing() {
+        let input = "    </PackageManagerTabs>\n\n3. Next item\n";
+        let result = normalize_list_jsx_components(input);
+        // No change needed - it's a closing tag, not an opening
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_fragment_with_slot() {
+        let input = "1. Item\n    <Fragment slot=\"npm\">\n    code\n    </Fragment>\n";
+        let result = normalize_list_jsx_components(input);
+        assert!(
+            result.contains("1. Item\n\n    <Fragment slot="),
+            "Should insert blank line before Fragment with slot. Got: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_no_change_non_list_context() {
+        let input = "<PackageManagerTabs>\ncontent\n</PackageManagerTabs>\n";
+        let result = normalize_list_jsx_components(input);
+        // No indentation = not in list context, should not change
+        assert_eq!(result, input);
     }
 }

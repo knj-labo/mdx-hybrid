@@ -20,7 +20,7 @@ pub use context::Context;
 pub use types::{AsideMeta, BlocksResult, CardMeta, HeadingEntry, PropValue, RenderBlock, Scope};
 
 use crate::transform::jsx_normalize::{
-    collapse_multiline_wrapper_tags, normalize_mdx_jsx_indentation,
+    collapse_multiline_wrapper_tags, normalize_list_jsx_components, normalize_mdx_jsx_indentation,
 };
 use crate::transform::smartypants::apply_smartypants;
 use render::render_node;
@@ -109,14 +109,17 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
     // 3. Normalize JSX indentation to prevent content from being treated as code blocks
     let normalized = normalize_mdx_jsx_indentation(&collapsed);
 
-    // 4. Mask raw <script>/<style> blocks only when raw HTML passthrough is disabled.
+    // 4. Normalize list-embedded JSX components (tab components in lists)
+    let normalized = normalize_list_jsx_components(&normalized);
+
+    // 5. Mask raw <script>/<style> blocks only when raw HTML passthrough is disabled.
     let (parsed_input, raw_masks) = if options.allow_raw_html() {
         (normalized.clone(), Vec::new())
     } else {
         mask_raw_html_blocks(&normalized)
     };
 
-    // 5. Parse markdown to MDAST with enhanced options
+    // 6. Parse markdown to MDAST with enhanced options
     let parse_options = markdown::ParseOptions {
         constructs: markdown::Constructs {
             // MDX: JSX support for <Component>...</Component>
@@ -140,15 +143,15 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
     let tree = markdown::to_mdast(&parsed_input, &parse_options)
         .map_err(|e| format!("Markdown parse error: {}", e))?;
 
-    // 6. Traverse the AST and render to blocks
+    // 7. Traverse the AST and render to blocks
     let mut ctx = Context::new(options);
     render_node(&tree, &mut ctx);
 
-    // 7. Finish and get blocks, then unmask raw HTML that was temporarily hidden
+    // 8. Finish and get blocks, then unmask raw HTML that was temporarily hidden
     let mut result = ctx.finish();
     unmask_raw_html_blocks(&mut result.blocks, &raw_masks);
 
-    // 8. Apply smartypants if enabled
+    // 9. Apply smartypants if enabled
     if options.enable_smartypants {
         for block in &mut result.blocks {
             if let RenderBlock::Html { content } = block {

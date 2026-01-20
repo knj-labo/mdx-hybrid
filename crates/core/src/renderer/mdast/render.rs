@@ -445,7 +445,8 @@ pub fn render_node(node: &Node, ctx: &mut Context) {
             if ctx.raw_html_allowed() {
                 ctx.push_raw(&html.value);
             } else {
-                log::warn!(
+                // Reduce noise: escape silently when raw HTML is disabled.
+                log::debug!(
                     "Raw HTML in markdown will be escaped for security: {}",
                     html.value
                 );

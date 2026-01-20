@@ -35,6 +35,14 @@ function escapeJsString(value: string): string {
 }
 
 /**
+ * Sanitizes raw HTML content for JSX embedding.
+ * Escapes { and } to prevent esbuild from interpreting them as JSX expressions.
+ */
+function sanitizeHtmlForJsx(content: string): string {
+  return content.replaceAll('{', '&#123;').replaceAll('}', '&#125;');
+}
+
+/**
  * Converts blocks array from Rust compiler into JSX code with component imports and exports.
  *
  * @param blocks - Array of blocks from compiler
@@ -57,7 +65,7 @@ export function blocksToJsx(
 
   for (const block of blocks) {
     if (block.type === 'html') {
-      fragments.push(block.content ?? '');
+      fragments.push(sanitizeHtmlForJsx(block.content ?? ''));
     } else if (block.type === 'component') {
       // Handle directive components using registry
       const isDirective = block.name ? supportedDirectives.includes(block.name) : false;
