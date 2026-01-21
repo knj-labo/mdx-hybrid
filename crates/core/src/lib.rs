@@ -3,6 +3,8 @@
 
 /// Code generation utilities for WASM and NAPI bindings.
 pub mod codegen;
+/// Debugging utilities.
+pub mod debug;
 /// Error types and utilities.
 pub mod error;
 /// YAML frontmatter extraction helpers.

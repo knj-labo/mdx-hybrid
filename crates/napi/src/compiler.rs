@@ -193,7 +193,7 @@ pub fn compile_ir(
     let effective_path = options.file.clone().unwrap_or_else(|| filepath.clone());
 
     let frontmatter_extraction = markflow_core::extract_frontmatter(&source)
-        .map_err(|err| super::convert_error(MarkflowError::MarkdownAdapter(err.to_string())))?;
+        .map_err(|err| super::convert_error(MarkflowError::parse_error(err.to_string(), 1, 1)))?;
     let frontmatter = frontmatter_extraction.value;
     let raw_body = source[frontmatter_extraction.body_start..].to_string();
 
@@ -214,7 +214,7 @@ pub fn compile_ir(
     };
     let blocks_result = to_blocks(&body_without_imports, &mdast_options).map_err(|err| {
         super::convert_error(with_path(
-            MarkflowError::MarkdownAdapter(err),
+            MarkflowError::parse_error(err, 1, 1),
             &effective_path,
         ))
     })?;
@@ -279,9 +279,10 @@ pub fn compile_ir(
 
 fn with_path(err: MarkflowError, path: &str) -> MarkflowError {
     match err {
-        MarkflowError::MarkdownAdapter(msg) => {
-            MarkflowError::MarkdownAdapter(format!("{msg} ({path})"))
-        }
+        MarkflowError::MarkdownAdapter { message, location } => MarkflowError::MarkdownAdapter {
+            message: format!("{} ({})", message, path),
+            location,
+        },
         other => other,
     }
 }
