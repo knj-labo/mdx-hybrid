@@ -47,6 +47,9 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: crates/napi/pnpm-lock.yaml
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
