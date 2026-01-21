@@ -279,12 +279,10 @@ pub fn compile_ir(
 
 fn with_path(err: MarkflowError, path: &str) -> MarkflowError {
     match err {
-        MarkflowError::MarkdownAdapter { message, location } => {
-            MarkflowError::MarkdownAdapter {
-                message: format!("{} ({})", message, path),
-                location,
-            }
-        }
+        MarkflowError::MarkdownAdapter { message, location } => MarkflowError::MarkdownAdapter {
+            message: format!("{} ({})", message, path),
+            location,
+        },
         other => other,
     }
 }

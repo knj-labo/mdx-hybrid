@@ -319,15 +319,18 @@ fn convert_error<E: Into<MarkflowError>>(err: E) -> Error {
         }
         // IO errors and Adapter errors usually imply a runtime failure
         MarkflowError::IoError(e) => Error::from_reason(format!("IO error: {}", e)),
-        MarkflowError::MarkdownAdapter { message, location } => {
-            Error::from_reason(format!("Markdown parser error at {}: {}", location, message))
-        }
-        MarkflowError::RenderError { message, location } => {
-            Error::new(Status::InvalidArg, format!("Render error at {}: {}", location, message))
-        }
-        MarkflowError::UnknownComponent { name, location } => {
-            Error::new(Status::InvalidArg, format!("Unknown component '{}' at {}", name, location))
-        }
+        MarkflowError::MarkdownAdapter { message, location } => Error::from_reason(format!(
+            "Markdown parser error at {}: {}",
+            location, message
+        )),
+        MarkflowError::RenderError { message, location } => Error::new(
+            Status::InvalidArg,
+            format!("Render error at {}: {}", location, message),
+        ),
+        MarkflowError::UnknownComponent { name, location } => Error::new(
+            Status::InvalidArg,
+            format!("Unknown component '{}' at {}", name, location),
+        ),
         MarkflowError::InternalError(msg) => Error::from_reason(format!("Internal error: {}", msg)),
     }
 }

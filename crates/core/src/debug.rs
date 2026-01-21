@@ -1,7 +1,6 @@
 /// Debugging utilities for Markflow
 ///
 /// Set the `MARKFLOW_DEBUG` environment variable to enable debug output.
-
 use std::sync::OnceLock;
 
 static DEBUG_MODE: OnceLock<bool> = OnceLock::new();

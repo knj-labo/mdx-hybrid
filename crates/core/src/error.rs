@@ -234,12 +234,14 @@ impl ParseDiagnostics {
 
     /// Add an error with location
     pub fn add_error_at(&mut self, message: impl Into<String>, line: usize, column: usize) {
-        self.errors.push(RecoverableError::error(message, line, column));
+        self.errors
+            .push(RecoverableError::error(message, line, column));
     }
 
     /// Add a warning with location
     pub fn add_warning_at(&mut self, message: impl Into<String>, line: usize, column: usize) {
-        self.errors.push(RecoverableError::warning(message, line, column));
+        self.errors
+            .push(RecoverableError::warning(message, line, column));
     }
 
     /// Check if there are any warnings
