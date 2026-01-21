@@ -17,14 +17,21 @@ const NETLIFY_PREVIEW_SITE = process.env.CONTEXT !== 'production' && process.env
 
 const site = NETLIFY_PREVIEW_SITE || 'https://docs.astro.build/';
 
+// Used by CI harness to build without markflow for baseline comparison
+const isBaseline = process.env.MARKFLOW_HARNESS_BASELINE === '1';
+
 // https://astro.build/config
 export default defineConfig({
 	site,
 	integrations: [
-		markflow({
-			starlightComponents: true,
-			expressiveCode: false, // Disable - incompatible with non-serializable plugin configs
-		}),
+		...(isBaseline
+			? []
+			: [
+					markflow({
+						starlightComponents: true,
+						expressiveCode: false, // Disable - incompatible with non-serializable plugin configs
+					}),
+				]),
 		devServerFileWatcher([
 			'./config/**', // Custom plugins and integrations
 			'./astro.sidebar.ts', // Sidebar configuration file

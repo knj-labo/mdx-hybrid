@@ -11,7 +11,8 @@
 /en/reference/api-reference/
 /en/reference/astro-syntax/
 /en/reference/directives-reference/
-/en/recipes/
+# Removed /en/recipes/ - listing page with non-deterministic card ordering
+/en/recipes/rss/
 
 # Japanese locale
 /ja/guides/syntax-highlighting/

@@ -355,15 +355,29 @@ export function normalizeHtml(html) {
   while (frontmatterRe.test(processed)) {
     processed = processed.replace(frontmatterRe, '');
   }
+  // Strip course recommendation boxes (contain randomly selected course content)
+  // These are <aside aria-labelledby="learn-astro-course-*"> elements
+  // Must be done before stripping generic aside tags
+  const courseBoxRe =
+    /<aside\b[^>]*aria-labelledby="learn-astro-course[^"]*"[^>]*>[\s\S]*?<\/aside>/gi;
+  while (courseBoxRe.test(processed)) {
+    processed = processed.replace(courseBoxRe, '');
+  }
+  // Strip course tracking scripts (querySelectorAll for data-scrimba-cta, data-learn-astro-cta, etc.)
+  // These scripts track clicks on course CTA links
+  const courseTrackingRe =
+    /<script\b[^>]*>document\.querySelectorAll\("a\[data-(?:scrimba|learn-astro)-cta\]"\)[^<]*<\/script>/gi;
+  processed = processed.replace(courseTrackingRe, '');
   const asideOpenRe = /<aside\b[^>]*class="[^"]*\baside[^"]*"[^>]*>/gi;
   const asideCloseRe = /<\/aside>/gi;
   while (asideOpenRe.test(processed)) {
     processed = processed.replace(asideOpenRe, '');
   }
   processed = processed.replace(asideCloseRe, '');
-  processed = processed
-    .replace(/<span\b[^>]*class="[^"]*\bmath-inline\b[^"]*"[^>]*>/gi, '')
-    .replace(/<\/span>/gi, '');
+  // Strip math-inline span wrappers (keep content, just remove the wrapping tags)
+  // Match entire <span class="math-inline">...</span> and replace with inner content
+  const mathInlineRe = /<span\b[^>]*class="[^"]*\bmath-inline\b[^"]*"[^>]*>([\s\S]*?)<\/span>/gi;
+  processed = processed.replace(mathInlineRe, '$1');
   processed = processed
     .replace(/<pre><code\b[^>]*>/gi, '<code>')
     .replace(/<\/code><\/pre>/gi, '</code>');
@@ -468,7 +482,22 @@ function normalizeTag(tag) {
   let m;
   while ((m = attrRe.exec(attrPart))) {
     const key = m[1].toLowerCase();
-    const val = m[2] ?? m[3] ?? m[4] ?? '';
+    let val = m[2] ?? m[3] ?? m[4] ?? '';
+    // Strip Astro-generated scoped CSS class names (astro-xxxxxxxx)
+    if (key === 'class') {
+      val = val
+        .split(/\s+/)
+        .filter((c) => !/^astro-[a-z0-9]+$/i.test(c))
+        .join(' ');
+    }
+    // Normalize generated tab IDs (tab-XXXX, tab-panel-XXXX)
+    if (key === 'id' || key === 'href' || key === 'aria-controls' || key === 'aria-labelledby') {
+      val = val.replace(/\btab-panel-\d+\b/g, 'tab-panel-N');
+      val = val.replace(/\btab-\d+\b/g, 'tab-N');
+      // Also normalize href anchors
+      val = val.replace(/#tab-panel-\d+/g, '#tab-panel-N');
+      val = val.replace(/#tab-\d+/g, '#tab-N');
+    }
     attrs.push([key, val]);
   }
   attrs.sort((a, b) => a[0].localeCompare(b[0]));
