@@ -920,4 +920,92 @@ export const authClient = createAuthClient();
         assert!(jsx.contains("&lt;PreactBanner client:load /&gt;"));
         assert!(!jsx.contains("<PreactBanner"));
     }
+
+    #[test]
+    fn test_typescript_type_annotation_in_inline_code_escaped() {
+        // TypeScript type annotations like Record<string, unknown> should be escaped
+        let input = "**Type:** `Record<string, unknown>`";
+        let options = Options {
+            enable_directives: true,
+            allow_raw_html: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        let jsx =
+            crate::codegen::blocks_to_jsx_string(&result.blocks, None::<fn(&str) -> Option<_>>);
+
+        // The < and > should be escaped to &lt; and &gt;
+        assert!(
+            jsx.contains("Record&lt;string, unknown&gt;"),
+            "Expected escaped TypeScript type annotation, got: {}",
+            jsx
+        );
+        // There should be no literal < or > in the code content
+        assert!(
+            !jsx.contains("<string"),
+            "Should not contain literal <string, got: {}",
+            jsx
+        );
+    }
+
+    #[test]
+    fn test_complex_typescript_type_in_inline_code() {
+        // More complex TypeScript type from astro docs
+        let input = "**Type:** `(appId: string, callback: (data: Record<string, never>) => void) => void`";
+        let options = Options {
+            enable_directives: true,
+            allow_raw_html: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        let jsx =
+            crate::codegen::blocks_to_jsx_string(&result.blocks, None::<fn(&str) -> Option<_>>);
+
+        // All < and > should be escaped
+        assert!(
+            jsx.contains("Record&lt;string, never&gt;"),
+            "Expected escaped Record type, got: {}",
+            jsx
+        );
+        assert!(
+            jsx.contains("=&gt; void"),
+            "Expected escaped arrow function, got: {}",
+            jsx
+        );
+        // No literal < or > in code
+        assert!(
+            !jsx.contains("<string") && !jsx.contains("> void"),
+            "Should not contain literal angle brackets in type, got: {}",
+            jsx
+        );
+    }
+
+    #[test]
+    fn test_html_numeric_entity_escaping() {
+        // HTML numeric entities like &#123; should have their & escaped to prevent JSX issues
+        let input = "&#123; test &#125;";
+        let options = Options {
+            enable_directives: true,
+            allow_raw_html: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+        let jsx =
+            crate::codegen::blocks_to_jsx_string(&result.blocks, None::<fn(&str) -> Option<_>>);
+
+        // The & should be escaped so the entity doesn't get decoded by the browser
+        // but also doesn't cause JSX parsing issues
+        // Expected: &amp;#123; or &#123; preserved as text (not decoded to literal {)
+        println!("JSX output: {}", jsx);
+
+        // Check that there are no literal braces (which would be problematic in JSX)
+        assert!(
+            !jsx.contains("{ test }"),
+            "HTML entities should not be decoded to literal braces, got: {}",
+            jsx
+        );
+    }
 }

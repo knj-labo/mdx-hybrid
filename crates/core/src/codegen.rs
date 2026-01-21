@@ -115,8 +115,9 @@ where
             } => {
                 // Apply slot normalization based on registry configuration
                 let slot_html = normalize_slot_by_registry(name, slot_html, registry);
-                // Escape raw braces in slot HTML to avoid JSX expression parsing
-                let slot_html = slot_html.replace('{', "&#123;").replace('}', "&#125;");
+                // Note: Braces in text content are already escaped by push_text() and
+                // render_children_to_string(). We must NOT escape here because it would
+                // break JSX expressions in nested component props like <Since v={"1.0"}>
 
                 // Apply directive mapping if provided
                 let (tag_name, type_prop) = if let Some(ref mapper) = directive_mapper {
