@@ -42,8 +42,7 @@ mod tests {
     fn debug_mode_respects_env_var() {
         // Note: This test might not work reliably because OnceLock is initialized once
         // In real scenarios, the environment variable should be set before the process starts
-        let enabled = is_debug_enabled();
-        // Just verify the function doesn't panic
-        assert!(enabled == true || enabled == false);
+        let _enabled = is_debug_enabled();
+        // Just verify the function doesn't panic (no assertion needed)
     }
 }
