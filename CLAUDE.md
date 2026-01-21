@@ -41,12 +41,6 @@ pnpm --dir packages/markflow run typecheck    # TypeScript typecheck
 pnpm --dir packages/astro-markflow run typecheck
 ```
 
-### Development
-```bash
-pnpm --dir web dev                            # Run Astro demo site
-pnpm --dir web build                          # Build Astro site
-```
-
 ### Integration Testing (Harness)
 ```bash
 # Astro harness comparison
