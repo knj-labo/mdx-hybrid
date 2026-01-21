@@ -91,7 +91,7 @@ pub fn default_starlight_registry() -> RegistryConfig {
             SlotNormalization {
                 component: "FileTree".to_string(),
                 strategy: "wrap_in_ul".to_string(),
-                wrapper_class: Some("filetree".to_string()),
+                wrapper_class: None,
             },
         ],
     }
@@ -159,10 +159,8 @@ mod tests {
         let filetree = registry.get_slot_normalization("FileTree");
         assert!(filetree.is_some());
         assert_eq!(filetree.unwrap().strategy, "wrap_in_ul");
-        assert_eq!(
-            filetree.unwrap().wrapper_class,
-            Some("filetree".to_string())
-        );
+        // wrapper_class is None to match original Starlight behavior
+        assert_eq!(filetree.unwrap().wrapper_class, None);
     }
 
     #[test]
