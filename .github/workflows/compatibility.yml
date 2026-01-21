@@ -1,0 +1,151 @@
+name: Compatibility Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'packages/astro-markflow/**'
+      - 'packages/astro-loader/**'
+      - 'crates/**'
+  schedule:
+    # Run weekly on Mondays at 9:00 UTC
+    - cron: '0 9 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  astro-compatibility:
+    name: Astro ${{ matrix.astro-version }} / Node ${{ matrix.node-version }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        node-version: [18, 20, 22]
+        astro-version: ['4.x', '5.x']
+        # Exclude certain combinations if needed
+        # exclude:
+        #   - node-version: 18
+        #     astro-version: '5.x'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "pnpm"
+          cache-dependency-path: crates/napi/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+
+      - name: Install NAPI deps and build
+        working-directory: crates/napi
+        run: pnpm install --frozen-lockfile && pnpm run build:napi
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Override Astro version
+        run: |
+          pnpm add -D astro@${{ matrix.astro-version }} --workspace-root
+
+      - name: Build astro-markflow
+        working-directory: packages/astro-markflow
+        run: pnpm run build
+
+      - name: Test astro-markflow
+        working-directory: packages/astro-markflow
+        run: pnpm test
+
+      - name: Build astro-loader
+        working-directory: packages/astro-loader
+        run: pnpm run build
+
+  platform-compatibility:
+    name: ${{ matrix.os }} / Node ${{ matrix.node-version }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [18, 20, 22]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "pnpm"
+          cache-dependency-path: crates/napi/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run rust tests
+        run: cargo test --workspace
+
+      - name: Install dependencies
+        working-directory: crates/napi
+        run: pnpm install --frozen-lockfile
+
+      - name: Build NAPI binding
+        working-directory: crates/napi
+        run: pnpm run build:napi
+
+      - name: Smoke test NAPI binding
+        working-directory: crates/napi
+        run: pnpm run smoke:napi -- fixtures/core/markdown/hello.md
+
+      - name: Run NAPI tests
+        working-directory: crates/napi
+        run: pnpm test
+
+  summary:
+    name: Compatibility Test Summary
+    runs-on: ubuntu-latest
+    needs: [astro-compatibility, platform-compatibility]
+    if: always()
+
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.astro-compatibility.result }}" == "failure" ] || [ "${{ needs.platform-compatibility.result }}" == "failure" ]; then
+            echo "::error::Some compatibility tests failed"
+            exit 1
+          fi
+          echo "::notice::All compatibility tests passed"
