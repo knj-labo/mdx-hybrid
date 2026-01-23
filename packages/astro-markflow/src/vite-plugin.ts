@@ -24,6 +24,7 @@ import {
 import { createPipeline } from './pipeline/index.js';
 import { blocksToJsx } from './transforms/blocks-to-jsx.js';
 import { resolveExpressiveCodeConfig, type ExpressiveCodeConfig } from './utils/config.js';
+import { stripFrontmatter } from './utils/frontmatter.js';
 import { hasProblematicMdxPatterns } from './utils/mdx-detection.js';
 import type { MarkflowPlugin, PluginHooks, TransformContext } from './types.js';
 
@@ -657,10 +658,17 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
         if (IS_MDAST) {
           const binding = await loadMarkflowBinding();
-          const parseResult = binding.parseBlocks(processedSource, {
+
+          // Strip frontmatter before passing to parseBlocks
+          // Otherwise the mdast pipeline renders YAML as regular text
+          const contentSource = stripFrontmatter(processedSource);
+
+          const parseResult = binding.parseBlocks(contentSource, {
             enable_directives: true,
           });
           headings = parseResult.headings;
+
+          // Extract frontmatter from original source (before stripping)
           const frontmatterResult = binding.parseFrontmatter(processedSource);
           frontmatter = frontmatterResult.frontmatter || {};
 
@@ -877,9 +885,19 @@ async function compileFallbackModule(
   source: string,
   virtualId: string
 ): Promise<{ code: string; map?: SourceMapInput }> {
+  let frontmatter: Record<string, unknown> = {};
+  try {
+    const binding = await loadMarkflowBinding();
+    const frontmatterResult = binding.parseFrontmatter(source);
+    frontmatter = frontmatterResult.frontmatter || {};
+  } catch {
+    frontmatter = {};
+  }
+
+  const sourceWithoutFrontmatter = stripFrontmatter(source);
   // Use @mdx-js/mdx to compile files that markflow can't handle
   // (e.g., files with import/export statements)
-  const compiled = await compileMdx(source, {
+  const compiled = await compileMdx(sourceWithoutFrontmatter, {
     jsxImportSource: 'astro',
     // Don't use providerImportSource as it requires @mdx-js/react
     // which may not be installed
@@ -922,7 +940,7 @@ export const Content = MarkflowContent;
 export const file = ${JSON.stringify(filename)};
 export const url = undefined;
 export function getHeadings() { return []; }
-export const frontmatter = {};
+export const frontmatter = ${JSON.stringify(frontmatter)};
 export default MarkflowContent;
 `;
 
