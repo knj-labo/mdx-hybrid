@@ -5,6 +5,7 @@
 
 import type { Registry } from 'markflow/registry';
 import type { HeadingEntry } from 'markflow';
+import { generateModuleExports } from '../utils/module-exports.js';
 
 /**
  * Prop value from the Rust compiler.
@@ -180,19 +181,16 @@ export function blocksToJsx(
     .filter(Boolean)
     .join('\n');
 
-  const frontmatterJson = JSON.stringify(frontmatter);
-  const headingsJson = JSON.stringify(headings);
   const jsxContent = fragments.join('\n');
 
   return `${componentImportLines}
-export const frontmatter = ${frontmatterJson};
-export function getHeadings() { return ${headingsJson}; }
-export default function MarkflowContent() {
+function MarkflowContent() {
   return (
     <>
 ${jsxContent}
     </>
   );
 }
+${generateModuleExports({ frontmatter, headings })}
 `;
 }

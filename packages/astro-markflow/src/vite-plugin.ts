@@ -6,7 +6,6 @@
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { transformWithEsbuild, type ResolvedConfig, type Plugin } from 'vite';
 import type { SourceMapInput } from 'rollup';
 import { compile as compileMdx } from '@mdx-js/mdx';
@@ -25,6 +24,7 @@ import { createPipeline } from './pipeline/index.js';
 import { blocksToJsx } from './transforms/blocks-to-jsx.js';
 import { resolveExpressiveCodeConfig, type ExpressiveCodeConfig } from './utils/config.js';
 import { hasProblematicMdxPatterns } from './utils/mdx-detection.js';
+import { generateModuleExports } from './utils/module-exports.js';
 import type { MarkflowPlugin, PluginHooks, TransformContext } from './types.js';
 
 type DocumentFragment = DefaultTreeAdapterMap['documentFragment'];
@@ -766,19 +766,15 @@ function wrapHtmlInJsxModule(
   frontmatter: Record<string, unknown>,
   headings: Array<{ depth: number; slug: string; text: string }>
 ): string {
-  const frontmatterJson = JSON.stringify(frontmatter);
-  const headingsJson = JSON.stringify(headings);
-
   return `import { Fragment, jsx as _jsx } from 'astro/jsx-runtime';
 const _Fragment = Fragment;
 
-export const frontmatter = ${frontmatterJson};
-export function getHeadings() { return ${headingsJson}; }
-export default function MarkflowContent() {
+function MarkflowContent() {
   return (
     <Fragment set:html={${JSON.stringify(html)}} />
   );
 }
+${generateModuleExports({ frontmatter, headings })}
 `;
 }
 
@@ -787,34 +783,60 @@ async function compileFallbackModule(
   source: string,
   virtualId: string
 ): Promise<{ code: string; map?: SourceMapInput }> {
+  // Extract and strip frontmatter before MDX compilation
+  // @mdx-js/mdx does not handle YAML frontmatter by default
+  let frontmatter: Record<string, unknown> = {};
+  let contentWithoutFrontmatter = source;
+
+  const frontmatterMatch = source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (frontmatterMatch && frontmatterMatch[1] !== undefined) {
+    contentWithoutFrontmatter = source.slice(frontmatterMatch[0].length);
+    // Parse YAML frontmatter
+    try {
+      const yaml = await import('yaml');
+      frontmatter = yaml.parse(frontmatterMatch[1]) || {};
+    } catch {
+      // If YAML parsing fails, continue with empty frontmatter
+    }
+  }
+
   // Use @mdx-js/mdx to compile files that markflow can't handle
   // (e.g., files with import/export statements)
-  const compiled = await compileMdx(source, {
+  const compiled = await compileMdx(contentWithoutFrontmatter, {
     jsxImportSource: 'astro',
-    // Don't use providerImportSource as it requires @mdx-js/react
-    // which may not be installed
   });
 
-  // The compiled output is a VFile, get the string value
   const mdxCode = String(compiled);
 
-  // Wrap in Astro-compatible module format
-  // @mdx-js/mdx outputs ESM with `export default function MDXContent(...)`
-  // We need to add Content, frontmatter and getHeadings exports for Astro compatibility
-  // Note: MDXContent is the default export function from @mdx-js/mdx
-  const wrappedCode = `
-${mdxCode}
+  // Remove "export default" from MDXContent to avoid duplicate default export
+  const mdxCodeWithoutDefaultExport = mdxCode.replace(
+    /export\s+default\s+function\s+MDXContent/,
+    'function MDXContent'
+  );
 
-// Re-export for Astro compatibility
-// MDXContent is defined by @mdx-js/mdx as the default export
-export const Content = MDXContent;
-export const file = ${JSON.stringify(filename)};
-export const url = undefined;
-export function getHeadings() { return []; }
-export const frontmatter = {};
+  // Wrap with createComponent/renderJSX so Astro recognizes this as a valid component.
+  // Plain functions are not recognized by Astro's renderer system.
+  const wrappedCode = `
+import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
+${mdxCodeWithoutDefaultExport}
+
+const MarkflowContent = createComponent((result, props = {}) => {
+  return renderJSX(
+    result,
+    _jsx(MDXContent, {
+      ...props,
+      components: { Fragment: _Fragment, ...props.components },
+    })
+  );
+}, "${virtualId}");
+
+${generateModuleExports({ frontmatter, headings: [] })}
+
+// MDX component markers
+Content[Symbol.for('mdx-component')] = true;
+Content[Symbol.for('astro.needsHeadRendering')] = ${!frontmatter.layout};
 `;
 
-  // Transform JSX through esbuild (same as the main compilation path)
   const esbuildResult = await transformWithEsbuild(wrappedCode, virtualId, {
     loader: 'jsx',
     jsx: 'transform',
