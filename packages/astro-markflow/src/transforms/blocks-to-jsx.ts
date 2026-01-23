@@ -55,7 +55,8 @@ export function blocksToJsx(
   blocks: Block[],
   frontmatter: Record<string, unknown> = {},
   headings: HeadingEntry[] = [],
-  registry: Registry | null = null
+  registry: Registry | null = null,
+  filename?: string
 ): string {
   const fragments: string[] = [];
   const componentImports = new Map<string, { modulePath: string; exportType: string }>();
@@ -184,15 +185,27 @@ export function blocksToJsx(
   const headingsJson = JSON.stringify(headings);
   const jsxContent = fragments.join('\n');
 
-  return `${componentImportLines}
+  const runtimeImports = `import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
+import { Fragment as _Fragment, jsx as _jsx } from 'astro/jsx-runtime';`;
+
+  const moduleId = filename ? JSON.stringify(filename) : 'undefined';
+
+  return `${runtimeImports}
+${componentImportLines}
 export const frontmatter = ${frontmatterJson};
 export function getHeadings() { return ${headingsJson}; }
-export default function MarkflowContent() {
+function _Content() {
   return (
-    <>
+    <_Fragment>
 ${jsxContent}
-    </>
+    </_Fragment>
   );
 }
+const MarkflowContent = createComponent(
+  (result, props, _slots) => renderJSX(result, _jsx(_Content, { ...props })),
+  ${moduleId}
+);
+export const Content = MarkflowContent;
+export default MarkflowContent;
 `;
 }

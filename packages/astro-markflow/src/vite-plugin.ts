@@ -293,7 +293,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
   let compiler: MarkflowCompiler | undefined;
   let resolvedConfig: ResolvedConfig | undefined;
   const sourceLookup = new Map<string, string>();
-  const compilationCache = new Map<string, NonNullable<BatchCompileResult['results'][number]['result']>>();
+  type CachedCompileResult = NonNullable<BatchCompileResult['results'][number]['result']> & {
+    originalSource?: string;
+    processedSource?: string;
+  };
+  const originalSourceCache = new Map<string, string>();   // Raw markdown before preprocess hooks
+  const processedSourceCache = new Map<string, string>();  // Preprocessed markdown fed to compiler
+  const compilationCache = new Map<string, CachedCompileResult>();
   const fallbackFiles = new Set<string>();
   const fallbackReasons = new Map<string, string>();
   const processedFiles = new Set<string>();
@@ -413,24 +419,33 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
       if (files.length === 0) return;
 
-      // Read all files and prepare batch inputs
-      const inputs: Array<{ id: string; source: string; filepath: string }> = [];
-      for (const file of files) {
-        let source = await readFile(file, 'utf8');
+      // Read all files in parallel and prepare batch inputs
+      const inputsOrNull = await Promise.all(
+        files.map(async (file) => {
+          const rawSource = await readFile(file, 'utf8');
+          let processedSource = rawSource;
 
-        // Apply preprocess hooks (same as load hook does)
-        for (const preprocessHook of hooks.preprocess) {
-          source = preprocessHook(source, file);
-        }
+          // Apply preprocess hooks (same as load hook does)
+          for (const preprocessHook of hooks.preprocess) {
+            processedSource = preprocessHook(processedSource, file);
+          }
 
-        // Pre-detect problematic patterns - these files will be handled by Astro's MDX plugin
-        if (hasProblematicMdxPatterns(source)) {
-          fallbackFiles.add(file);
-          fallbackReasons.set(file, 'Pre-detected problematic MDX patterns');
-        } else {
-          inputs.push({ id: file, source, filepath: file });
-        }
-      }
+          // Pre-detect problematic patterns - these files will be handled by Astro's MDX plugin
+          if (hasProblematicMdxPatterns(processedSource)) {
+            fallbackFiles.add(file);
+            fallbackReasons.set(file, 'Pre-detected problematic MDX patterns');
+            return null;
+          }
+
+          originalSourceCache.set(file, rawSource);       // For TransformContext.source
+          processedSourceCache.set(file, processedSource); // For potential reuse in cache fast path
+          return { id: file, source: processedSource, filepath: file };
+        })
+      );
+
+      const inputs = inputsOrNull.filter(
+        (i): i is NonNullable<typeof i> => i !== null
+      );
 
       if (fallbackFiles.size > 0) {
         console.info(
@@ -451,7 +466,11 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         // Cache successful results
         for (const result of batchResult.results) {
           if (result.result) {
-            compilationCache.set(result.id, result.result);
+            compilationCache.set(result.id, {
+              ...result.result,
+              originalSource: originalSourceCache.get(result.id),
+              processedSource: processedSourceCache.get(result.id),
+            });
           }
         }
 
@@ -514,20 +533,109 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       if (!id.startsWith(VIRTUAL_PREFIX)) {
         return null;
       }
-      // Lazy initialize compiler on first use
-      const currentCompiler = await getCompiler();
       const filename =
         sourceLookup.get(id) ??
         stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ''));
 
       try {
+        // Check cache FIRST, before any file I/O (populated in build mode by buildStart)
+        const cached = compilationCache.get(filename);
+        const isMdx = filename.endsWith('.mdx');
+
+        if (cached && !isMdx) {
+          const hasUserImports = (cached.hoistedImports?.length ?? 0) > 0;
+          const hasUserDefaultExport = cached.hasUserDefaultExport === true;
+          const hasJsxComponents = cached.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
+
+          if (!hasUserImports && !hasUserDefaultExport && !hasJsxComponents) {
+            // FAST PATH: Use cached result without file I/O
+            const startTime = performance.now();
+            let frontmatter: Record<string, unknown> = {};
+            if (cached.frontmatterJson) {
+              try {
+                frontmatter = JSON.parse(cached.frontmatterJson) as Record<string, unknown>;
+              } catch {
+                frontmatter = {};
+              }
+            }
+            const headings = cached.headings || [];
+
+            const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename);
+            const result: CompileResult = {
+              code: jsxCode,
+              map: null,
+              frontmatter_json: cached.frontmatterJson,
+              headings,
+              imports: [],
+            };
+
+            const endTime = performance.now();
+            totalProcessingTimeMs += endTime - startTime;
+            processedFiles.add(filename);
+
+            const shikiHighlighter = getShiki();
+            const normalizedStarlightComponents:
+              | boolean
+              | { components?: string[]; module?: string } =
+              typeof starlightComponents === 'object' && starlightComponents !== null
+                ? { components: starlightComponents.components, module: starlightComponents.module }
+                : Boolean(starlightComponents);
+            const sourceForHooks =
+              originalSourceCache.get(filename) ??
+              cached.originalSource ??
+              processedSourceCache.get(filename) ??
+              cached.processedSource ??
+              (await readFile(filename, 'utf8'));
+            const ctx: TransformContext = {
+              code: result.code,
+              source: sourceForHooks, // Preserve markdown for user hooks
+              filename,
+              frontmatter,
+              headings,
+              registry,
+              config: {
+                expressiveCode,
+                starlightComponents: normalizedStarlightComponents,
+                shiki: shikiHighlighter ? await shikiHighlighter : null,
+              },
+            };
+
+            const transformPipeline = createPipeline({
+              afterParse: hooks.afterParse,
+              beforeInject: hooks.beforeInject,
+              beforeOutput: hooks.beforeOutput,
+            });
+
+            const transformed = await transformPipeline(ctx);
+            result.code = transformed.code;
+
+            const esbuildResult = await transformWithEsbuild(result.code, id, {
+              loader: 'jsx',
+              jsx: 'transform',
+              jsxFactory: '_jsx',
+              jsxFragment: '_Fragment',
+            });
+
+            return {
+              code: esbuildResult.code,
+              map: esbuildResult.map ?? result.map ?? undefined,
+            };
+          }
+        }
+
+        // Lazy initialize compiler on first use (only needed for cache miss path)
+        const currentCompiler = await getCompiler();
+
+        // Only read file if cache miss
         const source = await readFile(filename, 'utf8');
+        originalSourceCache.set(filename, source);
 
         // Apply preprocess hooks
         let processedSource = source;
         for (const preprocessHook of hooks.preprocess) {
           processedSource = preprocessHook(processedSource, filename);
         }
+        processedSourceCache.set(filename, processedSource);
 
         // Early detection of problematic patterns - skip to fallback
         // Note: Pre-detected files from buildStart are handled by resolveId returning null
@@ -547,32 +655,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         let frontmatter: Record<string, unknown> = {};
         let headings: Array<{ depth: number; slug: string; text: string }> = [];
 
-        // Check cache first (populated in build mode by buildStart)
-        const cached = compilationCache.get(filename);
-        const isMdx = filename.endsWith('.mdx');
-        const hasUserImports = (cached?.hoistedImports?.length ?? 0) > 0;
-        const hasUserDefaultExport = cached?.hasUserDefaultExport === true;
-        const hasJsxComponents = cached?.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
-
-        if (cached && !hasUserImports && !hasUserDefaultExport && !hasJsxComponents && !isMdx) {
-          if (cached.frontmatterJson) {
-            try {
-              frontmatter = JSON.parse(cached.frontmatterJson) as Record<string, unknown>;
-            } catch {
-              frontmatter = {};
-            }
-          }
-          headings = cached.headings || [];
-
-          const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings);
-          result = {
-            code: jsxCode,
-            map: null,
-            frontmatter_json: cached.frontmatterJson,
-            headings,
-            imports: [],
-          };
-        } else if (IS_MDAST) {
+        if (IS_MDAST) {
           const binding = await loadMarkflowBinding();
           const parseResult = binding.parseBlocks(processedSource, {
             enable_directives: true,
@@ -582,7 +665,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           frontmatter = frontmatterResult.frontmatter || {};
 
           result = {
-            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry),
+            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry, filename),
             map: null,
             frontmatter_json: JSON.stringify(frontmatter),
             headings,
@@ -764,21 +847,28 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 function wrapHtmlInJsxModule(
   html: string,
   frontmatter: Record<string, unknown>,
-  headings: Array<{ depth: number; slug: string; text: string }>
+  headings: Array<{ depth: number; slug: string; text: string }>,
+  filename: string
 ): string {
   const frontmatterJson = JSON.stringify(frontmatter);
   const headingsJson = JSON.stringify(headings);
 
-  return `import { Fragment, jsx as _jsx } from 'astro/jsx-runtime';
-const _Fragment = Fragment;
+  return `import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
+import { Fragment, jsx as _jsx } from 'astro/jsx-runtime';
 
 export const frontmatter = ${frontmatterJson};
 export function getHeadings() { return ${headingsJson}; }
-export default function MarkflowContent() {
+function _Content() {
   return (
     <Fragment set:html={${JSON.stringify(html)}} />
   );
 }
+const MarkflowContent = createComponent(
+  (result, props, _slots) => renderJSX(result, _jsx(_Content, { ...props })),
+  ${JSON.stringify(filename)}
+);
+export const Content = MarkflowContent;
+export default MarkflowContent;
 `;
 }
 
@@ -798,20 +888,33 @@ async function compileFallbackModule(
   // The compiled output is a VFile, get the string value
   const mdxCode = String(compiled);
 
+  // Normalize MDX default export so we can wrap with Astro createComponent
+  const mdxWithoutDefault = mdxCode
+    .replace(/export default function MDXContent/g, 'function MDXContent')
+    .replace(/export default MDXContent\s*;/g, '')
+    .replace(/export\s*\{\s*MDXContent\s+as\s+default\s*\};?/g, '');
+
   // Wrap in Astro-compatible module format
   // @mdx-js/mdx outputs ESM with `export default function MDXContent(...)`
   // We need to add Content, frontmatter and getHeadings exports for Astro compatibility
   // Note: MDXContent is the default export function from @mdx-js/mdx
   const wrappedCode = `
-${mdxCode}
+import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
+${mdxWithoutDefault}
 
 // Re-export for Astro compatibility
-// MDXContent is defined by @mdx-js/mdx as the default export
-export const Content = MDXContent;
+// Wrap MDXContent so it renders as an Astro component factory
+const MarkflowContent = createComponent(
+  (result, props, _slots) => renderJSX(result, MDXContent({ ...(props ?? {}) })),
+  ${JSON.stringify(filename)}
+);
+export { MDXContent };
+export const Content = MarkflowContent;
 export const file = ${JSON.stringify(filename)};
 export const url = undefined;
 export function getHeadings() { return []; }
 export const frontmatter = {};
+export default MarkflowContent;
 `;
 
   // Transform JSX through esbuild (same as the main compilation path)
