@@ -26,7 +26,7 @@ import { blocksToJsx } from './transforms/blocks-to-jsx.js';
 import { resolveExpressiveCodeConfig, type ExpressiveCodeConfig } from './utils/config.js';
 import { stripFrontmatter } from './utils/frontmatter.js';
 import { hasProblematicMdxPatterns } from './utils/mdx-detection.js';
-import type { MarkflowPlugin, PluginHooks, TransformContext } from './types.js';
+import type { MarkflowPlugin, MdxImportHandlingOptions, PluginHooks, TransformContext } from './types.js';
 
 type DocumentFragment = DefaultTreeAdapterMap['documentFragment'];
 type Node = DefaultTreeAdapterMap['node'];
@@ -108,6 +108,7 @@ interface MarkflowPluginOptions {
   };
   plugins?: MarkflowPlugin[];
   binding?: MarkflowBinding;
+  mdx?: MdxImportHandlingOptions;
 }
 
 const DEFAULT_EXTENSIONS = new Set(['.md', '.mdx']);
@@ -331,6 +332,9 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
   // Resolve libraries and create registry
   const { registry } = resolveLibraries(userOptions);
 
+  // MDX import handling options
+  const mdxOptions = userOptions.mdx;
+
   const unwrapVirtual = (value: string | undefined): string | undefined =>
     value && value.startsWith(VIRTUAL_PREFIX)
       ? value.slice(VIRTUAL_PREFIX.length)
@@ -432,7 +436,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           }
 
           // Pre-detect problematic patterns - these files will be handled by Astro's MDX plugin
-          if (hasProblematicMdxPatterns(processedSource)) {
+          if (hasProblematicMdxPatterns(processedSource, mdxOptions)) {
             fallbackFiles.add(file);
             fallbackReasons.set(file, 'Pre-detected problematic MDX patterns');
             return null;
@@ -641,7 +645,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         // Early detection of problematic patterns - skip to fallback
         // Note: Pre-detected files from buildStart are handled by resolveId returning null
         // This catches files that weren't pre-detected (e.g., preprocess hooks revealed the pattern)
-        if (hasProblematicMdxPatterns(processedSource)) {
+        if (hasProblematicMdxPatterns(processedSource, mdxOptions)) {
           this.warn(
             `[markflow] Skipping ${filename}: contains patterns incompatible with markdown-rs`
           );

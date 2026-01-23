@@ -7,7 +7,7 @@ import type { AstroIntegration } from 'astro';
 import type { ComponentLibrary } from 'markflow/registry';
 import { markflowPlugin } from './vite-plugin.js';
 import { mergePresets, type PresetConfig } from './presets/index.js';
-import type { MarkflowPlugin } from './types.js';
+import type { MarkflowPlugin, MdxImportHandlingOptions } from './types.js';
 
 /**
  * Options for the Markflow integration.
@@ -58,6 +58,12 @@ export interface MarkflowOptions {
    * Markflow plugins for transform hooks.
    */
   plugins?: MarkflowPlugin[];
+
+  /**
+   * MDX import handling configuration.
+   * Controls which imports are allowed vs trigger fallback to @mdx-js/mdx.
+   */
+  mdx?: MdxImportHandlingOptions;
 }
 
 /**
@@ -101,6 +107,7 @@ export default function markflow(options: MarkflowOptions = {}): AstroIntegratio
       libraries: options.libraries ?? presetConfig.libraries,
       starlightComponents: options.starlightComponents ?? presetConfig.starlightComponents,
       expressiveCode: options.expressiveCode ?? presetConfig.expressiveCode,
+      mdx: options.mdx ?? presetConfig.mdx,
       ...options,
     };
 
@@ -126,4 +133,4 @@ export default function markflow(options: MarkflowOptions = {}): AstroIntegratio
 // Re-export presets for convenience
 export { starlightPreset, expressiveCodePreset, astroPreset, mergePresets } from './presets/index.js';
 export type { PresetConfig } from './presets/index.js';
-export type { MarkflowPlugin, TransformContext, PluginHooks } from './types.js';
+export type { MarkflowPlugin, TransformContext, PluginHooks, MdxImportHandlingOptions } from './types.js';

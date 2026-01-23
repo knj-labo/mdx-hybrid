@@ -5,6 +5,7 @@
 
 import type { ComponentLibrary } from 'markflow/registry';
 import { starlightLibrary, expressiveCodeLibrary, astroLibrary } from 'markflow/registry';
+import type { MdxImportHandlingOptions } from '../types.js';
 
 /**
  * Preset configuration.
@@ -16,6 +17,8 @@ export interface PresetConfig {
   expressiveCode?: boolean | { enabled: boolean; componentName?: string; importSource?: string };
   /** Starlight components configuration */
   starlightComponents?: boolean | { enabled: boolean; importSource?: string };
+  /** MDX import handling configuration */
+  mdx?: MdxImportHandlingOptions;
 }
 
 /**
@@ -24,6 +27,8 @@ export interface PresetConfig {
 export interface StarlightPresetOptions {
   /** Enable ExpressiveCode integration (default: true) */
   expressiveCode?: boolean;
+  /** Strip Starlight imports - registry handles injection. @default true */
+  stripStarlightImports?: boolean;
 }
 
 /**
@@ -42,7 +47,7 @@ export interface StarlightPresetOptions {
  * });
  */
 export function starlightPreset(options: StarlightPresetOptions = {}): PresetConfig {
-  const { expressiveCode = true } = options;
+  const { expressiveCode = true, stripStarlightImports = true } = options;
 
   const libraries = [astroLibrary, starlightLibrary];
   if (expressiveCode) {
@@ -53,6 +58,9 @@ export function starlightPreset(options: StarlightPresetOptions = {}): PresetCon
     libraries,
     starlightComponents: true,
     expressiveCode: expressiveCode ? { enabled: true } : false,
+    mdx: stripStarlightImports
+      ? { allowImports: ['@astrojs/starlight/components'], ignoreCodeFences: true }
+      : undefined,
   };
 }
 
@@ -131,6 +139,7 @@ export function mergePresets(presets: PresetConfig[]): PresetConfig {
     libraries: [],
     expressiveCode: false,
     starlightComponents: false,
+    mdx: undefined,
   };
 
   const libraryIds = new Set<string>();
@@ -154,6 +163,21 @@ export function mergePresets(presets: PresetConfig[]): PresetConfig {
     // Merge starlightComponents (last wins)
     if (preset.starlightComponents !== undefined) {
       merged.starlightComponents = preset.starlightComponents;
+    }
+
+    // Merge mdx (combine allowImports, last wins for others)
+    if (preset.mdx) {
+      if (!merged.mdx) {
+        merged.mdx = { ...preset.mdx };
+      } else {
+        const existingAllows = merged.mdx.allowImports ?? [];
+        const newAllows = preset.mdx.allowImports ?? [];
+        merged.mdx = {
+          ...merged.mdx,
+          ...preset.mdx,
+          allowImports: [...new Set([...existingAllows, ...newAllows])],
+        };
+      }
     }
   }
 
