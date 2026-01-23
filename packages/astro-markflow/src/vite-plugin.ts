@@ -900,12 +900,21 @@ async function compileFallbackModule(
   // Note: MDXContent is the default export function from @mdx-js/mdx
   const wrappedCode = `
 import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
+import { Fragment } from 'astro/jsx-runtime';
 ${mdxWithoutDefault}
 
 // Re-export for Astro compatibility
 // Wrap MDXContent so it renders as an Astro component factory
 const MarkflowContent = createComponent(
-  (result, props, _slots) => renderJSX(result, MDXContent({ ...(props ?? {}) })),
+  (result, props, _slots) =>
+    renderJSX(
+      result,
+      MDXContent({
+        ...(props ?? {}),
+        // Ensure Astro's Fragment is available for <Fragment slot="..."> usage in MDX.
+        components: { ...(props?.components ?? {}), Fragment },
+      })
+    ),
   ${JSON.stringify(filename)}
 );
 export { MDXContent };
