@@ -19,46 +19,30 @@ import {
 } from 'markflow/registry';
 import { createPipeline } from './pipeline/index.js';
 import { blocksToJsx } from './transforms/blocks-to-jsx.js';
-import { resolveExpressiveCodeConfig, type ExpressiveCodeConfig } from './utils/config.js';
+import { resolveExpressiveCodeConfig } from './utils/config.js';
 import { stripFrontmatter } from './utils/frontmatter.js';
 import { hasProblematicMdxPatterns } from './utils/mdx-detection.js';
+import { stripQuery, deriveFileOptions, shouldCompile } from './utils/paths.js';
 import {
   VIRTUAL_MODULE_PREFIX,
   OUTPUT_EXTENSION,
   ESBUILD_JSX_CONFIG,
   DEFAULT_IGNORE_PATTERNS,
 } from './constants.js';
-import type { MarkflowPlugin, MdxImportHandlingOptions, PluginHooks, TransformContext } from './types.js';
+import type { MarkflowPlugin, PluginHooks, TransformContext } from './types.js';
 
-// Import from extracted modules
+// Import from extracted vite-plugin modules
 import type {
   MarkflowBinding,
   MarkflowCompiler,
   CompileResult,
   BatchCompileResult,
-  ParseBlocksResult,
+  MarkflowPluginOptions,
 } from './vite-plugin/types.js';
 import { loadMarkflowBinding, ENABLE_SHIKI, IS_MDAST } from './vite-plugin/binding-loader.js';
 import { wrapHtmlInJsxModule, compileFallbackModule } from './vite-plugin/jsx-module.js';
 import { normalizeStarlightComponents } from './vite-plugin/normalize-config.js';
 import { createShikiHighlighter } from './vite-plugin/shiki-highlighter.js';
-
-interface MarkflowPluginOptions {
-  include?: (id: string) => boolean;
-  libraries?: ComponentLibrary[];
-  starlightComponents?: boolean | { enabled?: boolean; components?: string[]; module?: string };
-  expressiveCode?: boolean | { enabled?: boolean; component?: string; module?: string };
-  compiler?: {
-    jsx?: {
-      code_sample_components?: string[];
-    };
-  };
-  plugins?: MarkflowPlugin[];
-  binding?: MarkflowBinding;
-  mdx?: MdxImportHandlingOptions;
-}
-
-const DEFAULT_EXTENSIONS = new Set(['.md', '.mdx']);
 
 /**
  * Resolves library configuration from options.
@@ -91,61 +75,6 @@ export function resolveLibraries(options: MarkflowPluginOptions): {
 
 // require() for CJS interop with glob package
 const require = createRequire(import.meta.url);
-
-const stripQuery = (id: string): string => {
-  if (!id) return id;
-  const queryIndex = id.indexOf('?');
-  return queryIndex >= 0 ? id.slice(0, queryIndex) : id;
-};
-
-const normalizePath = (value: string): string => value.split(path.sep).join('/');
-
-function deriveAstroUrl(filePath: string, rootDir?: string): string | undefined {
-  if (!filePath) return undefined;
-  const normalizedFile = normalizePath(filePath);
-  const root = rootDir ?? process.cwd();
-  const pagesDir = normalizePath(path.join(root, 'src', 'pages'));
-  if (!normalizedFile.startsWith(pagesDir)) {
-    return undefined;
-  }
-  let relative = normalizedFile.slice(pagesDir.length);
-  if (relative.startsWith('/')) {
-    relative = relative.slice(1);
-  }
-  if (!relative) {
-    return '/';
-  }
-  if (relative.endsWith('.md') || relative.endsWith('.mdx')) {
-    relative = relative.replace(/\.mdx?$/, '');
-  }
-  if (relative === '' || relative === 'index') {
-    return '/';
-  }
-  if (relative.endsWith('/index')) {
-    relative = relative.slice(0, -'/index'.length);
-  }
-  return `/${relative}`;
-}
-
-function deriveFileOptions(
-  id: string,
-  rootDir?: string
-): { file: string; url?: string } {
-  const sourcePath = stripQuery(id);
-  let absolutePath = sourcePath;
-  if (rootDir && !path.isAbsolute(sourcePath)) {
-    absolutePath = path.resolve(rootDir, sourcePath);
-  }
-  const url = deriveAstroUrl(absolutePath, rootDir);
-  const options: { file: string; url?: string } = { file: absolutePath };
-  if (url) {
-    options.url = url;
-  }
-  return options;
-}
-
-const shouldCompile = (id: string): boolean =>
-  DEFAULT_EXTENSIONS.has(path.extname(stripQuery(id)));
 
 /**
  * Collects hooks from an array of plugins, organizing them by hook type.
