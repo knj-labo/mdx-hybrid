@@ -6,15 +6,9 @@
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { transformWithEsbuild, type ResolvedConfig, type Plugin } from 'vite';
+import { build as esbuildBuild, type BuildResult } from 'esbuild';
 import type { SourceMapInput } from 'rollup';
-import { compile as compileMdx } from '@mdx-js/mdx';
-import remarkGfm from 'remark-gfm';
-import remarkDirective from 'remark-directive';
-import { parseFragment, serialize } from 'parse5';
-import { codeToHtml, createCssVariablesTheme } from 'shiki';
-import type { DefaultTreeAdapterMap } from 'parse5';
 import {
   createRegistry,
   starlightLibrary,
@@ -28,83 +22,26 @@ import { blocksToJsx } from './transforms/blocks-to-jsx.js';
 import { resolveExpressiveCodeConfig, type ExpressiveCodeConfig } from './utils/config.js';
 import { stripFrontmatter } from './utils/frontmatter.js';
 import { hasProblematicMdxPatterns } from './utils/mdx-detection.js';
-import { collectImportedNames, insertAfterImports } from './utils/imports.js';
 import {
   VIRTUAL_MODULE_PREFIX,
   OUTPUT_EXTENSION,
   ESBUILD_JSX_CONFIG,
-  SHIKI_THEME,
   DEFAULT_IGNORE_PATTERNS,
 } from './constants.js';
 import type { MarkflowPlugin, MdxImportHandlingOptions, PluginHooks, TransformContext } from './types.js';
 
-type DocumentFragment = DefaultTreeAdapterMap['documentFragment'];
-type Node = DefaultTreeAdapterMap['node'];
-type Element = DefaultTreeAdapterMap['element'];
-type TextNode = DefaultTreeAdapterMap['textNode'];
-
-// Type for NAPI binding
-interface MarkflowBinding {
-  createCompiler?: (config: Record<string, unknown>) => MarkflowCompiler;
-  MarkflowCompiler?: new (config: Record<string, unknown>) => MarkflowCompiler;
-  compileBatch: (
-    inputs: Array<{ id: string; source: string; filepath: string }>,
-    options: { continueOnError: boolean; config: Record<string, unknown> }
-  ) => BatchCompileResult;
-  parseBlocks: (
-    source: string,
-    options: { enable_directives: boolean }
-  ) => ParseBlocksResult;
-  parseFrontmatter: (source: string) => { frontmatter: Record<string, unknown> };
-}
-
-interface MarkflowCompiler {
-  compile: (
-    source: string,
-    filename: string,
-    options: { file?: string; url?: string }
-  ) => CompileResult;
-}
-
-interface CompileResult {
-  code: string;
-  map?: unknown;
-  frontmatter_json?: string;
-  headings?: Array<{ depth: number; slug: string; text: string }>;
-  imports?: Array<{ path: string }>;
-  diagnostics?: {
-    warnings?: Array<{ line: number; message: string }>;
-  };
-}
-
-interface BatchCompileResult {
-  results: Array<{
-    id: string;
-    result?: {
-      html: string;
-      frontmatterJson?: string;
-      headings?: Array<{ depth: number; slug: string; text: string }>;
-      hoistedImports?: string[];
-      hasUserDefaultExport?: boolean;
-    };
-  }>;
-  stats: {
-    succeeded: number;
-    total: number;
-    processingTimeMs: number;
-  };
-}
-
-interface ParseBlocksResult {
-  blocks: Array<{
-    type: 'html' | 'component';
-    content?: string;
-    name?: string;
-    props?: Record<string, unknown>;
-    slotHtml?: string;
-  }>;
-  headings: Array<{ depth: number; slug: string; text: string }>;
-}
+// Import from extracted modules
+import type {
+  MarkflowBinding,
+  MarkflowCompiler,
+  CompileResult,
+  BatchCompileResult,
+  ParseBlocksResult,
+} from './vite-plugin/types.js';
+import { loadMarkflowBinding, ENABLE_SHIKI, IS_MDAST } from './vite-plugin/binding-loader.js';
+import { wrapHtmlInJsxModule, compileFallbackModule } from './vite-plugin/jsx-module.js';
+import { normalizeStarlightComponents } from './vite-plugin/normalize-config.js';
+import { createShikiHighlighter } from './vite-plugin/shiki-highlighter.js';
 
 interface MarkflowPluginOptions {
   include?: (id: string) => boolean;
@@ -152,65 +89,8 @@ export function resolveLibraries(options: MarkflowPluginOptions): {
   return { libraries, registry };
 }
 
-let bindingPromise: Promise<MarkflowBinding> | undefined;
-const DEBUG_BINDING = process.env.MARKFLOW_DEBUG_BINDING === '1';
-const ENABLE_SHIKI = process.env.MARKFLOW_SHIKI === '1';
-const IS_MDAST = process.env.MARKFLOW_PIPELINE === 'mdast';
+// require() for CJS interop with glob package
 const require = createRequire(import.meta.url);
-
-const logBindingSource = (source: string): void => {
-  if (!DEBUG_BINDING) return;
-  console.info(`[markflow] binding source: ${source}`);
-  const nativePath = process.env.NAPI_RS_NATIVE_LIBRARY_PATH;
-  if (nativePath) {
-    console.info(`[markflow] NAPI_RS_NATIVE_LIBRARY_PATH=${nativePath}`);
-  } else {
-    console.info('[markflow] NAPI_RS_NATIVE_LIBRARY_PATH is not set');
-  }
-};
-
-async function loadMarkflowBinding(): Promise<MarkflowBinding> {
-  if (!bindingPromise) {
-    bindingPromise = (async () => {
-      // Load native binding directly via require() on the .node binary to bypass Vite SSR runner.
-      const require = createRequire(import.meta.url);
-      const pkgRoot = path.dirname(require.resolve('markflow-napi/package.json'));
-
-      const guessBinaryName = () => {
-        const triplet = `${process.platform}-${process.arch}`;
-        return [
-          `markflow.${triplet}.node`,
-          `markflow-${triplet}.node`,
-          `markflow.${process.platform}-${process.arch}.node`,
-        ];
-      };
-
-      const findBinaryPath = (): string => {
-        const candidates = guessBinaryName().map((name) =>
-          path.resolve(pkgRoot, name)
-        );
-        for (const candidate of candidates) {
-          if (require('node:fs').existsSync(candidate)) {
-            return candidate;
-          }
-        }
-        // Fallback: first .node in package root
-        const entries = require('node:fs').readdirSync(pkgRoot);
-        const nodeFile = entries.find((f: string) => f.endsWith('.node'));
-        if (nodeFile) {
-          return path.resolve(pkgRoot, nodeFile);
-        }
-        throw new Error('markflow-napi native binary not found');
-      };
-
-      const binaryPath = findBinaryPath();
-      const binding = require(binaryPath) as MarkflowBinding;
-      logBindingSource(binaryPath);
-      return binding;
-    })();
-  }
-  return bindingPromise;
-}
 
 const stripQuery = (id: string): string => {
   if (!id) return id;
@@ -311,6 +191,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
   const originalSourceCache = new Map<string, string>();   // Raw markdown before preprocess hooks
   const processedSourceCache = new Map<string, string>();  // Preprocessed markdown fed to compiler
   const compilationCache = new Map<string, CachedCompileResult>();
+  const esbuildCache = new Map<string, { code: string; map?: SourceMapInput }>();  // Pre-compiled esbuild results
   const fallbackFiles = new Set<string>();
   const fallbackReasons = new Map<string, string>();
   const processedFiles = new Set<string>();
@@ -368,9 +249,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
   const getCompiler = async (): Promise<MarkflowCompiler> => {
     if (!compiler) {
       const binding = providedBinding ?? (await loadMarkflowBinding());
-      if (providedBinding) {
-        logBindingSource('provided');
-      }
       const createCompiler = binding.createCompiler
         ? binding.createCompiler
         : (cfg: Record<string, unknown>) => new binding.MarkflowCompiler!(cfg);
@@ -496,6 +374,153 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         console.info(
           `[markflow] Batch compiled ${batchResult.stats.succeeded}/${batchResult.stats.total} files in ${batchResult.stats.processingTimeMs.toFixed(0)}ms`
         );
+
+        // Batch esbuild transformation for fast-path eligible files
+        const esbuildStartTime = performance.now();
+        const jsxInputs: Array<{ id: string; virtualId: string; jsx: string }> = [];
+
+        // Initialize shiki highlighter if enabled (shared across all files)
+        const shikiHighlighter = getShiki();
+        const resolvedShiki = shikiHighlighter ? await shikiHighlighter : null;
+
+        // Normalize starlightComponents for TransformContext
+        const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
+
+        // Create pipeline once (reusable)
+        const transformPipeline = createPipeline({
+          afterParse: hooks.afterParse,
+          beforeInject: hooks.beforeInject,
+          beforeOutput: hooks.beforeOutput,
+        });
+
+        // Process each cached file through the pipeline
+        // Only batch files eligible for fast-path (non-MDX, no imports/exports/JSX components)
+        for (const [filename, cached] of compilationCache) {
+          const isMdx = filename.endsWith('.mdx');
+          if (isMdx) continue;
+
+          const hasUserImports = (cached.hoistedImports?.length ?? 0) > 0;
+          const hasUserDefaultExport = cached.hasUserDefaultExport === true;
+          const hasJsxComponents = cached.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
+
+          if (hasUserImports || hasUserDefaultExport || hasJsxComponents) continue;
+
+          // Parse frontmatter
+          let frontmatter: Record<string, unknown> = {};
+          if (cached.frontmatterJson) {
+            try {
+              frontmatter = JSON.parse(cached.frontmatterJson) as Record<string, unknown>;
+            } catch {
+              frontmatter = {};
+            }
+          }
+          const headings = cached.headings || [];
+
+          // Wrap HTML in JSX module
+          const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename);
+
+          // Get source for hooks
+          const sourceForHooks =
+            originalSourceCache.get(filename) ??
+            cached.originalSource ??
+            processedSourceCache.get(filename) ??
+            cached.processedSource ??
+            '';
+
+          // Create transform context and run pipeline
+          const ctx: TransformContext = {
+            code: jsxCode,
+            source: sourceForHooks,
+            filename,
+            frontmatter,
+            headings,
+            registry,
+            config: {
+              expressiveCode,
+              starlightComponents: normalizedStarlightComponents,
+              shiki: resolvedShiki,
+            },
+          };
+
+          const transformed = await transformPipeline(ctx);
+          const virtualId = `${VIRTUAL_MODULE_PREFIX}${filename}${OUTPUT_EXTENSION}`;
+          jsxInputs.push({ id: filename, virtualId, jsx: transformed.code });
+        }
+
+        if (jsxInputs.length > 0) {
+          // Batch transform all JSX through esbuild using virtual file plugin
+          try {
+            // Create a clean entry point name for each file (avoid null bytes and special chars)
+            const entryMap = new Map<string, { id: string; jsx: string }>();
+            for (let i = 0; i < jsxInputs.length; i++) {
+              const entry = `entry${i}.jsx`;
+              const input = jsxInputs[i]!;
+              entryMap.set(entry, { id: input.id, jsx: input.jsx });
+            }
+
+            const result: BuildResult = await esbuildBuild({
+              write: false,
+              bundle: false,
+              format: 'esm',
+              sourcemap: 'external',
+              loader: { '.jsx': 'jsx' },
+              jsx: 'transform',
+              jsxFactory: '_jsx',
+              jsxFragment: '_Fragment',
+              entryPoints: Array.from(entryMap.keys()),
+              outdir: 'out', // Required but not used since write: false
+              plugins: [{
+                name: 'markflow-virtual-jsx',
+                setup(build) {
+                  // Resolve all entry points to themselves
+                  build.onResolve({ filter: /^entry\d+\.jsx$/ }, args => {
+                    return { path: args.path, namespace: 'markflow-jsx' };
+                  });
+                  // External - don't bundle
+                  build.onResolve({ filter: /.*/ }, args => {
+                    return { path: args.path, external: true };
+                  });
+                  // Load virtual JSX content
+                  build.onLoad({ filter: /.*/, namespace: 'markflow-jsx' }, args => {
+                    const entry = entryMap.get(args.path);
+                    return entry ? { contents: entry.jsx, loader: 'jsx' } : null;
+                  });
+                }
+              }]
+            });
+
+            // Store results in esbuild cache
+            for (const output of result.outputFiles || []) {
+              // Output path format: out/entry0.js or out/entry0.js.map
+              const basename = path.basename(output.path);
+              if (basename.endsWith('.map')) continue; // Handle maps separately
+
+              // Find matching input by entry name
+              const entryName = basename.replace(/\.js$/, '.jsx');
+              const entry = entryMap.get(entryName);
+
+              if (entry) {
+                // Find corresponding source map
+                const mapOutput = result.outputFiles?.find(o =>
+                  o.path === output.path + '.map'
+                );
+                esbuildCache.set(entry.id, {
+                  code: output.text,
+                  map: mapOutput?.text as SourceMapInput | undefined,
+                });
+              }
+            }
+
+            const esbuildEndTime = performance.now();
+            console.info(
+              `[markflow] Batch esbuild transformed ${esbuildCache.size} files in ${(esbuildEndTime - esbuildStartTime).toFixed(0)}ms`
+            );
+          } catch (esbuildErr) {
+            this.warn(
+              `[markflow] Batch esbuild failed, will use individual transforms: ${esbuildErr}`
+            );
+          }
+        }
       } catch (err) {
         this.warn(
           `[markflow] Batch compile skipped due to binding load failure: ${err}`
@@ -577,6 +602,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         stripQuery(id.slice(VIRTUAL_MODULE_PREFIX.length).replace(new RegExp(`${OUTPUT_EXTENSION.replace('.', '\\.')}$`), ''));
 
       try {
+        // FASTEST PATH: Check esbuild cache first (O(1) lookup, populated in buildStart)
+        const cachedEsbuildResult = esbuildCache.get(filename);
+        if (cachedEsbuildResult) {
+          processedFiles.add(filename);
+          return cachedEsbuildResult;
+        }
+
         // Check cache FIRST, before any file I/O (populated in build mode by buildStart)
         const cached = compilationCache.get(filename);
         const isMdx = filename.endsWith('.mdx');
@@ -613,12 +645,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             processedFiles.add(filename);
 
             const shikiHighlighter = getShiki();
-            const normalizedStarlightComponents:
-              | boolean
-              | { components?: string[]; module?: string } =
-              typeof starlightComponents === 'object' && starlightComponents !== null
-                ? { components: starlightComponents.components, module: starlightComponents.module }
-                : Boolean(starlightComponents);
+            const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
             const sourceForHooks =
               originalSourceCache.get(filename) ??
               cached.originalSource ??
@@ -740,11 +767,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         }
 
         const shikiHighlighter = getShiki();
-        // Normalize starlightComponents to match TransformConfig type
-        const normalizedStarlightComponents: boolean | { components?: string[]; module?: string } =
-          typeof starlightComponents === 'object' && starlightComponents !== null
-            ? { components: starlightComponents.components, module: starlightComponents.module }
-            : Boolean(starlightComponents);
+        const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
         const ctx: TransformContext = {
           code: result.code,
           source,
@@ -874,394 +897,5 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       await writeFile(outputPath, JSON.stringify(stats, null, 2));
       console.info(`[markflow] Stats written to ${outputPath}`);
     },
-  };
-}
-
-/**
- * Wrap raw HTML from batch compilation in a JSX module structure.
- */
-function wrapHtmlInJsxModule(
-  html: string,
-  frontmatter: Record<string, unknown>,
-  headings: Array<{ depth: number; slug: string; text: string }>,
-  filename: string
-): string {
-  const frontmatterJson = JSON.stringify(frontmatter);
-  const headingsJson = JSON.stringify(headings);
-
-  return `import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
-import { Fragment, jsx as _jsx } from 'astro/jsx-runtime';
-
-export const frontmatter = ${frontmatterJson};
-export function getHeadings() { return ${headingsJson}; }
-function _Content() {
-  return (
-    <Fragment set:html={${JSON.stringify(html)}} />
-  );
-}
-const MarkflowContent = createComponent(
-  (result, props, _slots) => renderJSX(result, _jsx(_Content, { ...props })),
-  ${JSON.stringify(filename)}
-);
-export const Content = MarkflowContent;
-export default MarkflowContent;
-`;
-}
-
-async function compileFallbackModule(
-  filename: string,
-  source: string,
-  virtualId: string,
-  registry: Registry | null,
-  hasStarlightConfigured: boolean
-): Promise<{ code: string; map?: SourceMapInput }> {
-  let frontmatter: Record<string, unknown> = {};
-  try {
-    const binding = await loadMarkflowBinding();
-    const frontmatterResult = binding.parseFrontmatter(source);
-    frontmatter = frontmatterResult.frontmatter || {};
-  } catch {
-    frontmatter = {};
-  }
-
-  let sourceWithoutFrontmatter = stripFrontmatter(source);
-  const directiveResult = rewriteFallbackDirectives(sourceWithoutFrontmatter, registry, hasStarlightConfigured);
-  if (directiveResult.changed) {
-    sourceWithoutFrontmatter = injectFallbackImports(
-      directiveResult.code,
-      directiveResult.usedComponents,
-      registry,
-      hasStarlightConfigured
-    );
-  }
-  // Use @mdx-js/mdx to compile files that markflow can't handle
-  // (e.g., files with import/export statements)
-  // Include remark-gfm for GFM features (tables, strikethrough, task lists)
-  // and remark-directive to handle unconverted ::: directives gracefully
-  const compiled = await compileMdx(sourceWithoutFrontmatter, {
-    jsxImportSource: 'astro',
-    remarkPlugins: [remarkGfm, remarkDirective],
-    // Don't use providerImportSource as it requires @mdx-js/react
-    // which may not be installed
-  });
-
-  // The compiled output is a VFile, get the string value
-  const mdxCode = String(compiled);
-
-  // Normalize MDX default export so we can wrap with Astro createComponent
-  const mdxWithoutDefault = mdxCode
-    .replace(/export default function MDXContent/g, 'function MDXContent')
-    .replace(/export default MDXContent\s*;/g, '')
-    .replace(/export\s*\{\s*MDXContent\s+as\s+default\s*\};?/g, '');
-
-  // Wrap in Astro-compatible module format
-  // @mdx-js/mdx outputs ESM with `export default function MDXContent(...)`
-  // We need to add Content, frontmatter and getHeadings exports for Astro compatibility
-  // Note: MDXContent is the default export function from @mdx-js/mdx
-  const wrappedCode = `
-import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
-import { Fragment } from 'astro/jsx-runtime';
-${mdxWithoutDefault}
-
-// Re-export for Astro compatibility
-// Wrap MDXContent so it renders as an Astro component factory
-const MarkflowContent = createComponent(
-  (result, props, _slots) =>
-    renderJSX(
-      result,
-      MDXContent({
-        ...(props ?? {}),
-        // Ensure Astro's Fragment is available for <Fragment slot="..."> usage in MDX.
-        components: { ...(props?.components ?? {}), Fragment },
-      })
-    ),
-  ${JSON.stringify(filename)}
-);
-export { MDXContent };
-export const Content = MarkflowContent;
-export const file = ${JSON.stringify(filename)};
-export const url = undefined;
-export function getHeadings() { return []; }
-export const frontmatter = ${JSON.stringify(frontmatter)};
-export default MarkflowContent;
-`;
-
-  // Transform JSX through esbuild (same as the main compilation path)
-  const esbuildResult = await transformWithEsbuild(wrappedCode, virtualId, ESBUILD_JSX_CONFIG);
-
-  return {
-    code: esbuildResult.code,
-    map: esbuildResult.map as SourceMapInput | undefined,
-  };
-}
-
-type DirectiveOpening = {
-  name: string;
-  bracketTitle: string | null;
-  rawAttrs: string;
-  prefix: string;  // Leading whitespace and blockquote markers (e.g., "  ", "> ", "  > > ")
-  componentName: string;
-};
-
-function rewriteFallbackDirectives(
-  source: string,
-  registry: Registry | null,
-  hasStarlightConfigured: boolean
-): { code: string; usedComponents: Set<string>; changed: boolean } {
-  if (!source) {
-    return { code: source, usedComponents: new Set(), changed: false };
-  }
-
-  // Get directives from registry, fall back to starlightLibrary defaults
-  const registryDirectives = registry?.getSupportedDirectives().map((name) => name.toLowerCase()) ?? [];
-  const supportedSet = new Set(registryDirectives);
-
-  // Add Starlight directives only if registry is empty AND Starlight is configured
-  const useDefaultDirectives = supportedSet.size === 0 && hasStarlightConfigured;
-  if (useDefaultDirectives) {
-    const starlightDirectives = starlightLibrary.directiveMappings ?? [];
-    for (const mapping of starlightDirectives) {
-      supportedSet.add(mapping.directive.toLowerCase());
-    }
-  }
-
-  const lines = source.split(/\r?\n/);
-  const output: string[] = [];
-  const stack: DirectiveOpening[] = [];
-  const usedComponents = new Set<string>();
-  let changed = false;
-  let inFence = false;
-  let fenceChar: string | null = null;
-
-  for (const line of lines) {
-    // Extract prefix (whitespace + blockquote markers) like we do for directives
-    const prefixMatch = line.match(/^(\s*(?:>\s*)*)/);
-    const prefix = prefixMatch?.[1] ?? '';
-    const afterPrefix = line.slice(prefix.length);
-
-    // Check for code fence after stripping prefix (handles blockquoted code fences)
-    const fenceMatch = afterPrefix.match(/^([`~]{3,})/);
-    if (fenceMatch) {
-      const char = fenceMatch[1]?.[0] ?? null;
-      if (!inFence) {
-        inFence = true;
-        fenceChar = char;
-      } else if (char && fenceChar === char) {
-        inFence = false;
-        fenceChar = null;
-      }
-      output.push(line);
-      continue;
-    }
-
-    if (inFence) {
-      output.push(line);
-      continue;
-    }
-
-    const opening = parseOpeningDirective(afterPrefix, supportedSet, prefix);
-    if (opening) {
-      // Try registry first, then fall back to starlightLibrary
-      const mapping = registry?.getDirectiveMapping(opening.name)
-        ?? (useDefaultDirectives
-          ? starlightLibrary.directiveMappings?.find(m => m.directive.toLowerCase() === opening.name)
-          : null);
-      if (!mapping) {
-        output.push(line);
-        continue;
-      }
-
-      const componentName = mapping.component;
-      const props: string[] = ['data-mf-source="directive"'];
-      if (mapping.injectProps) {
-        for (const [propKey, propSource] of Object.entries(mapping.injectProps)) {
-          if (propSource.source === 'directive_name') {
-            props.push(`${propKey}="${escapeAttributeValue(opening.name)}"`);
-          } else if (propSource.source === 'bracket_title' && opening.bracketTitle) {
-            props.push(`${propKey}="${escapeAttributeValue(opening.bracketTitle)}"`);
-          } else if (propSource.source === 'literal' && propSource.value) {
-            props.push(`${propKey}="${escapeAttributeValue(propSource.value)}"`);
-          }
-        }
-      }
-
-      if (opening.bracketTitle) {
-        props.push(`title="${escapeAttributeValue(opening.bracketTitle)}"`);
-      }
-      if (opening.rawAttrs) {
-        props.push(opening.rawAttrs);
-      }
-
-      const propsStr = props.length > 0 ? ` ${props.join(' ')}` : '';
-      output.push(`${opening.prefix}<${componentName}${propsStr}>`);
-      stack.push({ ...opening, componentName });
-      usedComponents.add(componentName);
-      changed = true;
-      continue;
-    }
-
-    const closer = parseDirectiveCloser(afterPrefix, prefix);
-    if (closer && stack.length > 0) {
-      const opened = stack.pop();
-      if (opened) {
-        output.push(`${opened.prefix}</${opened.componentName}>`);
-        changed = true;
-        continue;
-      }
-    }
-
-    output.push(line);
-  }
-
-  while (stack.length > 0) {
-    const opened = stack.pop();
-    if (opened) {
-      output.push(`${opened.prefix}</${opened.componentName}>`);
-    }
-  }
-
-  return { code: output.join('\n'), usedComponents, changed };
-}
-
-function injectFallbackImports(
-  source: string,
-  usedComponents: Set<string>,
-  registry: Registry | null,
-  hasStarlightConfigured: boolean
-): string {
-  if (!source || usedComponents.size === 0) {
-    return source;
-  }
-
-  const imported = collectImportedNames(source);
-  const importLines: string[] = [];
-
-  for (const componentName of usedComponents) {
-    if (imported.has(componentName)) {
-      continue;
-    }
-    const def = registry?.getComponent(componentName);
-    if (def) {
-      if (def.exportType === 'named') {
-        importLines.push(`import { ${componentName} } from '${def.modulePath}';`);
-      } else {
-        importLines.push(`import ${componentName} from '${def.modulePath}/${componentName}.astro';`);
-      }
-    } else if (componentName === 'Aside' && hasStarlightConfigured) {
-      // Fallback for Starlight Aside component when using default directives
-      // Only inject if Starlight is actually configured to avoid module-not-found errors
-      importLines.push(`import { Aside } from '@astrojs/starlight/components';`);
-    }
-  }
-
-  if (importLines.length === 0) {
-    return source;
-  }
-
-  return insertAfterImports(source, importLines.join('\n'));
-}
-
-function parseOpeningDirective(
-  afterPrefix: string,
-  supported: Set<string>,
-  prefix: string
-): { name: string; bracketTitle: string | null; rawAttrs: string; prefix: string } | null {
-  // Content is already after the prefix; check for directive start
-  if (!afterPrefix.startsWith(':::')) {
-    return null;
-  }
-
-  let rest = afterPrefix.slice(3);
-  let name = '';
-  while (rest.length > 0 && /[A-Za-z]/.test(rest[0] ?? '')) {
-    name += (rest[0] ?? '').toLowerCase();
-    rest = rest.slice(1);
-  }
-
-  if (!name || !supported.has(name)) {
-    return null;
-  }
-
-  let bracketTitle: string | null = null;
-  if (rest.startsWith('[')) {
-    rest = rest.slice(1);
-    let title = '';
-    while (rest.length > 0) {
-      const ch = rest[0] ?? '';
-      rest = rest.slice(1);
-      if (ch === ']') {
-        bracketTitle = title;
-        break;
-      }
-      title += ch;
-    }
-  }
-
-  const rawAttrs = normalizeDirectiveAttrs(rest.trim(), Boolean(bracketTitle));
-  return { name, bracketTitle, rawAttrs, prefix };
-}
-
-function normalizeDirectiveAttrs(attrs: string, hasBracketTitle: boolean): string {
-  if (!attrs) {
-    return '';
-  }
-
-  // Strip outer braces from remark-directive syntax: {key="value"} → key="value"
-  let normalized = attrs.trim();
-  if (normalized.startsWith('{') && normalized.endsWith('}')) {
-    normalized = normalized.slice(1, -1).trim();
-  }
-
-  const tokens = normalized.split(/\s+/).filter(Boolean);
-  const cleaned: string[] = [];
-  for (const tok of tokens) {
-    const key = tok.split('=')[0]?.trim() ?? '';
-    if (!key) continue;
-    const lower = key.toLowerCase();
-    if (lower === 'type') continue;
-    if (hasBracketTitle && lower === 'title') continue;
-    cleaned.push(tok);
-  }
-  return cleaned.join(' ');
-}
-
-function parseDirectiveCloser(afterPrefix: string, prefix: string): { prefix: string } | null {
-  // Check if the content after prefix is exactly `:::`
-  if (afterPrefix.trim() === ':::') {
-    return { prefix };
-  }
-  return null;
-}
-
-function escapeAttributeValue(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-}
-
-async function createShikiHighlighter(): Promise<(code: string, lang?: string) => Promise<string>> {
-  const theme = createCssVariablesTheme({
-    name: SHIKI_THEME.name,
-    variablePrefix: SHIKI_THEME.variablePrefix,
-  });
-  const cache = new Map<string, { lang: string }>();
-
-  return async (code: string, lang?: string): Promise<string> => {
-    const key = `${lang || 'text'}`;
-    let cached = cache.get(key);
-    if (!cached) {
-      cached = { lang: lang || 'text' };
-      cache.set(key, cached);
-    }
-    const html = await codeToHtml(code, {
-      lang: cached.lang,
-      theme,
-    });
-    return html.replace(/<pre class="([^"]*)"/, (_match, classes: string) => {
-      const normalized = classes
-        .split(/\s+/)
-        .filter((value) => value && value !== 'shiki')
-        .join(' ');
-      const next = normalized ? `${SHIKI_THEME.className} ${normalized}` : SHIKI_THEME.className;
-      return `<pre class="${next}"`;
-    });
   };
 }
