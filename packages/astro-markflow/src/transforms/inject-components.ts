@@ -4,20 +4,21 @@
  */
 
 import type { Registry } from 'markflow/registry';
+import { astroLibrary } from 'markflow/registry';
 import { collectImportedNames, insertAfterImports } from '../utils/imports.js';
 import { resolveStarlightConfig, type StarlightUserConfig } from '../utils/config.js';
 
 /**
  * Default Astro component names
- * @deprecated Use registry.getComponentsByModule('astro/components') instead
+ * @deprecated Use astroLibrary.components from markflow/registry instead
  */
-export const ASTRO_COMPONENTS = ['Code', 'Prism'];
+export const ASTRO_COMPONENTS = astroLibrary.components.map((c) => c.name);
 
 /**
  * Default Astro components module path
- * @deprecated Use registry from markflow/registry instead
+ * @deprecated Use astroLibrary.defaultModulePath from markflow/registry instead
  */
-export const ASTRO_COMPONENTS_MODULE = 'astro/components';
+export const ASTRO_COMPONENTS_MODULE = astroLibrary.defaultModulePath;
 
 /**
  * Strip heading metadata exports from code.
@@ -94,12 +95,12 @@ export function injectStarlightComponents(
  * // Adds: import { Code } from 'astro/components';
  */
 export function injectAstroComponents(code: string, registry?: Registry): string {
-  // Get components from registry if available, otherwise use deprecated constants
-  let components = ASTRO_COMPONENTS;
-  let moduleId = ASTRO_COMPONENTS_MODULE;
+  // Get components from registry if available, otherwise use library preset
+  let components = astroLibrary.components.map((c) => c.name);
+  let moduleId = astroLibrary.defaultModulePath;
 
   if (registry) {
-    const astroComponents = registry.getComponentsByModule(ASTRO_COMPONENTS_MODULE);
+    const astroComponents = registry.getComponentsByModule(astroLibrary.defaultModulePath);
     if (astroComponents.length > 0 && astroComponents[0]) {
       components = astroComponents.map((c) => c.name);
       moduleId = astroComponents[0].modulePath;

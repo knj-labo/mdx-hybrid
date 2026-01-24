@@ -4,40 +4,31 @@
  */
 
 import type { Registry } from 'markflow/registry';
+import { starlightLibrary, expressiveCodeLibrary } from 'markflow/registry';
 
 /**
  * Default Starlight component names
- * @deprecated Use registry.getComponentsByModule('@astrojs/starlight/components') instead
+ * @deprecated Use starlightLibrary.components from markflow/registry instead
  */
-export const STARLIGHT_COMPONENTS = [
-  'Aside',
-  'Tabs',
-  'TabItem',
-  'Steps',
-  'FileTree',
-  'CardGrid',
-  'LinkCard',
-  'LinkButton',
-  'Card',
-];
+export const STARLIGHT_COMPONENTS = starlightLibrary.components.map((c) => c.name);
 
 /**
  * Default Starlight components module path
  * @deprecated Use starlightLibrary.defaultModulePath from markflow/registry instead
  */
-export const STARLIGHT_COMPONENTS_MODULE = '@astrojs/starlight/components';
+export const STARLIGHT_COMPONENTS_MODULE = starlightLibrary.defaultModulePath;
 
 /**
  * Default ExpressiveCode component name
  * @deprecated Use expressiveCodeLibrary from markflow/registry instead
  */
-export const EXPRESSIVE_CODE_COMPONENT = 'ExpressiveCode';
+export const EXPRESSIVE_CODE_COMPONENT = expressiveCodeLibrary.components[0]?.name ?? 'Code';
 
 /**
  * Default ExpressiveCode module path
  * @deprecated Use expressiveCodeLibrary.defaultModulePath from markflow/registry instead
  */
-export const EXPRESSIVE_CODE_MODULE = 'astro-expressive-code/components';
+export const EXPRESSIVE_CODE_MODULE = expressiveCodeLibrary.defaultModulePath;
 
 /**
  * Resolved ExpressiveCode configuration.
@@ -78,12 +69,12 @@ export function resolveExpressiveCodeConfig(
 ): ExpressiveCodeConfig | null {
   if (!config) return null;
 
-  // Get defaults from registry if available, otherwise use deprecated constants
-  let defaultComponent = EXPRESSIVE_CODE_COMPONENT;
-  let defaultModuleId = EXPRESSIVE_CODE_MODULE;
+  // Get defaults from registry if available, otherwise use library preset
+  let defaultComponent = expressiveCodeLibrary.components[0]?.name ?? 'Code';
+  let defaultModuleId = expressiveCodeLibrary.defaultModulePath;
 
   if (registry) {
-    const ecComponents = registry.getComponentsByModule(EXPRESSIVE_CODE_MODULE);
+    const ecComponents = registry.getComponentsByModule(expressiveCodeLibrary.defaultModulePath);
     if (ecComponents.length > 0 && ecComponents[0]) {
       defaultComponent = ecComponents[0].name;
       defaultModuleId = ecComponents[0].modulePath;
@@ -147,12 +138,12 @@ export function resolveStarlightConfig(
 ): StarlightConfig | null {
   if (!config) return null;
 
-  // Get defaults from registry if available, otherwise use deprecated constants
-  let defaultComponents = STARLIGHT_COMPONENTS;
-  let defaultModuleId = STARLIGHT_COMPONENTS_MODULE;
+  // Get defaults from registry if available, otherwise use library preset
+  let defaultComponents = starlightLibrary.components.map((c) => c.name);
+  let defaultModuleId = starlightLibrary.defaultModulePath;
 
   if (registry) {
-    const slComponents = registry.getComponentsByModule(STARLIGHT_COMPONENTS_MODULE);
+    const slComponents = registry.getComponentsByModule(starlightLibrary.defaultModulePath);
     if (slComponents.length > 0 && slComponents[0]) {
       defaultComponents = slComponents.map((c) => c.name);
       defaultModuleId = slComponents[0].modulePath;

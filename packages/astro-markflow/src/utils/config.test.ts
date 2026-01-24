@@ -181,7 +181,8 @@ describe('constants', () => {
 
   it('should export EXPRESSIVE_CODE_COMPONENT string', () => {
     expect(typeof EXPRESSIVE_CODE_COMPONENT).toBe('string');
-    expect(EXPRESSIVE_CODE_COMPONENT).toBe('ExpressiveCode');
+    // Now derived from expressiveCodeLibrary.components[0].name
+    expect(EXPRESSIVE_CODE_COMPONENT).toBe('Code');
   });
 
   it('should export EXPRESSIVE_CODE_MODULE string', () => {
