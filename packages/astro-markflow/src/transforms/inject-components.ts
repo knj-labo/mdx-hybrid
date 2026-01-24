@@ -7,6 +7,7 @@ import type { Registry } from 'markflow/registry';
 import { astroLibrary } from 'markflow/registry';
 import { collectImportedNames, insertAfterImports } from '../utils/imports.js';
 import { resolveStarlightConfig, type StarlightUserConfig } from '../utils/config.js';
+import { stripHeadingsMeta } from '../utils/validation.js';
 
 /**
  * Default Astro component names
@@ -19,16 +20,6 @@ export const ASTRO_COMPONENTS = astroLibrary.components.map((c) => c.name);
  * @deprecated Use astroLibrary.defaultModulePath from markflow/registry instead
  */
 export const ASTRO_COMPONENTS_MODULE = astroLibrary.defaultModulePath;
-
-/**
- * Strip heading metadata exports from code.
- * Removes `export const headings` and `export function getHeadings` statements.
- */
-function stripHeadingsMeta(code: string): string {
-  return code
-    .replace(/export const headings\s*=\s*\[[\s\S]*?\];\r?\n/g, '')
-    .replace(/export function getHeadings\(\)\s*\{[\s\S]*?\}\r?\n/g, '');
-}
 
 /**
  * Generic component import injection.
