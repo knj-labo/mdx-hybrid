@@ -7,30 +7,6 @@ import type { Registry } from 'markflow/registry';
 import { starlightLibrary, expressiveCodeLibrary } from 'markflow/registry';
 
 /**
- * Default Starlight component names
- * @deprecated Use starlightLibrary.components from markflow/registry instead
- */
-export const STARLIGHT_COMPONENTS = starlightLibrary.components.map((c) => c.name);
-
-/**
- * Default Starlight components module path
- * @deprecated Use starlightLibrary.defaultModulePath from markflow/registry instead
- */
-export const STARLIGHT_COMPONENTS_MODULE = starlightLibrary.defaultModulePath;
-
-/**
- * Default ExpressiveCode component name
- * @deprecated Use expressiveCodeLibrary from markflow/registry instead
- */
-export const EXPRESSIVE_CODE_COMPONENT = expressiveCodeLibrary.components[0]?.name ?? 'Code';
-
-/**
- * Default ExpressiveCode module path
- * @deprecated Use expressiveCodeLibrary.defaultModulePath from markflow/registry instead
- */
-export const EXPRESSIVE_CODE_MODULE = expressiveCodeLibrary.defaultModulePath;
-
-/**
  * Resolved ExpressiveCode configuration.
  */
 export interface ExpressiveCodeConfig {

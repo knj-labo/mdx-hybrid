@@ -4,13 +4,13 @@ import {
   injectStarlightComponents,
   injectAstroComponents,
   injectComponentImportsFromRegistry,
-  ASTRO_COMPONENTS,
-  ASTRO_COMPONENTS_MODULE,
 } from './inject-components.js';
 import { createRegistry, starlightLibrary, astroLibrary, type Registry } from 'markflow/registry';
 
 // Create test registry
 const testRegistry = createRegistry([starlightLibrary, astroLibrary]);
+
+const ASTRO_COMPONENTS_MODULE = astroLibrary.defaultModulePath;
 
 describe('injectComponentImports', () => {
   it('should inject missing component imports', () => {
@@ -303,19 +303,6 @@ export default function Content() {
 
     const importCount = (result.match(/import/g) || []).length;
     expect(importCount).toBe(1);
-  });
-});
-
-describe('constants', () => {
-  it('should export ASTRO_COMPONENTS array', () => {
-    expect(Array.isArray(ASTRO_COMPONENTS)).toBe(true);
-    expect(ASTRO_COMPONENTS).toContain('Code');
-    expect(ASTRO_COMPONENTS).toContain('Prism');
-  });
-
-  it('should export ASTRO_COMPONENTS_MODULE string', () => {
-    expect(typeof ASTRO_COMPONENTS_MODULE).toBe('string');
-    expect(ASTRO_COMPONENTS_MODULE).toBe('astro/components');
   });
 });
 
