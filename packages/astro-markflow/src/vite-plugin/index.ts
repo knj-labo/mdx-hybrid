@@ -27,3 +27,11 @@ export { wrapHtmlInJsxModule, compileFallbackModule } from './jsx-module.js';
 
 // Re-export directive rewriter
 export { rewriteFallbackDirectives, injectFallbackImports } from './directive-rewriter.js';
+
+// Re-export config normalization utilities
+export { normalizeStarlightComponents } from './normalize-config.js';
+export type { NormalizedStarlightComponents } from './normalize-config.js';
+
+// Re-export shiki highlighter
+export { createShikiHighlighter } from './shiki-highlighter.js';
+export type { ShikiHighlighter } from './shiki-highlighter.js';
