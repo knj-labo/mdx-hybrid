@@ -4,12 +4,7 @@
  */
 
 import { parseFragment, serialize } from 'parse5';
-import type { DefaultTreeAdapterMap } from 'parse5';
-
-type DocumentFragment = DefaultTreeAdapterMap['documentFragment'];
-type Node = DefaultTreeAdapterMap['node'];
-type Element = DefaultTreeAdapterMap['element'];
-type TextNode = DefaultTreeAdapterMap['textNode'];
+import type { DocumentFragment, Node, Element, TextNode } from '../vite-plugin/types.js';
 
 /**
  * Shiki highlighter function type.

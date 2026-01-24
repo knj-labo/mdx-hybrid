@@ -107,8 +107,3 @@ export interface MarkflowPluginOptions {
   binding?: MarkflowBinding;
   mdx?: MdxImportHandlingOptions;
 }
-
-/**
- * Default file extensions to compile.
- */
-export const DEFAULT_EXTENSIONS = new Set(['.md', '.mdx']);
