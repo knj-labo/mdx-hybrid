@@ -66,6 +66,8 @@
     "markflow": "workspace:*",
     "markflow-napi": "file:../../crates/napi",
     "parse5": "^7.1.2",
+    "remark-directive": "^3.0.0",
+    "remark-gfm": "^4.0.0",
     "shiki": "^3.20.0"
   },
   "devDependencies": {

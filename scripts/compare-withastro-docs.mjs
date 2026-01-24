@@ -201,6 +201,13 @@ async function compareSemantic(dirA, dirB, routes) {
           reason: 'content-diff',
           ...summarizeDiff(sa, sb),
         });
+      } else {
+        // Structure differs but text content is same (e.g., missing <aside>)
+        diffs.push({
+          file: route,
+          reason: 'structure-diff',
+          ...summarizeDiff(na, nb),
+        });
       }
     }
     compared += 1;
@@ -240,6 +247,13 @@ function compareFiles(filesA, filesB) {
           file: rel,
           reason: 'content-diff',
           ...summarizeDiff(sa, sb),
+        });
+      } else {
+        // Structure differs but text content is same (e.g., missing <aside>)
+        diffs.push({
+          file: rel,
+          reason: 'structure-diff',
+          ...summarizeDiff(na, nb),
         });
       }
     }
@@ -368,12 +382,6 @@ export function normalizeHtml(html) {
   const courseTrackingRe =
     /<script\b[^>]*>document\.querySelectorAll\("a\[data-(?:scrimba|learn-astro)-cta\]"\)[^<]*<\/script>/gi;
   processed = processed.replace(courseTrackingRe, '');
-  const asideOpenRe = /<aside\b[^>]*class="[^"]*\baside[^"]*"[^>]*>/gi;
-  const asideCloseRe = /<\/aside>/gi;
-  while (asideOpenRe.test(processed)) {
-    processed = processed.replace(asideOpenRe, '');
-  }
-  processed = processed.replace(asideCloseRe, '');
   // Strip math-inline span wrappers (keep content, just remove the wrapping tags)
   // Match entire <span class="math-inline">...</span> and replace with inner content
   const mathInlineRe = /<span\b[^>]*class="[^"]*\bmath-inline\b[^"]*"[^>]*>([\s\S]*?)<\/span>/gi;
@@ -390,10 +398,7 @@ export function normalizeHtml(html) {
   let codeDepth = 0;
   while ((m = tagRe.exec(noComments))) {
     let text = noComments.slice(last, m.index);
-    if (codeDepth === 0) {
-      text = stripDirectiveMarkers(text);
-    }
-    out += normalizeText(text);
+    out += codeDepth === 0 ? normalizeText(text) : normalizeCodeText(text);
 
     const tag = m[0];
     const lower = tag.toLowerCase();
@@ -417,18 +422,23 @@ export function normalizeHtml(html) {
     last = m.index + m[0].length;
   }
   let tail = noComments.slice(last);
-  if (codeDepth === 0) {
-    tail = stripDirectiveMarkers(tail);
-  }
-  out += normalizeText(tail);
-  return out.trim().replace(/\s+/g, ' ');
+  out += codeDepth === 0 ? normalizeText(tail) : normalizeCodeText(tail);
+  return out.trim();
 }
 
 function stripTags(text) {
+  // 1. Extract code block contents to preserve whitespace
+  const codeBlocks = [];
+  let processed = text.replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (_, content) => {
+    codeBlocks.push(content);
+    return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
+  });
+
+  // 2. Normal tag stripping
   const blockTagRe =
     /<\/?(?:p|div|section|article|header|footer|main|aside|nav|h[1-6]|ol|ul|li|table|thead|tbody|tfoot|tr|td|th|pre|blockquote|figure|figcaption|hr|br)(?:\s[^>]*)?>/gi;
-  return decodeHtmlEntities(
-    text
+  processed = decodeHtmlEntities(
+    processed
       .replace(/<!--[\s\S]*?-->/g, '')
       .replace(blockTagRe, ' ')
       .replace(/<[^>]*>/g, '')
@@ -437,6 +447,13 @@ function stripTags(text) {
   )
     .trim()
     .replace(/\s+/g, ' ');
+
+  // 3. Restore code blocks with preserved whitespace (only normalize CRLF → LF)
+  codeBlocks.forEach((code, i) => {
+    processed = processed.replace(`__CODE_BLOCK_${i}__`, code.replace(/\r\n?/g, '\n'));
+  });
+
+  return processed;
 }
 
 function decodeHtmlEntities(text) {
@@ -459,10 +476,8 @@ function normalizeText(text) {
   return text.replace(/\s+/g, ' ');
 }
 
-function stripDirectiveMarkers(text) {
-  return text
-    .replace(/(^|[\s>]):::{3,4}[A-Za-z][\w-]*(?:\[[^\]]*])?/g, '$1')
-    .replace(/(^|[\s>]):::{3,4}(?=\s|$)/g, '$1');
+function normalizeCodeText(text) {
+  return text.replace(/\r\n?/g, '\n');
 }
 
 function normalizeTag(tag) {

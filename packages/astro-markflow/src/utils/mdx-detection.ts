@@ -9,7 +9,7 @@ import type { MdxImportHandlingOptions } from '../types.js';
 /**
  * Strip code fences from content to avoid false positives.
  */
-function stripCodeFences(content: string): string {
+export function stripCodeFences(content: string): string {
   // Remove fenced code blocks (``` or ~~~)
   return content.replace(/^(?:```|~~~)[^\n]*\n[\s\S]*?^(?:```|~~~)\s*$/gm, '');
 }

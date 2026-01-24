@@ -1,6 +1,7 @@
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkGfm from 'remark-gfm'
+import remarkDirective from 'remark-directive'
 import remarkMdx from 'remark-mdx'
 import {
   makeBlockquote,
@@ -18,23 +19,24 @@ export async function parseWithUnified(markdown) {
     tree = unified()
       .use(remarkParse)
       .use(remarkGfm)
+      .use(remarkDirective)
       .use(remarkMdx)
       .parse(markdown)
   } catch (err) {
-    tree = unified().use(remarkParse).use(remarkGfm).parse(markdown)
+    tree = unified().use(remarkParse).use(remarkGfm).use(remarkDirective).parse(markdown)
   }
 
   const blocks = []
   walk(
     tree,
-    { listType: null, inListItem: false, inBlockquote: false },
+    { listType: null, inListItem: false, inBlockquote: false, inDirective: false },
     (node, state) => {
     switch (node.type) {
       case 'heading':
         blocks.push(makeHeading(node.depth, extractText(node)))
         break
       case 'paragraph':
-        if (!state.inListItem && !state.inBlockquote) {
+        if (!state.inListItem && !state.inBlockquote && !state.inDirective) {
           const text = extractText(node)
           if (!text.includes(':::')) {
             blocks.push(makeParagraph(text))
@@ -54,6 +56,20 @@ export async function parseWithUnified(markdown) {
       case 'mdxJsxTextElement':
         blocks.push(makeMdx(formatMdxElement(node)))
         break
+      case 'containerDirective':
+      case 'leafDirective': {
+        const name = node.name || ''
+        const bracketTitle = extractDirectiveLabel(node)
+        const parts = ['Aside']
+        if (name) parts.push(`type=${name}`)
+        if (bracketTitle) parts.push(`title=${bracketTitle}`)
+        blocks.push(makeMdx(parts.join(' ')))
+        const bodyText = extractDirectiveBody(node)
+        if (bodyText) {
+          blocks.push(makeParagraph(bodyText))
+        }
+        break
+      }
       default:
         break
     }
@@ -74,6 +90,9 @@ function walk(node, state, visit) {
   }
   if (node.type === 'blockquote') {
     nextState = { ...nextState, inBlockquote: true }
+  }
+  if (node.type === 'containerDirective' || node.type === 'leafDirective') {
+    nextState = { ...nextState, inDirective: true }
   }
   if (Array.isArray(node.children)) {
     for (const child of node.children) {
@@ -118,4 +137,25 @@ function formatMdxElement(node) {
         .filter(Boolean)
     : []
   return `${name}${attrs.length ? ' ' + attrs.join(' ') : ''}`
+}
+
+function extractDirectiveLabel(node) {
+  // remark-directive stores bracket title [Title] as a directiveLabel node
+  for (const child of node.children || []) {
+    if (child.data?.directiveLabel) {
+      return extractText(child)
+    }
+  }
+  return ''
+}
+
+function extractDirectiveBody(node) {
+  const parts = []
+  for (const child of node.children || []) {
+    if (child.data?.directiveLabel) continue
+    if (child.type === 'paragraph') {
+      parts.push(extractText(child))
+    }
+  }
+  return normalizeText(parts.join(' '))
 }

@@ -1,5 +1,5 @@
 import { parseFragment } from 'parse5'
-import { parse } from '../../crates/napi/index.js'
+import { compileIr } from '../../crates/napi/index.js'
 import {
   makeBlockquote,
   makeCode,
@@ -60,7 +60,8 @@ const CANONICAL_COMPONENTS = new Map([
 ])
 
 export function parseWithMarkflow(markdown) {
-  const html = parse(markdown)
+  const result = compileIr(markdown, 'test.md', null, null)
+  const html = result.html
   const fragment = parseFragment(html)
   const blocks = []
   walk(fragment, blocks, {
@@ -91,19 +92,38 @@ function walk(node, blocks, state) {
   if (tag === 'li') nextState.inListItem = true
   if (tag === 'blockquote') nextState.inBlockquote = true
 
-  if (tag === 'aside' && hasClass(node, 'aside') && !state.inBlockquote) {
-    if (hasClass(node, 'aside--note')) {
-      return
+  // Handle JSX Aside from compileIr: <Aside {...{"type": "note", "title": "Title"}}>
+  if (tag === 'aside' && hasJsxSpreadAttr(node)) {
+    const spreadAttrs = extractJsxSpreadAttrs(node)
+    const asideType = spreadAttrs.type || ''
+    const title = spreadAttrs.title || ''
+    // Unified format: Aside type=<type> title=<title>
+    const parts = ['Aside']
+    if (asideType) parts.push(`type=${asideType}`)
+    if (title) parts.push(`title=${title}`)
+    blocks.push(makeMdx(parts.join(' ')))
+    const body = collectText(node)
+    if (body) {
+      blocks.push(makeParagraph(body))
     }
+    return
+  }
+  // Handle HTML aside with class="aside aside--note" (legacy format)
+  if (tag === 'aside' && hasClass(node, 'aside') && !state.inBlockquote) {
+    const asideType = extractAsideType(node)
     const title = extractAsideTitle(node)
-    const label = title ? `Aside title=${title}` : 'Aside'
-    blocks.push(makeMdx(label))
+    // Unified format: Aside type=<type> title=<title>
+    const parts = ['Aside']
+    if (asideType) parts.push(`type=${asideType}`)
+    if (title) parts.push(`title=${title}`)
+    blocks.push(makeMdx(parts.join(' ')))
     const body = extractAsideBody(node)
     if (body) {
       blocks.push(makeParagraph(body))
     }
     return
-  } else if (tag === 'ol' && (hasClass(node, 'steps') || hasAttr(node, 'steps'))) {
+  }
+  if (tag === 'ol' && (hasClass(node, 'steps') || hasAttr(node, 'steps'))) {
     blocks.push(makeMdx('Steps'))
   } else if (tag === 'div' && hasClass(node, 'tabs')) {
     blocks.push(makeMdx('Tabs'))
@@ -134,7 +154,7 @@ function walk(node, blocks, state) {
     blocks.push(makeBlockquote(collectText(node)))
   } else if (tag === 'code' && (state.inPre || parentIsPre(node))) {
     const lang = extractLanguage(node)
-    blocks.push(makeCode(lang, collectText(node)))
+    blocks.push(makeCode(lang, collectRawTextExact(node)))
   }
 
   const children = node.childNodes || []
@@ -209,6 +229,58 @@ function hasClass(node, className) {
   return value.split(/\s+/).includes(className)
 }
 
+function hasJsxSpreadAttr(node) {
+  // parse5 parses JSX spread like {...{"type": "note"}} as an attribute name starting with {
+  const attrs = node.attrs || []
+  return attrs.some((attr) => attr.name.startsWith('{...{'))
+}
+
+function extractJsxSpreadAttrs(node) {
+  // parse5 splits JSX spread {...{"type": "note", "title": "Important"}} into multiple attrs:
+  // Each attr.name contains a fragment: {...{"type":, "note",, "title":, "important"}}
+  // We reconstruct and parse the JSON object
+  const attrs = node.attrs || []
+  // Collect all attr names that are part of the spread
+  const parts = []
+  let inSpread = false
+  for (const attr of attrs) {
+    if (attr.name.startsWith('{...{')) {
+      inSpread = true
+    }
+    if (inSpread) {
+      parts.push(attr.name)
+      if (attr.name.includes('}}')) {
+        break
+      }
+    }
+  }
+  // Reconstruct: {..."type": "note", "title": "important"}}
+  const raw = parts.join(' ')
+  // Extract JSON object from {...{...}}
+  const jsonMatch = raw.match(/\{\.\.\.(\{.*\})\}/)
+  if (!jsonMatch) return {}
+  try {
+    return JSON.parse(jsonMatch[1])
+  } catch {
+    // Manual extraction as fallback
+    const result = {}
+    const pairRegex = /"(\w+)":\s*"([^"]*)"/g
+    let match
+    while ((match = pairRegex.exec(raw)) !== null) {
+      result[match[1]] = match[2]
+    }
+    return result
+  }
+}
+
+function extractAsideType(node) {
+  const classes = getAttr(node, 'class')
+  if (!classes) return ''
+  // Extract type from aside--note, aside--tip, aside--caution, etc.
+  const match = classes.match(/\baside--(\w+)\b/)
+  return match ? match[1] : ''
+}
+
 function extractAsideTitle(node) {
   const children = node.childNodes || []
   for (const child of children) {
@@ -243,6 +315,20 @@ function collectRawText(node) {
   }
   walker(node)
   return parts.join('\n')
+}
+
+function collectRawTextExact(node) {
+  const parts = []
+  const walker = (child) => {
+    if (!child || typeof child !== 'object') return
+    if (child.nodeName === '#text') {
+      parts.push(child.value)
+    }
+    const kids = child.childNodes || []
+    for (const kid of kids) walker(kid)
+  }
+  walker(node)
+  return parts.join('')
 }
 
 function extractFencedCodeBlocks(text) {
