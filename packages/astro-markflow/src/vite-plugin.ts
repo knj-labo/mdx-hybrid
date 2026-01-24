@@ -7,6 +7,8 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { transformWithEsbuild, type ResolvedConfig, type Plugin } from 'vite';
+import { build as esbuildBuild, type BuildResult } from 'esbuild';
+import type { SourceMapInput } from 'rollup';
 import {
   createRegistry,
   starlightLibrary,
