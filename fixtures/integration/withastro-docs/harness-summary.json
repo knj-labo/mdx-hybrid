@@ -1,19 +1,19 @@
 {
-  "timestamp": "2026-01-07T13:53:46.835Z",
-  "baselineMs": 113536,
-  "markflowMs": 86505,
+  "timestamp": "2026-01-24T12:09:28.063Z",
+  "baselineMs": 120287,
+  "markflowMs": 116543,
   "mode": "semantic",
   "semantic": {
-    "compared": 16,
+    "compared": 12,
     "skipped": 0,
-    "differences": 15,
+    "differences": 1,
     "samples": [
       {
-        "file": "/en/getting-started/",
+        "file": "/en/reference/astro-syntax/",
         "reason": "content-diff",
-        "diffIndex": 894,
-        "previewA": "ldNodes); } } }); }, }; })(); .action:where(.astro-vnzlvqnm){gap:.5em;align-items:center;border-radius:999rem;",
-        "previewB": "ldNodes); } } }); }, }; })(); Skip to content [data-theme=\"dark\"] .flame { fill: url(#gradient); } Search GitH"
+        "diffIndex": 26069,
+        "previewA": "essions. JSX-like Expressions Section titled “JSX-like Expressions” You can define local JavaScript variables ",
+        "previewB": "essions. JSX-like Expressions You can define local JavaScript variables inside of the frontmatter component sc"
       }
     ]
   },

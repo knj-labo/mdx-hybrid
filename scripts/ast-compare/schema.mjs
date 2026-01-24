@@ -17,6 +17,10 @@ export function normalizeText(value) {
     .replace(/\s+/g, ' ')
 }
 
+export function normalizeCodeText(value) {
+  return String(value ?? '').replace(/\r\n?/g, '\n')
+}
+
 export function makeHeading(depth, text) {
   return {
     type: 'heading',
@@ -44,7 +48,7 @@ export function makeCode(lang, text) {
   return {
     type: 'code',
     lang: normalizeText(lang),
-    text: normalizeText(text),
+    text: normalizeCodeText(text),
   }
 }
 
@@ -58,6 +62,7 @@ export function makeBlockquote(text) {
 export function makeMdx(text) {
   return {
     type: 'mdx',
-    text: normalizeText(text),
+    // Lowercase for case-insensitive comparison (parse5 lowercases attributes)
+    text: normalizeText(text).toLowerCase(),
   }
 }

@@ -10,6 +10,8 @@ import { pathToFileURL } from 'node:url';
 import { transformWithEsbuild, type ResolvedConfig, type Plugin } from 'vite';
 import type { SourceMapInput } from 'rollup';
 import { compile as compileMdx } from '@mdx-js/mdx';
+import remarkGfm from 'remark-gfm';
+import remarkDirective from 'remark-directive';
 import { parseFragment, serialize } from 'parse5';
 import { codeToHtml, createCssVariablesTheme } from 'shiki';
 import type { DefaultTreeAdapterMap } from 'parse5';
@@ -24,8 +26,10 @@ import {
 import { createPipeline } from './pipeline/index.js';
 import { blocksToJsx } from './transforms/blocks-to-jsx.js';
 import { resolveExpressiveCodeConfig, type ExpressiveCodeConfig } from './utils/config.js';
+import { stripFrontmatter } from './utils/frontmatter.js';
 import { hasProblematicMdxPatterns } from './utils/mdx-detection.js';
-import type { MarkflowPlugin, PluginHooks, TransformContext } from './types.js';
+import { collectImportedNames, insertAfterImports } from './utils/imports.js';
+import type { MarkflowPlugin, MdxImportHandlingOptions, PluginHooks, TransformContext } from './types.js';
 
 type DocumentFragment = DefaultTreeAdapterMap['documentFragment'];
 type Node = DefaultTreeAdapterMap['node'];
@@ -107,6 +111,7 @@ interface MarkflowPluginOptions {
   };
   plugins?: MarkflowPlugin[];
   binding?: MarkflowBinding;
+  mdx?: MdxImportHandlingOptions;
 }
 
 const DEFAULT_EXTENSIONS = new Set(['.md', '.mdx']);
@@ -293,7 +298,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
   let compiler: MarkflowCompiler | undefined;
   let resolvedConfig: ResolvedConfig | undefined;
   const sourceLookup = new Map<string, string>();
-  const compilationCache = new Map<string, NonNullable<BatchCompileResult['results'][number]['result']>>();
+  type CachedCompileResult = NonNullable<BatchCompileResult['results'][number]['result']> & {
+    originalSource?: string;
+    processedSource?: string;
+  };
+  const originalSourceCache = new Map<string, string>();   // Raw markdown before preprocess hooks
+  const processedSourceCache = new Map<string, string>();  // Preprocessed markdown fed to compiler
+  const compilationCache = new Map<string, CachedCompileResult>();
   const fallbackFiles = new Set<string>();
   const fallbackReasons = new Map<string, string>();
   const processedFiles = new Set<string>();
@@ -323,6 +334,14 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
   // Resolve libraries and create registry
   const { registry } = resolveLibraries(userOptions);
+
+  // Track whether Starlight is configured for gating default directive handling
+  const hasStarlightConfigured = Boolean(userOptions.starlightComponents) ||
+    (Array.isArray(userOptions.libraries) &&
+     userOptions.libraries.some(lib => lib === starlightLibrary));
+
+  // MDX import handling options
+  const mdxOptions = userOptions.mdx;
 
   const unwrapVirtual = (value: string | undefined): string | undefined =>
     value && value.startsWith(VIRTUAL_PREFIX)
@@ -413,24 +432,33 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
       if (files.length === 0) return;
 
-      // Read all files and prepare batch inputs
-      const inputs: Array<{ id: string; source: string; filepath: string }> = [];
-      for (const file of files) {
-        let source = await readFile(file, 'utf8');
+      // Read all files in parallel and prepare batch inputs
+      const inputsOrNull = await Promise.all(
+        files.map(async (file) => {
+          const rawSource = await readFile(file, 'utf8');
+          let processedSource = rawSource;
 
-        // Apply preprocess hooks (same as load hook does)
-        for (const preprocessHook of hooks.preprocess) {
-          source = preprocessHook(source, file);
-        }
+          // Apply preprocess hooks (same as load hook does)
+          for (const preprocessHook of hooks.preprocess) {
+            processedSource = preprocessHook(processedSource, file);
+          }
 
-        // Pre-detect problematic patterns - these files will be handled by Astro's MDX plugin
-        if (hasProblematicMdxPatterns(source)) {
-          fallbackFiles.add(file);
-          fallbackReasons.set(file, 'Pre-detected problematic MDX patterns');
-        } else {
-          inputs.push({ id: file, source, filepath: file });
-        }
-      }
+          // Pre-detect problematic patterns - these files will be handled by Astro's MDX plugin
+          if (hasProblematicMdxPatterns(processedSource, mdxOptions)) {
+            fallbackFiles.add(file);
+            fallbackReasons.set(file, 'Pre-detected problematic MDX patterns');
+            return null;
+          }
+
+          originalSourceCache.set(file, rawSource);       // For TransformContext.source
+          processedSourceCache.set(file, processedSource); // For potential reuse in cache fast path
+          return { id: file, source: processedSource, filepath: file };
+        })
+      );
+
+      const inputs = inputsOrNull.filter(
+        (i): i is NonNullable<typeof i> => i !== null
+      );
 
       if (fallbackFiles.size > 0) {
         console.info(
@@ -451,7 +479,11 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         // Cache successful results
         for (const result of batchResult.results) {
           if (result.result) {
-            compilationCache.set(result.id, result.result);
+            compilationCache.set(result.id, {
+              ...result.result,
+              originalSource: originalSourceCache.get(result.id),
+              processedSource: processedSourceCache.get(result.id),
+            });
           }
         }
 
@@ -500,9 +532,29 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           ? stripQuery(unwrapVirtual(resolved.id) ?? resolved.id)
           : fallback();
 
-      // If file was pre-detected as needing fallback, let other plugins (like @astrojs/mdx) handle it
+      // Pre-detected fallback files should be handled by Astro's MDX plugin
+      // which has proper remark-directive support and user-configured plugins
       if (fallbackFiles.has(resolvedId)) {
         return null;
+      }
+
+      // Dev mode pre-detection: check if file needs fallback before returning virtualId
+      // This ensures dev mode delegates problematic files to Astro MDX just like build mode does
+      if (resolvedConfig?.command !== 'build') {
+        try {
+          const source = await readFile(resolvedId, 'utf8');
+          let processedSource = source;
+          for (const preprocessHook of hooks.preprocess) {
+            processedSource = preprocessHook(processedSource, resolvedId);
+          }
+          if (hasProblematicMdxPatterns(processedSource, mdxOptions)) {
+            fallbackFiles.add(resolvedId);
+            fallbackReasons.set(resolvedId, 'Pre-detected problematic MDX patterns (dev mode)');
+            return null; // Delegate to Astro's MDX plugin
+          }
+        } catch {
+          // File read failed, let normal path handle it
+        }
       }
 
       const virtualId = `${VIRTUAL_PREFIX}${resolvedId}.markflow.jsx`;
@@ -514,32 +566,121 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       if (!id.startsWith(VIRTUAL_PREFIX)) {
         return null;
       }
-      // Lazy initialize compiler on first use
-      const currentCompiler = await getCompiler();
       const filename =
         sourceLookup.get(id) ??
         stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ''));
 
       try {
+        // Check cache FIRST, before any file I/O (populated in build mode by buildStart)
+        const cached = compilationCache.get(filename);
+        const isMdx = filename.endsWith('.mdx');
+
+        if (cached && !isMdx) {
+          const hasUserImports = (cached.hoistedImports?.length ?? 0) > 0;
+          const hasUserDefaultExport = cached.hasUserDefaultExport === true;
+          const hasJsxComponents = cached.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
+
+          if (!hasUserImports && !hasUserDefaultExport && !hasJsxComponents) {
+            // FAST PATH: Use cached result without file I/O
+            const startTime = performance.now();
+            let frontmatter: Record<string, unknown> = {};
+            if (cached.frontmatterJson) {
+              try {
+                frontmatter = JSON.parse(cached.frontmatterJson) as Record<string, unknown>;
+              } catch {
+                frontmatter = {};
+              }
+            }
+            const headings = cached.headings || [];
+
+            const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename);
+            const result: CompileResult = {
+              code: jsxCode,
+              map: null,
+              frontmatter_json: cached.frontmatterJson,
+              headings,
+              imports: [],
+            };
+
+            const endTime = performance.now();
+            totalProcessingTimeMs += endTime - startTime;
+            processedFiles.add(filename);
+
+            const shikiHighlighter = getShiki();
+            const normalizedStarlightComponents:
+              | boolean
+              | { components?: string[]; module?: string } =
+              typeof starlightComponents === 'object' && starlightComponents !== null
+                ? { components: starlightComponents.components, module: starlightComponents.module }
+                : Boolean(starlightComponents);
+            const sourceForHooks =
+              originalSourceCache.get(filename) ??
+              cached.originalSource ??
+              processedSourceCache.get(filename) ??
+              cached.processedSource ??
+              (await readFile(filename, 'utf8'));
+            const ctx: TransformContext = {
+              code: result.code,
+              source: sourceForHooks, // Preserve markdown for user hooks
+              filename,
+              frontmatter,
+              headings,
+              registry,
+              config: {
+                expressiveCode,
+                starlightComponents: normalizedStarlightComponents,
+                shiki: shikiHighlighter ? await shikiHighlighter : null,
+              },
+            };
+
+            const transformPipeline = createPipeline({
+              afterParse: hooks.afterParse,
+              beforeInject: hooks.beforeInject,
+              beforeOutput: hooks.beforeOutput,
+            });
+
+            const transformed = await transformPipeline(ctx);
+            result.code = transformed.code;
+
+            const esbuildResult = await transformWithEsbuild(result.code, id, {
+              loader: 'jsx',
+              jsx: 'transform',
+              jsxFactory: '_jsx',
+              jsxFragment: '_Fragment',
+            });
+
+            return {
+              code: esbuildResult.code,
+              map: esbuildResult.map ?? result.map ?? undefined,
+            };
+          }
+        }
+
+        // Lazy initialize compiler on first use (only needed for cache miss path)
+        const currentCompiler = await getCompiler();
+
+        // Only read file if cache miss
         const source = await readFile(filename, 'utf8');
+        originalSourceCache.set(filename, source);
 
         // Apply preprocess hooks
         let processedSource = source;
         for (const preprocessHook of hooks.preprocess) {
           processedSource = preprocessHook(processedSource, filename);
         }
+        processedSourceCache.set(filename, processedSource);
 
         // Early detection of problematic patterns - skip to fallback
         // Note: Pre-detected files from buildStart are handled by resolveId returning null
         // This catches files that weren't pre-detected (e.g., preprocess hooks revealed the pattern)
-        if (hasProblematicMdxPatterns(processedSource)) {
+        if (hasProblematicMdxPatterns(processedSource, mdxOptions)) {
           this.warn(
             `[markflow] Skipping ${filename}: contains patterns incompatible with markdown-rs`
           );
           fallbackFiles.add(filename);
           fallbackReasons.set(filename, 'Detected problematic MDX patterns');
           // Use @mdx-js/mdx as fallback compiler for runtime-detected files
-          return compileFallbackModule(filename, processedSource, id);
+          return compileFallbackModule(filename, processedSource, id, registry, hasStarlightConfigured);
         }
 
         const startTime = performance.now();
@@ -547,42 +688,24 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         let frontmatter: Record<string, unknown> = {};
         let headings: Array<{ depth: number; slug: string; text: string }> = [];
 
-        // Check cache first (populated in build mode by buildStart)
-        const cached = compilationCache.get(filename);
-        const isMdx = filename.endsWith('.mdx');
-        const hasUserImports = (cached?.hoistedImports?.length ?? 0) > 0;
-        const hasUserDefaultExport = cached?.hasUserDefaultExport === true;
-        const hasJsxComponents = cached?.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
-
-        if (cached && !hasUserImports && !hasUserDefaultExport && !hasJsxComponents && !isMdx) {
-          if (cached.frontmatterJson) {
-            try {
-              frontmatter = JSON.parse(cached.frontmatterJson) as Record<string, unknown>;
-            } catch {
-              frontmatter = {};
-            }
-          }
-          headings = cached.headings || [];
-
-          const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings);
-          result = {
-            code: jsxCode,
-            map: null,
-            frontmatter_json: cached.frontmatterJson,
-            headings,
-            imports: [],
-          };
-        } else if (IS_MDAST) {
+        if (IS_MDAST) {
           const binding = await loadMarkflowBinding();
-          const parseResult = binding.parseBlocks(processedSource, {
+
+          // Strip frontmatter before passing to parseBlocks
+          // Otherwise the mdast pipeline renders YAML as regular text
+          const contentSource = stripFrontmatter(processedSource);
+
+          const parseResult = binding.parseBlocks(contentSource, {
             enable_directives: true,
           });
           headings = parseResult.headings;
+
+          // Extract frontmatter from original source (before stripping)
           const frontmatterResult = binding.parseFrontmatter(processedSource);
           frontmatter = frontmatterResult.frontmatter || {};
 
           result = {
-            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry),
+            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry, filename),
             map: null,
             frontmatter_json: JSON.stringify(frontmatter),
             headings,
@@ -701,7 +824,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           for (const preprocessHook of hooks.preprocess) {
             processedFallbackSource = preprocessHook(processedFallbackSource, filename);
           }
-          return compileFallbackModule(filename, processedFallbackSource, id);
+          return compileFallbackModule(filename, processedFallbackSource, id, registry, hasStarlightConfigured);
         }
         throw new Error(`[markflow] Compile failed for ${filename}: ${message}`);
       }
@@ -764,33 +887,64 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 function wrapHtmlInJsxModule(
   html: string,
   frontmatter: Record<string, unknown>,
-  headings: Array<{ depth: number; slug: string; text: string }>
+  headings: Array<{ depth: number; slug: string; text: string }>,
+  filename: string
 ): string {
   const frontmatterJson = JSON.stringify(frontmatter);
   const headingsJson = JSON.stringify(headings);
 
-  return `import { Fragment, jsx as _jsx } from 'astro/jsx-runtime';
-const _Fragment = Fragment;
+  return `import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
+import { Fragment, jsx as _jsx } from 'astro/jsx-runtime';
 
 export const frontmatter = ${frontmatterJson};
 export function getHeadings() { return ${headingsJson}; }
-export default function MarkflowContent() {
+function _Content() {
   return (
     <Fragment set:html={${JSON.stringify(html)}} />
   );
 }
+const MarkflowContent = createComponent(
+  (result, props, _slots) => renderJSX(result, _jsx(_Content, { ...props })),
+  ${JSON.stringify(filename)}
+);
+export const Content = MarkflowContent;
+export default MarkflowContent;
 `;
 }
 
 async function compileFallbackModule(
   filename: string,
   source: string,
-  virtualId: string
+  virtualId: string,
+  registry: Registry | null,
+  hasStarlightConfigured: boolean
 ): Promise<{ code: string; map?: SourceMapInput }> {
+  let frontmatter: Record<string, unknown> = {};
+  try {
+    const binding = await loadMarkflowBinding();
+    const frontmatterResult = binding.parseFrontmatter(source);
+    frontmatter = frontmatterResult.frontmatter || {};
+  } catch {
+    frontmatter = {};
+  }
+
+  let sourceWithoutFrontmatter = stripFrontmatter(source);
+  const directiveResult = rewriteFallbackDirectives(sourceWithoutFrontmatter, registry, hasStarlightConfigured);
+  if (directiveResult.changed) {
+    sourceWithoutFrontmatter = injectFallbackImports(
+      directiveResult.code,
+      directiveResult.usedComponents,
+      registry,
+      hasStarlightConfigured
+    );
+  }
   // Use @mdx-js/mdx to compile files that markflow can't handle
   // (e.g., files with import/export statements)
-  const compiled = await compileMdx(source, {
+  // Include remark-gfm for GFM features (tables, strikethrough, task lists)
+  // and remark-directive to handle unconverted ::: directives gracefully
+  const compiled = await compileMdx(sourceWithoutFrontmatter, {
     jsxImportSource: 'astro',
+    remarkPlugins: [remarkGfm, remarkDirective],
     // Don't use providerImportSource as it requires @mdx-js/react
     // which may not be installed
   });
@@ -798,20 +952,42 @@ async function compileFallbackModule(
   // The compiled output is a VFile, get the string value
   const mdxCode = String(compiled);
 
+  // Normalize MDX default export so we can wrap with Astro createComponent
+  const mdxWithoutDefault = mdxCode
+    .replace(/export default function MDXContent/g, 'function MDXContent')
+    .replace(/export default MDXContent\s*;/g, '')
+    .replace(/export\s*\{\s*MDXContent\s+as\s+default\s*\};?/g, '');
+
   // Wrap in Astro-compatible module format
   // @mdx-js/mdx outputs ESM with `export default function MDXContent(...)`
   // We need to add Content, frontmatter and getHeadings exports for Astro compatibility
   // Note: MDXContent is the default export function from @mdx-js/mdx
   const wrappedCode = `
-${mdxCode}
+import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
+import { Fragment } from 'astro/jsx-runtime';
+${mdxWithoutDefault}
 
 // Re-export for Astro compatibility
-// MDXContent is defined by @mdx-js/mdx as the default export
-export const Content = MDXContent;
+// Wrap MDXContent so it renders as an Astro component factory
+const MarkflowContent = createComponent(
+  (result, props, _slots) =>
+    renderJSX(
+      result,
+      MDXContent({
+        ...(props ?? {}),
+        // Ensure Astro's Fragment is available for <Fragment slot="..."> usage in MDX.
+        components: { ...(props?.components ?? {}), Fragment },
+      })
+    ),
+  ${JSON.stringify(filename)}
+);
+export { MDXContent };
+export const Content = MarkflowContent;
 export const file = ${JSON.stringify(filename)};
 export const url = undefined;
 export function getHeadings() { return []; }
-export const frontmatter = {};
+export const frontmatter = ${JSON.stringify(frontmatter)};
+export default MarkflowContent;
 `;
 
   // Transform JSX through esbuild (same as the main compilation path)
@@ -826,6 +1002,258 @@ export const frontmatter = {};
     code: esbuildResult.code,
     map: esbuildResult.map as SourceMapInput | undefined,
   };
+}
+
+type DirectiveOpening = {
+  name: string;
+  bracketTitle: string | null;
+  rawAttrs: string;
+  prefix: string;  // Leading whitespace and blockquote markers (e.g., "  ", "> ", "  > > ")
+  componentName: string;
+};
+
+// Default Starlight directives for fallback when registry is empty
+const DEFAULT_STARLIGHT_DIRECTIVES: Record<string, {
+  component: string;
+  injectProps?: Record<string, { source: string; value?: string }>;
+}> = {
+  note: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+  tip: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+  caution: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+  danger: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+  warning: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+  info: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+};
+
+function rewriteFallbackDirectives(
+  source: string,
+  registry: Registry | null,
+  hasStarlightConfigured: boolean
+): { code: string; usedComponents: Set<string>; changed: boolean } {
+  if (!source) {
+    return { code: source, usedComponents: new Set(), changed: false };
+  }
+
+  // Get directives from registry, fall back to defaults
+  const registryDirectives = registry?.getSupportedDirectives().map((name) => name.toLowerCase()) ?? [];
+  const supportedSet = new Set(registryDirectives);
+
+  // Add default Starlight directives only if registry is empty AND Starlight is configured
+  const useDefaultDirectives = supportedSet.size === 0 && hasStarlightConfigured;
+  if (useDefaultDirectives) {
+    for (const dir of Object.keys(DEFAULT_STARLIGHT_DIRECTIVES)) {
+      supportedSet.add(dir);
+    }
+  }
+
+  const lines = source.split(/\r?\n/);
+  const output: string[] = [];
+  const stack: DirectiveOpening[] = [];
+  const usedComponents = new Set<string>();
+  let changed = false;
+  let inFence = false;
+  let fenceChar: string | null = null;
+
+  for (const line of lines) {
+    // Extract prefix (whitespace + blockquote markers) like we do for directives
+    const prefixMatch = line.match(/^(\s*(?:>\s*)*)/);
+    const prefix = prefixMatch?.[1] ?? '';
+    const afterPrefix = line.slice(prefix.length);
+
+    // Check for code fence after stripping prefix (handles blockquoted code fences)
+    const fenceMatch = afterPrefix.match(/^([`~]{3,})/);
+    if (fenceMatch) {
+      const char = fenceMatch[1]?.[0] ?? null;
+      if (!inFence) {
+        inFence = true;
+        fenceChar = char;
+      } else if (char && fenceChar === char) {
+        inFence = false;
+        fenceChar = null;
+      }
+      output.push(line);
+      continue;
+    }
+
+    if (inFence) {
+      output.push(line);
+      continue;
+    }
+
+    const opening = parseOpeningDirective(afterPrefix, supportedSet, prefix);
+    if (opening) {
+      // Try registry first, then fall back to defaults
+      const mapping = registry?.getDirectiveMapping(opening.name)
+        ?? (useDefaultDirectives ? DEFAULT_STARLIGHT_DIRECTIVES[opening.name] : null);
+      if (!mapping) {
+        output.push(line);
+        continue;
+      }
+
+      const componentName = mapping.component;
+      const props: string[] = ['data-mf-source="directive"'];
+      if (mapping.injectProps) {
+        for (const [propKey, propSource] of Object.entries(mapping.injectProps)) {
+          if (propSource.source === 'directive_name') {
+            props.push(`${propKey}="${escapeAttributeValue(opening.name)}"`);
+          } else if (propSource.source === 'bracket_title' && opening.bracketTitle) {
+            props.push(`${propKey}="${escapeAttributeValue(opening.bracketTitle)}"`);
+          } else if (propSource.source === 'literal' && propSource.value) {
+            props.push(`${propKey}="${escapeAttributeValue(propSource.value)}"`);
+          }
+        }
+      }
+
+      if (opening.bracketTitle) {
+        props.push(`title="${escapeAttributeValue(opening.bracketTitle)}"`);
+      }
+      if (opening.rawAttrs) {
+        props.push(opening.rawAttrs);
+      }
+
+      const propsStr = props.length > 0 ? ` ${props.join(' ')}` : '';
+      output.push(`${opening.prefix}<${componentName}${propsStr}>`);
+      stack.push({ ...opening, componentName });
+      usedComponents.add(componentName);
+      changed = true;
+      continue;
+    }
+
+    const closer = parseDirectiveCloser(afterPrefix, prefix);
+    if (closer && stack.length > 0) {
+      const opened = stack.pop();
+      if (opened) {
+        output.push(`${opened.prefix}</${opened.componentName}>`);
+        changed = true;
+        continue;
+      }
+    }
+
+    output.push(line);
+  }
+
+  while (stack.length > 0) {
+    const opened = stack.pop();
+    if (opened) {
+      output.push(`${opened.prefix}</${opened.componentName}>`);
+    }
+  }
+
+  return { code: output.join('\n'), usedComponents, changed };
+}
+
+function injectFallbackImports(
+  source: string,
+  usedComponents: Set<string>,
+  registry: Registry | null,
+  hasStarlightConfigured: boolean
+): string {
+  if (!source || usedComponents.size === 0) {
+    return source;
+  }
+
+  const imported = collectImportedNames(source);
+  const importLines: string[] = [];
+
+  for (const componentName of usedComponents) {
+    if (imported.has(componentName)) {
+      continue;
+    }
+    const def = registry?.getComponent(componentName);
+    if (def) {
+      if (def.exportType === 'named') {
+        importLines.push(`import { ${componentName} } from '${def.modulePath}';`);
+      } else {
+        importLines.push(`import ${componentName} from '${def.modulePath}/${componentName}.astro';`);
+      }
+    } else if (componentName === 'Aside' && hasStarlightConfigured) {
+      // Fallback for Starlight Aside component when using default directives
+      // Only inject if Starlight is actually configured to avoid module-not-found errors
+      importLines.push(`import { Aside } from '@astrojs/starlight/components';`);
+    }
+  }
+
+  if (importLines.length === 0) {
+    return source;
+  }
+
+  return insertAfterImports(source, importLines.join('\n'));
+}
+
+function parseOpeningDirective(
+  afterPrefix: string,
+  supported: Set<string>,
+  prefix: string
+): { name: string; bracketTitle: string | null; rawAttrs: string; prefix: string } | null {
+  // Content is already after the prefix; check for directive start
+  if (!afterPrefix.startsWith(':::')) {
+    return null;
+  }
+
+  let rest = afterPrefix.slice(3);
+  let name = '';
+  while (rest.length > 0 && /[A-Za-z]/.test(rest[0] ?? '')) {
+    name += (rest[0] ?? '').toLowerCase();
+    rest = rest.slice(1);
+  }
+
+  if (!name || !supported.has(name)) {
+    return null;
+  }
+
+  let bracketTitle: string | null = null;
+  if (rest.startsWith('[')) {
+    rest = rest.slice(1);
+    let title = '';
+    while (rest.length > 0) {
+      const ch = rest[0] ?? '';
+      rest = rest.slice(1);
+      if (ch === ']') {
+        bracketTitle = title;
+        break;
+      }
+      title += ch;
+    }
+  }
+
+  const rawAttrs = normalizeDirectiveAttrs(rest.trim(), Boolean(bracketTitle));
+  return { name, bracketTitle, rawAttrs, prefix };
+}
+
+function normalizeDirectiveAttrs(attrs: string, hasBracketTitle: boolean): string {
+  if (!attrs) {
+    return '';
+  }
+
+  // Strip outer braces from remark-directive syntax: {key="value"} → key="value"
+  let normalized = attrs.trim();
+  if (normalized.startsWith('{') && normalized.endsWith('}')) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  const cleaned: string[] = [];
+  for (const tok of tokens) {
+    const key = tok.split('=')[0]?.trim() ?? '';
+    if (!key) continue;
+    const lower = key.toLowerCase();
+    if (lower === 'type') continue;
+    if (hasBracketTitle && lower === 'title') continue;
+    cleaned.push(tok);
+  }
+  return cleaned.join(' ');
+}
+
+function parseDirectiveCloser(afterPrefix: string, prefix: string): { prefix: string } | null {
+  // Check if the content after prefix is exactly `:::`
+  if (afterPrefix.trim() === ':::') {
+    return { prefix };
+  }
+  return null;
+}
+
+function escapeAttributeValue(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
 async function createShikiHighlighter(): Promise<(code: string, lang?: string) => Promise<string>> {

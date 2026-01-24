@@ -68,6 +68,25 @@ export interface PluginHooks {
   preprocess: Array<(source: string, filename: string) => string>;
 }
 
+/**
+ * Options for handling MDX import/export statements.
+ * Allows fine-grained control over which imports are allowed vs trigger fallback.
+ */
+export interface MdxImportHandlingOptions {
+  /**
+   * Import sources to allow. Files importing only from these sources
+   * won't trigger fallback to @mdx-js/mdx.
+   * Supports glob patterns (e.g., '~/components/*').
+   * @example ['@astrojs/starlight/components', '~/components/*']
+   */
+  allowImports?: string[];
+  /**
+   * Ignore import/export patterns inside code fences when detecting fallback.
+   * @default true
+   */
+  ignoreCodeFences?: boolean;
+}
+
 // Re-export types from submodules for convenience
 export type { ExpressiveCodeConfig, StarlightUserConfig } from './utils/config.js';
 export type { ShikiHighlighter } from './transforms/shiki.js';

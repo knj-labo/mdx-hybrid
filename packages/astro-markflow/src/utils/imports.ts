@@ -3,6 +3,8 @@
  * @module utils/imports
  */
 
+import { stripCodeFences } from './mdx-detection.js';
+
 /**
  * Collect all imported names from JavaScript/JSX code.
  * Handles default imports, namespace imports, and named imports.
@@ -21,7 +23,9 @@ export function collectImportedNames(code: string): Set<string> {
   if (!code || typeof code !== 'string') {
     return imported;
   }
-  const lines = code.split(/\r?\n/);
+  // Strip code fences to avoid false positives from code examples
+  const codeWithoutFences = stripCodeFences(code);
+  const lines = codeWithoutFences.split(/\r?\n/);
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed.startsWith('import ') || trimmed.startsWith('import(')) {
@@ -97,6 +101,25 @@ export function insertAfterImports(code: string, importLine: string): string {
     }
     break;
   }
-  lines.splice(idx, 0, importLine);
+
+  // MDX requires a blank line between imports and markdown content.
+  // Only add blank line if the next line is markdown content, not JavaScript.
+  const nextLine = lines[idx]?.trim() ?? '';
+  const isJavaScript = nextLine.startsWith('export ') ||
+    nextLine.startsWith('const ') ||
+    nextLine.startsWith('let ') ||
+    nextLine.startsWith('var ') ||
+    nextLine.startsWith('function ') ||
+    nextLine.startsWith('class ') ||
+    nextLine.startsWith('import ') ||
+    nextLine.startsWith('//') ||
+    nextLine.startsWith('/*');
+
+  if (nextLine && !isJavaScript) {
+    // There's markdown content after the insertion point; add blank line after the import
+    lines.splice(idx, 0, importLine, '');
+  } else {
+    lines.splice(idx, 0, importLine);
+  }
   return lines.join('\n');
 }
