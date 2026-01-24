@@ -1003,19 +1003,6 @@ type DirectiveOpening = {
   componentName: string;
 };
 
-// Default Starlight directives for fallback when registry is empty
-const DEFAULT_STARLIGHT_DIRECTIVES: Record<string, {
-  component: string;
-  injectProps?: Record<string, { source: string; value?: string }>;
-}> = {
-  note: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-  tip: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-  caution: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-  danger: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-  warning: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-  info: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-};
-
 function rewriteFallbackDirectives(
   source: string,
   registry: Registry | null,
@@ -1025,15 +1012,16 @@ function rewriteFallbackDirectives(
     return { code: source, usedComponents: new Set(), changed: false };
   }
 
-  // Get directives from registry, fall back to defaults
+  // Get directives from registry, fall back to starlightLibrary defaults
   const registryDirectives = registry?.getSupportedDirectives().map((name) => name.toLowerCase()) ?? [];
   const supportedSet = new Set(registryDirectives);
 
-  // Add default Starlight directives only if registry is empty AND Starlight is configured
+  // Add Starlight directives only if registry is empty AND Starlight is configured
   const useDefaultDirectives = supportedSet.size === 0 && hasStarlightConfigured;
   if (useDefaultDirectives) {
-    for (const dir of Object.keys(DEFAULT_STARLIGHT_DIRECTIVES)) {
-      supportedSet.add(dir);
+    const starlightDirectives = starlightLibrary.directiveMappings ?? [];
+    for (const mapping of starlightDirectives) {
+      supportedSet.add(mapping.directive.toLowerCase());
     }
   }
 
@@ -1073,9 +1061,11 @@ function rewriteFallbackDirectives(
 
     const opening = parseOpeningDirective(afterPrefix, supportedSet, prefix);
     if (opening) {
-      // Try registry first, then fall back to defaults
+      // Try registry first, then fall back to starlightLibrary
       const mapping = registry?.getDirectiveMapping(opening.name)
-        ?? (useDefaultDirectives ? DEFAULT_STARLIGHT_DIRECTIVES[opening.name] : null);
+        ?? (useDefaultDirectives
+          ? starlightLibrary.directiveMappings?.find(m => m.directive.toLowerCase() === opening.name)
+          : null);
       if (!mapping) {
         output.push(line);
         continue;
