@@ -43,6 +43,37 @@ function sanitizeHtmlForJsx(content: string): string {
 }
 
 /**
+ * Normalizes slot content based on a slot normalization strategy.
+ * Ensures content is wrapped in the appropriate list structure.
+ *
+ * @param slot - The slot HTML content to normalize
+ * @param strategy - The normalization strategy ('wrap_in_ol' or 'wrap_in_ul')
+ * @returns Normalized slot content with proper list wrapping
+ */
+function normalizeSlotByStrategy(slot: string, strategy: 'wrap_in_ol' | 'wrap_in_ul'): string {
+  const tag = strategy === 'wrap_in_ol' ? 'ol' : 'ul';
+  const trimmed = slot.trim();
+
+  // Empty content: create minimal valid structure
+  if (!trimmed) {
+    return `<${tag}><li></li></${tag}>`;
+  }
+
+  // Check if content already has the correct wrapper
+  if (trimmed.startsWith(`<${tag}`) && trimmed.endsWith(`</${tag}>`)) {
+    // If already wrapped but missing <li>, add one
+    return /<li[\s>]/i.test(trimmed)
+      ? slot
+      : trimmed.replace(`</${tag}>`, `<li></li></${tag}>`);
+  }
+
+  // Content needs wrapping
+  return /<li[\s>]/i.test(trimmed)
+    ? `<${tag}>${slot}</${tag}>`
+    : `<${tag}><li>${slot}</li></${tag}>`;
+}
+
+/**
  * Converts blocks array from Rust compiler into JSX code with component imports and exports.
  *
  * @param blocks - Array of blocks from compiler
@@ -93,26 +124,10 @@ export function blocksToJsx(
         }
       }
 
-      // Normalize Steps slot to a single <ol> child (Starlight requirement)
-      if (componentName === 'Steps') {
-        const trimmed = effectiveSlot.trim();
-        if (!(trimmed.startsWith('<ol') && trimmed.endsWith('</ol>'))) {
-          effectiveSlot = `<ol><li>${effectiveSlot}</li></ol>`;
-        }
-      }
-      // Normalize FileTree slot to a single <ul> child (Starlight requirement)
-      if (componentName === 'FileTree') {
-        const trimmed = effectiveSlot.trim();
-        const hasLi = /<li[\s>]/i.test(trimmed);
-        if (!trimmed) {
-          effectiveSlot = '<ul><li></li></ul>';
-        } else if (trimmed.startsWith('<ul') && trimmed.endsWith('</ul>')) {
-          effectiveSlot = hasLi ? effectiveSlot : trimmed.replace('</ul>', '<li></li></ul>');
-        } else {
-          effectiveSlot = hasLi
-            ? `<ul>${effectiveSlot}</ul>`
-            : `<ul><li>${effectiveSlot}</li></ul>`;
-        }
+      // Apply slot normalization from registry (e.g., Steps → wrap_in_ol, FileTree → wrap_in_ul)
+      const slotNorm = registry?.getSlotNormalization(componentName);
+      if (slotNorm) {
+        effectiveSlot = normalizeSlotByStrategy(effectiveSlot, slotNorm.strategy);
       }
       // Escape raw JSX braces inside slot HTML to prevent expression evaluation
       effectiveSlot = effectiveSlot

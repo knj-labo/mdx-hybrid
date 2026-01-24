@@ -29,6 +29,13 @@ import { resolveExpressiveCodeConfig, type ExpressiveCodeConfig } from './utils/
 import { stripFrontmatter } from './utils/frontmatter.js';
 import { hasProblematicMdxPatterns } from './utils/mdx-detection.js';
 import { collectImportedNames, insertAfterImports } from './utils/imports.js';
+import {
+  VIRTUAL_MODULE_PREFIX,
+  OUTPUT_EXTENSION,
+  ESBUILD_JSX_CONFIG,
+  SHIKI_THEME,
+  DEFAULT_IGNORE_PATTERNS,
+} from './constants.js';
 import type { MarkflowPlugin, MdxImportHandlingOptions, PluginHooks, TransformContext } from './types.js';
 
 type DocumentFragment = DefaultTreeAdapterMap['documentFragment'];
@@ -146,7 +153,6 @@ export function resolveLibraries(options: MarkflowPluginOptions): {
 }
 
 let bindingPromise: Promise<MarkflowBinding> | undefined;
-const VIRTUAL_PREFIX = '\0markflow:';
 const DEBUG_BINDING = process.env.MARKFLOW_DEBUG_BINDING === '1';
 const ENABLE_SHIKI = process.env.MARKFLOW_SHIKI === '1';
 const IS_MDAST = process.env.MARKFLOW_PIPELINE === 'mdast';
@@ -344,8 +350,8 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
   const mdxOptions = userOptions.mdx;
 
   const unwrapVirtual = (value: string | undefined): string | undefined =>
-    value && value.startsWith(VIRTUAL_PREFIX)
-      ? value.slice(VIRTUAL_PREFIX.length)
+    value && value.startsWith(VIRTUAL_MODULE_PREFIX)
+      ? value.slice(VIRTUAL_MODULE_PREFIX.length)
       : value;
 
   let shikiReady: Promise<(code: string, lang?: string) => Promise<string>> | undefined;
@@ -426,7 +432,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       };
       const files = await glob('**/*.{md,mdx}', {
         cwd: resolvedConfig.root,
-        ignore: ['node_modules/**', 'dist/**'],
+        ignore: [...DEFAULT_IGNORE_PATTERNS],
         absolute: true,
       });
 
@@ -498,7 +504,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
     },
 
     async resolveId(sourceId, importer) {
-      if (sourceId.startsWith(VIRTUAL_PREFIX)) {
+      if (sourceId.startsWith(VIRTUAL_MODULE_PREFIX)) {
         return sourceId;
       }
       const normalizedImporter = stripQuery(unwrapVirtual(importer) ?? '');
@@ -506,7 +512,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       const cleanId = stripQuery(normalizedSource);
       if (!include(cleanId)) {
         if (
-          importer?.startsWith(VIRTUAL_PREFIX) &&
+          importer?.startsWith(VIRTUAL_MODULE_PREFIX) &&
           normalizedImporter &&
           !path.isAbsolute(sourceId) &&
           sourceId.startsWith('.')
@@ -557,18 +563,18 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         }
       }
 
-      const virtualId = `${VIRTUAL_PREFIX}${resolvedId}.markflow.jsx`;
+      const virtualId = `${VIRTUAL_MODULE_PREFIX}${resolvedId}${OUTPUT_EXTENSION}`;
       sourceLookup.set(virtualId, resolvedId);
       return virtualId;
     },
 
     async load(id) {
-      if (!id.startsWith(VIRTUAL_PREFIX)) {
+      if (!id.startsWith(VIRTUAL_MODULE_PREFIX)) {
         return null;
       }
       const filename =
         sourceLookup.get(id) ??
-        stripQuery(id.slice(VIRTUAL_PREFIX.length).replace(/\.markflow\.jsx$/, ''));
+        stripQuery(id.slice(VIRTUAL_MODULE_PREFIX.length).replace(new RegExp(`${OUTPUT_EXTENSION.replace('.', '\\.')}$`), ''));
 
       try {
         // Check cache FIRST, before any file I/O (populated in build mode by buildStart)
@@ -642,12 +648,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             const transformed = await transformPipeline(ctx);
             result.code = transformed.code;
 
-            const esbuildResult = await transformWithEsbuild(result.code, id, {
-              loader: 'jsx',
-              jsx: 'transform',
-              jsxFactory: '_jsx',
-              jsxFragment: '_Fragment',
-            });
+            const esbuildResult = await transformWithEsbuild(result.code, id, ESBUILD_JSX_CONFIG);
 
             return {
               code: esbuildResult.code,
@@ -775,12 +776,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           }
         }
 
-        const esbuildResult = await transformWithEsbuild(result.code, id, {
-          loader: 'jsx',
-          jsx: 'transform',
-          jsxFactory: '_jsx',
-          jsxFragment: '_Fragment',
-        });
+        const esbuildResult = await transformWithEsbuild(result.code, id, ESBUILD_JSX_CONFIG);
 
         return {
           code: esbuildResult.code,
@@ -991,12 +987,7 @@ export default MarkflowContent;
 `;
 
   // Transform JSX through esbuild (same as the main compilation path)
-  const esbuildResult = await transformWithEsbuild(wrappedCode, virtualId, {
-    loader: 'jsx',
-    jsx: 'transform',
-    jsxFactory: '_jsx',
-    jsxFragment: '_Fragment',
-  });
+  const esbuildResult = await transformWithEsbuild(wrappedCode, virtualId, ESBUILD_JSX_CONFIG);
 
   return {
     code: esbuildResult.code,
@@ -1012,19 +1003,6 @@ type DirectiveOpening = {
   componentName: string;
 };
 
-// Default Starlight directives for fallback when registry is empty
-const DEFAULT_STARLIGHT_DIRECTIVES: Record<string, {
-  component: string;
-  injectProps?: Record<string, { source: string; value?: string }>;
-}> = {
-  note: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-  tip: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-  caution: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-  danger: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-  warning: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-  info: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
-};
-
 function rewriteFallbackDirectives(
   source: string,
   registry: Registry | null,
@@ -1034,15 +1012,16 @@ function rewriteFallbackDirectives(
     return { code: source, usedComponents: new Set(), changed: false };
   }
 
-  // Get directives from registry, fall back to defaults
+  // Get directives from registry, fall back to starlightLibrary defaults
   const registryDirectives = registry?.getSupportedDirectives().map((name) => name.toLowerCase()) ?? [];
   const supportedSet = new Set(registryDirectives);
 
-  // Add default Starlight directives only if registry is empty AND Starlight is configured
+  // Add Starlight directives only if registry is empty AND Starlight is configured
   const useDefaultDirectives = supportedSet.size === 0 && hasStarlightConfigured;
   if (useDefaultDirectives) {
-    for (const dir of Object.keys(DEFAULT_STARLIGHT_DIRECTIVES)) {
-      supportedSet.add(dir);
+    const starlightDirectives = starlightLibrary.directiveMappings ?? [];
+    for (const mapping of starlightDirectives) {
+      supportedSet.add(mapping.directive.toLowerCase());
     }
   }
 
@@ -1082,9 +1061,11 @@ function rewriteFallbackDirectives(
 
     const opening = parseOpeningDirective(afterPrefix, supportedSet, prefix);
     if (opening) {
-      // Try registry first, then fall back to defaults
+      // Try registry first, then fall back to starlightLibrary
       const mapping = registry?.getDirectiveMapping(opening.name)
-        ?? (useDefaultDirectives ? DEFAULT_STARLIGHT_DIRECTIVES[opening.name] : null);
+        ?? (useDefaultDirectives
+          ? starlightLibrary.directiveMappings?.find(m => m.directive.toLowerCase() === opening.name)
+          : null);
       if (!mapping) {
         output.push(line);
         continue;
@@ -1258,8 +1239,8 @@ function escapeAttributeValue(value: string): string {
 
 async function createShikiHighlighter(): Promise<(code: string, lang?: string) => Promise<string>> {
   const theme = createCssVariablesTheme({
-    name: 'astro-code',
-    variablePrefix: '--astro-code-',
+    name: SHIKI_THEME.name,
+    variablePrefix: SHIKI_THEME.variablePrefix,
   });
   const cache = new Map<string, { lang: string }>();
 
@@ -1279,7 +1260,7 @@ async function createShikiHighlighter(): Promise<(code: string, lang?: string) =
         .split(/\s+/)
         .filter((value) => value && value !== 'shiki')
         .join(' ');
-      const next = normalized ? `astro-code ${normalized}` : 'astro-code';
+      const next = normalized ? `${SHIKI_THEME.className} ${normalized}` : SHIKI_THEME.className;
       return `<pre class="${next}"`;
     });
   };
