@@ -10,6 +10,8 @@ import { pathToFileURL } from 'node:url';
 import { transformWithEsbuild, type ResolvedConfig, type Plugin } from 'vite';
 import type { SourceMapInput } from 'rollup';
 import { compile as compileMdx } from '@mdx-js/mdx';
+import remarkGfm from 'remark-gfm';
+import remarkDirective from 'remark-directive';
 import { parseFragment, serialize } from 'parse5';
 import { codeToHtml, createCssVariablesTheme } from 'shiki';
 import type { DefaultTreeAdapterMap } from 'parse5';
@@ -26,6 +28,7 @@ import { blocksToJsx } from './transforms/blocks-to-jsx.js';
 import { resolveExpressiveCodeConfig, type ExpressiveCodeConfig } from './utils/config.js';
 import { stripFrontmatter } from './utils/frontmatter.js';
 import { hasProblematicMdxPatterns } from './utils/mdx-detection.js';
+import { collectImportedNames, insertAfterImports } from './utils/imports.js';
 import type { MarkflowPlugin, MdxImportHandlingOptions, PluginHooks, TransformContext } from './types.js';
 
 type DocumentFragment = DefaultTreeAdapterMap['documentFragment'];
@@ -332,6 +335,11 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
   // Resolve libraries and create registry
   const { registry } = resolveLibraries(userOptions);
 
+  // Track whether Starlight is configured for gating default directive handling
+  const hasStarlightConfigured = Boolean(userOptions.starlightComponents) ||
+    (Array.isArray(userOptions.libraries) &&
+     userOptions.libraries.some(lib => lib === starlightLibrary));
+
   // MDX import handling options
   const mdxOptions = userOptions.mdx;
 
@@ -524,9 +532,29 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           ? stripQuery(unwrapVirtual(resolved.id) ?? resolved.id)
           : fallback();
 
-      // If file was pre-detected as needing fallback, let other plugins (like @astrojs/mdx) handle it
+      // Pre-detected fallback files should be handled by Astro's MDX plugin
+      // which has proper remark-directive support and user-configured plugins
       if (fallbackFiles.has(resolvedId)) {
         return null;
+      }
+
+      // Dev mode pre-detection: check if file needs fallback before returning virtualId
+      // This ensures dev mode delegates problematic files to Astro MDX just like build mode does
+      if (resolvedConfig?.command !== 'build') {
+        try {
+          const source = await readFile(resolvedId, 'utf8');
+          let processedSource = source;
+          for (const preprocessHook of hooks.preprocess) {
+            processedSource = preprocessHook(processedSource, resolvedId);
+          }
+          if (hasProblematicMdxPatterns(processedSource, mdxOptions)) {
+            fallbackFiles.add(resolvedId);
+            fallbackReasons.set(resolvedId, 'Pre-detected problematic MDX patterns (dev mode)');
+            return null; // Delegate to Astro's MDX plugin
+          }
+        } catch {
+          // File read failed, let normal path handle it
+        }
       }
 
       const virtualId = `${VIRTUAL_PREFIX}${resolvedId}.markflow.jsx`;
@@ -652,7 +680,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           fallbackFiles.add(filename);
           fallbackReasons.set(filename, 'Detected problematic MDX patterns');
           // Use @mdx-js/mdx as fallback compiler for runtime-detected files
-          return compileFallbackModule(filename, processedSource, id);
+          return compileFallbackModule(filename, processedSource, id, registry, hasStarlightConfigured);
         }
 
         const startTime = performance.now();
@@ -796,7 +824,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           for (const preprocessHook of hooks.preprocess) {
             processedFallbackSource = preprocessHook(processedFallbackSource, filename);
           }
-          return compileFallbackModule(filename, processedFallbackSource, id);
+          return compileFallbackModule(filename, processedFallbackSource, id, registry, hasStarlightConfigured);
         }
         throw new Error(`[markflow] Compile failed for ${filename}: ${message}`);
       }
@@ -887,7 +915,9 @@ export default MarkflowContent;
 async function compileFallbackModule(
   filename: string,
   source: string,
-  virtualId: string
+  virtualId: string,
+  registry: Registry | null,
+  hasStarlightConfigured: boolean
 ): Promise<{ code: string; map?: SourceMapInput }> {
   let frontmatter: Record<string, unknown> = {};
   try {
@@ -898,11 +928,23 @@ async function compileFallbackModule(
     frontmatter = {};
   }
 
-  const sourceWithoutFrontmatter = stripFrontmatter(source);
+  let sourceWithoutFrontmatter = stripFrontmatter(source);
+  const directiveResult = rewriteFallbackDirectives(sourceWithoutFrontmatter, registry, hasStarlightConfigured);
+  if (directiveResult.changed) {
+    sourceWithoutFrontmatter = injectFallbackImports(
+      directiveResult.code,
+      directiveResult.usedComponents,
+      registry,
+      hasStarlightConfigured
+    );
+  }
   // Use @mdx-js/mdx to compile files that markflow can't handle
   // (e.g., files with import/export statements)
+  // Include remark-gfm for GFM features (tables, strikethrough, task lists)
+  // and remark-directive to handle unconverted ::: directives gracefully
   const compiled = await compileMdx(sourceWithoutFrontmatter, {
     jsxImportSource: 'astro',
+    remarkPlugins: [remarkGfm, remarkDirective],
     // Don't use providerImportSource as it requires @mdx-js/react
     // which may not be installed
   });
@@ -960,6 +1002,258 @@ export default MarkflowContent;
     code: esbuildResult.code,
     map: esbuildResult.map as SourceMapInput | undefined,
   };
+}
+
+type DirectiveOpening = {
+  name: string;
+  bracketTitle: string | null;
+  rawAttrs: string;
+  prefix: string;  // Leading whitespace and blockquote markers (e.g., "  ", "> ", "  > > ")
+  componentName: string;
+};
+
+// Default Starlight directives for fallback when registry is empty
+const DEFAULT_STARLIGHT_DIRECTIVES: Record<string, {
+  component: string;
+  injectProps?: Record<string, { source: string; value?: string }>;
+}> = {
+  note: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+  tip: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+  caution: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+  danger: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+  warning: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+  info: { component: 'Aside', injectProps: { type: { source: 'directive_name' } } },
+};
+
+function rewriteFallbackDirectives(
+  source: string,
+  registry: Registry | null,
+  hasStarlightConfigured: boolean
+): { code: string; usedComponents: Set<string>; changed: boolean } {
+  if (!source) {
+    return { code: source, usedComponents: new Set(), changed: false };
+  }
+
+  // Get directives from registry, fall back to defaults
+  const registryDirectives = registry?.getSupportedDirectives().map((name) => name.toLowerCase()) ?? [];
+  const supportedSet = new Set(registryDirectives);
+
+  // Add default Starlight directives only if registry is empty AND Starlight is configured
+  const useDefaultDirectives = supportedSet.size === 0 && hasStarlightConfigured;
+  if (useDefaultDirectives) {
+    for (const dir of Object.keys(DEFAULT_STARLIGHT_DIRECTIVES)) {
+      supportedSet.add(dir);
+    }
+  }
+
+  const lines = source.split(/\r?\n/);
+  const output: string[] = [];
+  const stack: DirectiveOpening[] = [];
+  const usedComponents = new Set<string>();
+  let changed = false;
+  let inFence = false;
+  let fenceChar: string | null = null;
+
+  for (const line of lines) {
+    // Extract prefix (whitespace + blockquote markers) like we do for directives
+    const prefixMatch = line.match(/^(\s*(?:>\s*)*)/);
+    const prefix = prefixMatch?.[1] ?? '';
+    const afterPrefix = line.slice(prefix.length);
+
+    // Check for code fence after stripping prefix (handles blockquoted code fences)
+    const fenceMatch = afterPrefix.match(/^([`~]{3,})/);
+    if (fenceMatch) {
+      const char = fenceMatch[1]?.[0] ?? null;
+      if (!inFence) {
+        inFence = true;
+        fenceChar = char;
+      } else if (char && fenceChar === char) {
+        inFence = false;
+        fenceChar = null;
+      }
+      output.push(line);
+      continue;
+    }
+
+    if (inFence) {
+      output.push(line);
+      continue;
+    }
+
+    const opening = parseOpeningDirective(afterPrefix, supportedSet, prefix);
+    if (opening) {
+      // Try registry first, then fall back to defaults
+      const mapping = registry?.getDirectiveMapping(opening.name)
+        ?? (useDefaultDirectives ? DEFAULT_STARLIGHT_DIRECTIVES[opening.name] : null);
+      if (!mapping) {
+        output.push(line);
+        continue;
+      }
+
+      const componentName = mapping.component;
+      const props: string[] = ['data-mf-source="directive"'];
+      if (mapping.injectProps) {
+        for (const [propKey, propSource] of Object.entries(mapping.injectProps)) {
+          if (propSource.source === 'directive_name') {
+            props.push(`${propKey}="${escapeAttributeValue(opening.name)}"`);
+          } else if (propSource.source === 'bracket_title' && opening.bracketTitle) {
+            props.push(`${propKey}="${escapeAttributeValue(opening.bracketTitle)}"`);
+          } else if (propSource.source === 'literal' && propSource.value) {
+            props.push(`${propKey}="${escapeAttributeValue(propSource.value)}"`);
+          }
+        }
+      }
+
+      if (opening.bracketTitle) {
+        props.push(`title="${escapeAttributeValue(opening.bracketTitle)}"`);
+      }
+      if (opening.rawAttrs) {
+        props.push(opening.rawAttrs);
+      }
+
+      const propsStr = props.length > 0 ? ` ${props.join(' ')}` : '';
+      output.push(`${opening.prefix}<${componentName}${propsStr}>`);
+      stack.push({ ...opening, componentName });
+      usedComponents.add(componentName);
+      changed = true;
+      continue;
+    }
+
+    const closer = parseDirectiveCloser(afterPrefix, prefix);
+    if (closer && stack.length > 0) {
+      const opened = stack.pop();
+      if (opened) {
+        output.push(`${opened.prefix}</${opened.componentName}>`);
+        changed = true;
+        continue;
+      }
+    }
+
+    output.push(line);
+  }
+
+  while (stack.length > 0) {
+    const opened = stack.pop();
+    if (opened) {
+      output.push(`${opened.prefix}</${opened.componentName}>`);
+    }
+  }
+
+  return { code: output.join('\n'), usedComponents, changed };
+}
+
+function injectFallbackImports(
+  source: string,
+  usedComponents: Set<string>,
+  registry: Registry | null,
+  hasStarlightConfigured: boolean
+): string {
+  if (!source || usedComponents.size === 0) {
+    return source;
+  }
+
+  const imported = collectImportedNames(source);
+  const importLines: string[] = [];
+
+  for (const componentName of usedComponents) {
+    if (imported.has(componentName)) {
+      continue;
+    }
+    const def = registry?.getComponent(componentName);
+    if (def) {
+      if (def.exportType === 'named') {
+        importLines.push(`import { ${componentName} } from '${def.modulePath}';`);
+      } else {
+        importLines.push(`import ${componentName} from '${def.modulePath}/${componentName}.astro';`);
+      }
+    } else if (componentName === 'Aside' && hasStarlightConfigured) {
+      // Fallback for Starlight Aside component when using default directives
+      // Only inject if Starlight is actually configured to avoid module-not-found errors
+      importLines.push(`import { Aside } from '@astrojs/starlight/components';`);
+    }
+  }
+
+  if (importLines.length === 0) {
+    return source;
+  }
+
+  return insertAfterImports(source, importLines.join('\n'));
+}
+
+function parseOpeningDirective(
+  afterPrefix: string,
+  supported: Set<string>,
+  prefix: string
+): { name: string; bracketTitle: string | null; rawAttrs: string; prefix: string } | null {
+  // Content is already after the prefix; check for directive start
+  if (!afterPrefix.startsWith(':::')) {
+    return null;
+  }
+
+  let rest = afterPrefix.slice(3);
+  let name = '';
+  while (rest.length > 0 && /[A-Za-z]/.test(rest[0] ?? '')) {
+    name += (rest[0] ?? '').toLowerCase();
+    rest = rest.slice(1);
+  }
+
+  if (!name || !supported.has(name)) {
+    return null;
+  }
+
+  let bracketTitle: string | null = null;
+  if (rest.startsWith('[')) {
+    rest = rest.slice(1);
+    let title = '';
+    while (rest.length > 0) {
+      const ch = rest[0] ?? '';
+      rest = rest.slice(1);
+      if (ch === ']') {
+        bracketTitle = title;
+        break;
+      }
+      title += ch;
+    }
+  }
+
+  const rawAttrs = normalizeDirectiveAttrs(rest.trim(), Boolean(bracketTitle));
+  return { name, bracketTitle, rawAttrs, prefix };
+}
+
+function normalizeDirectiveAttrs(attrs: string, hasBracketTitle: boolean): string {
+  if (!attrs) {
+    return '';
+  }
+
+  // Strip outer braces from remark-directive syntax: {key="value"} → key="value"
+  let normalized = attrs.trim();
+  if (normalized.startsWith('{') && normalized.endsWith('}')) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  const cleaned: string[] = [];
+  for (const tok of tokens) {
+    const key = tok.split('=')[0]?.trim() ?? '';
+    if (!key) continue;
+    const lower = key.toLowerCase();
+    if (lower === 'type') continue;
+    if (hasBracketTitle && lower === 'title') continue;
+    cleaned.push(tok);
+  }
+  return cleaned.join(' ');
+}
+
+function parseDirectiveCloser(afterPrefix: string, prefix: string): { prefix: string } | null {
+  // Check if the content after prefix is exactly `:::`
+  if (afterPrefix.trim() === ':::') {
+    return { prefix };
+  }
+  return null;
+}
+
+function escapeAttributeValue(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
 async function createShikiHighlighter(): Promise<(code: string, lang?: string) => Promise<string>> {
