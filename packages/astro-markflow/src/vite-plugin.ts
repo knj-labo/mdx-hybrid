@@ -118,6 +118,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
   const originalSourceCache = new Map<string, string>();   // Raw markdown before preprocess hooks
   const processedSourceCache = new Map<string, string>();  // Preprocessed markdown fed to compiler
   const compilationCache = new Map<string, CachedCompileResult>();
+  const esbuildCache = new Map<string, { code: string; map?: SourceMapInput }>();  // Pre-compiled esbuild results
   const fallbackFiles = new Set<string>();
   const fallbackReasons = new Map<string, string>();
   const processedFiles = new Set<string>();
@@ -300,6 +301,153 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         console.info(
           `[markflow] Batch compiled ${batchResult.stats.succeeded}/${batchResult.stats.total} files in ${batchResult.stats.processingTimeMs.toFixed(0)}ms`
         );
+
+        // Batch esbuild transformation for fast-path eligible files
+        const esbuildStartTime = performance.now();
+        const jsxInputs: Array<{ id: string; virtualId: string; jsx: string }> = [];
+
+        // Initialize shiki highlighter if enabled (shared across all files)
+        const shikiHighlighter = getShiki();
+        const resolvedShiki = shikiHighlighter ? await shikiHighlighter : null;
+
+        // Normalize starlightComponents for TransformContext
+        const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
+
+        // Create pipeline once (reusable)
+        const transformPipeline = createPipeline({
+          afterParse: hooks.afterParse,
+          beforeInject: hooks.beforeInject,
+          beforeOutput: hooks.beforeOutput,
+        });
+
+        // Process each cached file through the pipeline
+        // Only batch files eligible for fast-path (non-MDX, no imports/exports/JSX components)
+        for (const [filename, cached] of compilationCache) {
+          const isMdx = filename.endsWith('.mdx');
+          if (isMdx) continue;
+
+          const hasUserImports = (cached.hoistedImports?.length ?? 0) > 0;
+          const hasUserDefaultExport = cached.hasUserDefaultExport === true;
+          const hasJsxComponents = cached.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
+
+          if (hasUserImports || hasUserDefaultExport || hasJsxComponents) continue;
+
+          // Parse frontmatter
+          let frontmatter: Record<string, unknown> = {};
+          if (cached.frontmatterJson) {
+            try {
+              frontmatter = JSON.parse(cached.frontmatterJson) as Record<string, unknown>;
+            } catch {
+              frontmatter = {};
+            }
+          }
+          const headings = cached.headings || [];
+
+          // Wrap HTML in JSX module
+          const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename);
+
+          // Get source for hooks
+          const sourceForHooks =
+            originalSourceCache.get(filename) ??
+            cached.originalSource ??
+            processedSourceCache.get(filename) ??
+            cached.processedSource ??
+            '';
+
+          // Create transform context and run pipeline
+          const ctx: TransformContext = {
+            code: jsxCode,
+            source: sourceForHooks,
+            filename,
+            frontmatter,
+            headings,
+            registry,
+            config: {
+              expressiveCode,
+              starlightComponents: normalizedStarlightComponents,
+              shiki: resolvedShiki,
+            },
+          };
+
+          const transformed = await transformPipeline(ctx);
+          const virtualId = `${VIRTUAL_MODULE_PREFIX}${filename}${OUTPUT_EXTENSION}`;
+          jsxInputs.push({ id: filename, virtualId, jsx: transformed.code });
+        }
+
+        if (jsxInputs.length > 0) {
+          // Batch transform all JSX through esbuild using virtual file plugin
+          try {
+            // Create a clean entry point name for each file (avoid null bytes and special chars)
+            const entryMap = new Map<string, { id: string; jsx: string }>();
+            for (let i = 0; i < jsxInputs.length; i++) {
+              const entry = `entry${i}.jsx`;
+              const input = jsxInputs[i]!;
+              entryMap.set(entry, { id: input.id, jsx: input.jsx });
+            }
+
+            const result: BuildResult = await esbuildBuild({
+              write: false,
+              bundle: false,
+              format: 'esm',
+              sourcemap: 'external',
+              loader: { '.jsx': 'jsx' },
+              jsx: 'transform',
+              jsxFactory: '_jsx',
+              jsxFragment: '_Fragment',
+              entryPoints: Array.from(entryMap.keys()),
+              outdir: 'out', // Required but not used since write: false
+              plugins: [{
+                name: 'markflow-virtual-jsx',
+                setup(build) {
+                  // Resolve all entry points to themselves
+                  build.onResolve({ filter: /^entry\d+\.jsx$/ }, args => {
+                    return { path: args.path, namespace: 'markflow-jsx' };
+                  });
+                  // External - don't bundle
+                  build.onResolve({ filter: /.*/ }, args => {
+                    return { path: args.path, external: true };
+                  });
+                  // Load virtual JSX content
+                  build.onLoad({ filter: /.*/, namespace: 'markflow-jsx' }, args => {
+                    const entry = entryMap.get(args.path);
+                    return entry ? { contents: entry.jsx, loader: 'jsx' } : null;
+                  });
+                }
+              }]
+            });
+
+            // Store results in esbuild cache
+            for (const output of result.outputFiles || []) {
+              // Output path format: out/entry0.js or out/entry0.js.map
+              const basename = path.basename(output.path);
+              if (basename.endsWith('.map')) continue; // Handle maps separately
+
+              // Find matching input by entry name
+              const entryName = basename.replace(/\.js$/, '.jsx');
+              const entry = entryMap.get(entryName);
+
+              if (entry) {
+                // Find corresponding source map
+                const mapOutput = result.outputFiles?.find(o =>
+                  o.path === output.path + '.map'
+                );
+                esbuildCache.set(entry.id, {
+                  code: output.text,
+                  map: mapOutput?.text as SourceMapInput | undefined,
+                });
+              }
+            }
+
+            const esbuildEndTime = performance.now();
+            console.info(
+              `[markflow] Batch esbuild transformed ${esbuildCache.size} files in ${(esbuildEndTime - esbuildStartTime).toFixed(0)}ms`
+            );
+          } catch (esbuildErr) {
+            this.warn(
+              `[markflow] Batch esbuild failed, will use individual transforms: ${esbuildErr}`
+            );
+          }
+        }
       } catch (err) {
         this.warn(
           `[markflow] Batch compile skipped due to binding load failure: ${err}`
@@ -381,6 +529,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         stripQuery(id.slice(VIRTUAL_MODULE_PREFIX.length).replace(new RegExp(`${OUTPUT_EXTENSION.replace('.', '\\.')}$`), ''));
 
       try {
+        // FASTEST PATH: Check esbuild cache first (O(1) lookup, populated in buildStart)
+        const cachedEsbuildResult = esbuildCache.get(filename);
+        if (cachedEsbuildResult) {
+          processedFiles.add(filename);
+          return cachedEsbuildResult;
+        }
+
         // Check cache FIRST, before any file I/O (populated in build mode by buildStart)
         const cached = compilationCache.get(filename);
         const isMdx = filename.endsWith('.mdx');
