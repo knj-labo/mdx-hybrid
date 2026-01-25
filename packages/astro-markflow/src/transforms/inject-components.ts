@@ -27,13 +27,24 @@ export function injectComponentImports(
   components: string[],
   moduleId: string
 ): string {
-  if (!code || typeof code !== 'string') {
+  if (!code || typeof code !== 'string' || components.length === 0) {
     return code;
   }
   const scanTarget = stripHeadingsMeta(code);
-  const used = components.filter((name) =>
-    new RegExp(`<${name}\\b`).test(scanTarget)
-  );
+
+  // PERF: Use single combined regex instead of per-component regex
+  // This reduces from O(n) regex compilations to O(1)
+  const combinedPattern = new RegExp(`<(${components.join('|')})\\b`, 'g');
+  const matches = scanTarget.match(combinedPattern);
+  if (!matches) return code;
+
+  // Extract unique component names from matches
+  const usedSet = new Set<string>();
+  for (const match of matches) {
+    const name = match.slice(1); // Remove leading '<'
+    usedSet.add(name);
+  }
+  const used = components.filter((name) => usedSet.has(name));
   if (used.length === 0) return code;
 
   const imported = collectImportedNames(code);
@@ -107,15 +118,33 @@ export function injectComponentImportsFromRegistry(
     return code;
   }
 
+  const allComponents = registry.getAllComponents();
+  if (allComponents.length === 0) {
+    return code;
+  }
+
   const scanTarget = stripHeadingsMeta(code);
   const imported = collectImportedNames(code);
-  const allComponents = registry.getAllComponents();
+
+  // PERF: Use single combined regex instead of per-component regex
+  // This reduces from O(n) regex compilations to O(1)
+  const componentNames = allComponents.map((c) => c.name);
+  const combinedPattern = new RegExp(`<(${componentNames.join('|')})\\b`, 'g');
+  const matches = scanTarget.match(combinedPattern);
+  if (!matches) return code;
+
+  // Extract unique component names from matches
+  const usedNames = new Set<string>();
+  for (const match of matches) {
+    const name = match.slice(1); // Remove leading '<'
+    usedNames.add(name);
+  }
 
   // Find used components that are missing imports
   const missingByModule = new Map<string, Array<{ name: string; exportType: string }>>();
 
   for (const comp of allComponents) {
-    if (new RegExp(`<${comp.name}\\b`).test(scanTarget) && !imported.has(comp.name)) {
+    if (usedNames.has(comp.name) && !imported.has(comp.name)) {
       const modulePath = comp.modulePath;
       if (!missingByModule.has(modulePath)) {
         missingByModule.set(modulePath, []);

@@ -31,6 +31,21 @@ import {
 } from './constants.js';
 import type { MarkflowPlugin, PluginHooks, TransformContext } from './types.js';
 
+// Debug timing utilities
+const DEBUG_TIMING = process.env.MARKFLOW_DEBUG_TIMING === '1';
+
+function debugTime(label: string): void {
+  if (DEBUG_TIMING) console.time(`[markflow:timing] ${label}`);
+}
+
+function debugTimeEnd(label: string): void {
+  if (DEBUG_TIMING) console.timeEnd(`[markflow:timing] ${label}`);
+}
+
+function debugLog(message: string): void {
+  if (DEBUG_TIMING) console.log(`[markflow:timing] ${message}`);
+}
+
 // Import from extracted vite-plugin modules
 import type {
   MarkflowBinding,
@@ -230,6 +245,9 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       // Only batch compile in build mode (not dev/serve)
       if (resolvedConfig?.command !== 'build') return;
 
+      debugTime('buildStart:total');
+      debugTime('buildStart:glob');
+
       // Find all MD/MDX files (use CJS require to avoid Vite's module runner)
       const { glob } = require('glob') as {
         glob: (
@@ -243,7 +261,15 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         absolute: true,
       });
 
-      if (files.length === 0) return;
+      debugTimeEnd('buildStart:glob');
+      debugLog(`Found ${files.length} markdown files`);
+
+      if (files.length === 0) {
+        debugTimeEnd('buildStart:total');
+        return;
+      }
+
+      debugTime('buildStart:readFiles');
 
       // Read all files in parallel and prepare batch inputs
       const inputsOrNull = await Promise.all(
@@ -269,6 +295,8 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         })
       );
 
+      debugTimeEnd('buildStart:readFiles');
+
       const inputs = inputsOrNull.filter(
         (i): i is NonNullable<typeof i> => i !== null
       );
@@ -279,15 +307,22 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         );
       }
 
-      if (inputs.length === 0) return;
+      if (inputs.length === 0) {
+        debugTimeEnd('buildStart:total');
+        return;
+      }
 
       try {
+        debugTime('buildStart:batchCompile');
+
         // Batch compile with parallel processing
         const binding = providedBinding ?? (await loadMarkflowBinding());
         const batchResult = binding.compileBatch(inputs, {
           continueOnError: true,
           config: compilerOptions,
         });
+
+        debugTimeEnd('buildStart:batchCompile');
 
         // Cache successful results
         for (const result of batchResult.results) {
@@ -308,9 +343,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         const esbuildStartTime = performance.now();
         const jsxInputs: Array<{ id: string; virtualId: string; jsx: string }> = [];
 
+        debugTime('buildStart:shikiInit');
+
         // Initialize shiki highlighter if enabled (shared across all files)
         const shikiHighlighter = getShiki();
         const resolvedShiki = shikiHighlighter ? await shikiHighlighter : null;
+
+        debugTimeEnd('buildStart:shikiInit');
 
         // Normalize starlightComponents for TransformContext
         const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
@@ -321,6 +360,8 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           beforeInject: hooks.beforeInject,
           beforeOutput: hooks.beforeOutput,
         });
+
+        debugTime('buildStart:pipelineProcessing');
 
         // Process each cached file through the pipeline
         // Only batch files eligible for fast-path (non-MDX, no imports/exports/JSX components)
@@ -348,6 +389,9 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           // Wrap HTML in JSX module
           const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename);
 
+          // PERF: Only enable shiki for files with code blocks
+          const hasCodeBlocks = /<pre[\s>]/.test(jsxCode);
+
           // Get source for hooks
           const sourceForHooks =
             originalSourceCache.get(filename) ??
@@ -367,7 +411,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             config: {
               expressiveCode,
               starlightComponents: normalizedStarlightComponents,
-              shiki: resolvedShiki,
+              shiki: hasCodeBlocks ? resolvedShiki : null,
             },
           };
 
@@ -376,7 +420,12 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           jsxInputs.push({ id: filename, virtualId, jsx: transformed.code });
         }
 
+        debugTimeEnd('buildStart:pipelineProcessing');
+        debugLog(`Pipeline processed ${jsxInputs.length} files for esbuild batch`);
+
         if (jsxInputs.length > 0) {
+          debugTime('buildStart:esbuild');
+
           // Batch transform all JSX through esbuild using virtual file plugin
           try {
             // Create a clean entry point name for each file (avoid null bytes and special chars)
@@ -444,13 +493,19 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             console.info(
               `[markflow] Batch esbuild transformed ${esbuildCache.size} files in ${(esbuildEndTime - esbuildStartTime).toFixed(0)}ms`
             );
+
+            debugTimeEnd('buildStart:esbuild');
           } catch (esbuildErr) {
+            debugTimeEnd('buildStart:esbuild');
             this.warn(
               `[markflow] Batch esbuild failed, will use individual transforms: ${esbuildErr}`
             );
           }
         }
+
+        debugTimeEnd('buildStart:total');
       } catch (err) {
+        debugTimeEnd('buildStart:total');
         this.warn(
           `[markflow] Batch compile skipped due to binding load failure: ${err}`
         );
@@ -573,7 +628,9 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             totalProcessingTimeMs += endTime - startTime;
             processedFiles.add(filename);
 
-            const shikiHighlighter = getShiki();
+            // PERF: Only enable shiki for files with code blocks
+            const hasCodeBlocks = /<pre[\s>]/.test(result.code);
+            const shikiHighlighter = hasCodeBlocks ? getShiki() : null;
             const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
             const sourceForHooks =
               originalSourceCache.get(filename) ??
@@ -695,7 +752,9 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           }
         }
 
-        const shikiHighlighter = getShiki();
+        // PERF: Only enable shiki for files with code blocks
+        const hasCodeBlocks = /<pre[\s>]/.test(result.code);
+        const shikiHighlighter = hasCodeBlocks ? getShiki() : null;
         const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
         const ctx: TransformContext = {
           code: result.code,

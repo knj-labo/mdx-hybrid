@@ -55,6 +55,11 @@ export async function highlightHtmlBlocks(
   html: string,
   highlight: ShikiHighlighter
 ): Promise<string> {
+  // PERF: Early skip if no <pre> tags exist (avoids expensive parse5 parsing)
+  if (!/<pre[\s>]/.test(html)) {
+    return html;
+  }
+
   // Suppress parse5 warnings for JSX components in HTML
   const fragment = parseFragment(html, {
     onParseError: (error) => {

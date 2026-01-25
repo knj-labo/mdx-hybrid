@@ -18,6 +18,11 @@ serde_yaml = { workspace = true }
 [dev-dependencies]
 insta = { workspace = true }
 once_cell = { workspace = true }
+criterion = "0.5"
+
+[[bench]]
+name = "benchmarks"
+harness = false
 
 [package.metadata.insta]
 review = false
