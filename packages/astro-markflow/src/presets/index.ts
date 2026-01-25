@@ -22,6 +22,26 @@ export interface PresetConfig {
 }
 
 /**
+ * Default import patterns allowed for Starlight projects.
+ * These patterns won't trigger fallback to @mdx-js/mdx.
+ */
+export const STARLIGHT_DEFAULT_ALLOW_IMPORTS = [
+  // Starlight components and subpackages
+  '@astrojs/starlight/components',
+  '@astrojs/starlight/*',
+  // Astro virtual modules
+  'astro:*',
+  // Common image imports
+  '*.svg',
+  '*.png',
+  '*.jpg',
+  '*.jpeg',
+  '*.gif',
+  '*.webp',
+  '*.avif',
+] as const;
+
+/**
  * Options for the Starlight preset.
  */
 export interface StarlightPresetOptions {
@@ -29,6 +49,13 @@ export interface StarlightPresetOptions {
   expressiveCode?: boolean;
   /** Strip Starlight imports - registry handles injection. @default true */
   stripStarlightImports?: boolean;
+  /**
+   * Additional import patterns to allow beyond the defaults.
+   * Patterns matching these won't trigger fallback to @mdx-js/mdx.
+   * Supports glob patterns (e.g., '~/components/*').
+   * @example ['~/components/*', '../components/*', 'my-package']
+   */
+  allowImports?: string[];
 }
 
 /**
@@ -47,19 +74,25 @@ export interface StarlightPresetOptions {
  * });
  */
 export function starlightPreset(options: StarlightPresetOptions = {}): PresetConfig {
-  const { expressiveCode = true, stripStarlightImports = true } = options;
+  const { expressiveCode = true, stripStarlightImports = true, allowImports = [] } = options;
 
   const libraries = [astroLibrary, starlightLibrary];
   if (expressiveCode) {
     libraries.push(expressiveCodeLibrary);
   }
 
+  // Merge default patterns with user-provided patterns
+  const mergedAllowImports = [
+    ...STARLIGHT_DEFAULT_ALLOW_IMPORTS,
+    ...allowImports,
+  ];
+
   return {
     libraries,
     starlightComponents: true,
     expressiveCode: expressiveCode ? { enabled: true } : false,
     mdx: stripStarlightImports
-      ? { allowImports: ['@astrojs/starlight/components'], ignoreCodeFences: true }
+      ? { allowImports: mergedAllowImports, ignoreCodeFences: true }
       : undefined,
   };
 }

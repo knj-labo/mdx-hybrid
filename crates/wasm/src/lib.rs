@@ -1,5 +1,5 @@
 use markflow_core::MdastOptions;
-use markflow_core::code_fence::collect_root_imports;
+use markflow_core::code_fence::collect_root_statements;
 use markflow_core::codegen::{AstroModuleOptions, DirectiveMappingResult, blocks_to_jsx_string};
 use markflow_core::renderer::mdast::to_blocks;
 use serde::Serialize;
@@ -62,11 +62,14 @@ pub fn compile(source: &str, filepath: &str) -> Result<JsValue, JsError> {
     let raw_body = &source[extraction.body_start..];
 
     // 2. Hoist top-level imports/exports
-    let (hoisted_imports, body_lines) = collect_root_imports(raw_body);
+    let (hoisted_statements, body_lines) = collect_root_statements(raw_body);
     let body_without_imports = body_lines.join("\n");
-    let has_user_default_export = hoisted_imports
+    let has_user_default_export = hoisted_statements
+        .exports
         .iter()
         .any(|s| s.trim_start().starts_with("export default"));
+    let hoisted_imports = hoisted_statements.imports;
+    let hoisted_exports = hoisted_statements.exports;
 
     // 3. Parse to blocks and render JSX
     let mdast_options = MdastOptions {
@@ -99,6 +102,7 @@ pub fn compile(source: &str, filepath: &str) -> Result<JsValue, JsError> {
     let code = markflow_core::codegen::generate_astro_module(&AstroModuleOptions {
         jsx: &jsx_body,
         hoisted_imports: &hoisted_imports,
+        hoisted_exports: &hoisted_exports,
         frontmatter_json: &frontmatter_json,
         headings_json: &headings_json,
         filepath,

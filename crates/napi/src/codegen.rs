@@ -8,11 +8,13 @@ use napi::bindgen_prelude::Result;
 pub(crate) fn generate_module_code_from_ir(
     ir: &CompileIrResult,
     hoisted_imports: &[String],
+    hoisted_exports: &[String],
     headings_json: &str,
 ) -> Result<String> {
     let options = AstroModuleOptions {
         jsx: &ir.html,
         hoisted_imports,
+        hoisted_exports,
         frontmatter_json: &ir.frontmatter_json,
         headings_json,
         filepath: &ir.file_path,

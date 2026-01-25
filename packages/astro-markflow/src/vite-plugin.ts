@@ -21,7 +21,7 @@ import { createPipeline } from './pipeline/index.js';
 import { blocksToJsx } from './transforms/blocks-to-jsx.js';
 import { resolveExpressiveCodeConfig } from './utils/config.js';
 import { stripFrontmatter } from './utils/frontmatter.js';
-import { hasProblematicMdxPatterns } from './utils/mdx-detection.js';
+import { hasProblematicMdxPatterns, detectProblematicMdxPatterns } from './utils/mdx-detection.js';
 import { stripQuery, deriveFileOptions, shouldCompile } from './utils/paths.js';
 import {
   VIRTUAL_MODULE_PREFIX,
@@ -271,6 +271,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
       debugTime('buildStart:readFiles');
 
+      // Track fallback pattern statistics
+      const fallbackStats = {
+        disallowedImports: 0,
+        noAllowImports: 0,
+      };
+      const disallowedImportSources = new Map<string, number>();
+
       // Read all files in parallel and prepare batch inputs
       const inputsOrNull = await Promise.all(
         files.map(async (file) => {
@@ -283,9 +290,21 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           }
 
           // Pre-detect problematic patterns - these files will be handled by Astro's MDX plugin
-          if (hasProblematicMdxPatterns(processedSource, mdxOptions)) {
+          const detection = detectProblematicMdxPatterns(processedSource, mdxOptions);
+          if (detection.hasProblematicPatterns) {
             fallbackFiles.add(file);
-            fallbackReasons.set(file, 'Pre-detected problematic MDX patterns');
+            fallbackReasons.set(file, detection.reason ?? 'Unknown pattern');
+
+            // Track statistics
+            if (detection.disallowedImports && detection.disallowedImports.length > 0) {
+              fallbackStats.disallowedImports++;
+              for (const src of detection.disallowedImports) {
+                disallowedImportSources.set(src, (disallowedImportSources.get(src) ?? 0) + 1);
+              }
+            } else if (detection.allImports && detection.allImports.length > 0) {
+              fallbackStats.noAllowImports++;
+            }
+
             return null;
           }
 
@@ -302,9 +321,29 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       );
 
       if (fallbackFiles.size > 0) {
+        const breakdown: string[] = [];
+        if (fallbackStats.disallowedImports > 0) {
+          breakdown.push(`${fallbackStats.disallowedImports} with disallowed imports`);
+        }
+
         console.info(
-          `[markflow] Pre-detected ${fallbackFiles.size} files with patterns incompatible with markdown-rs (delegating to Astro MDX)`
+          `[markflow] Pre-detected ${fallbackFiles.size} files with patterns incompatible with markdown-rs (delegating to Astro MDX)` +
+          (breakdown.length > 0 ? ` [${breakdown.join(', ')}]` : '')
         );
+
+        // Log top disallowed import sources for debugging when many files fallback
+        if (disallowedImportSources.size > 0 && fallbackFiles.size >= 10) {
+          const topSources = Array.from(disallowedImportSources.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([src, count]) => `${src} (${count})`);
+          console.info(
+            `[markflow] Top disallowed import sources: ${topSources.join(', ')}`
+          );
+          console.info(
+            `[markflow] Tip: Add these to your preset's allowImports to reduce fallback rate`
+          );
+        }
       }
 
       if (inputs.length === 0) {
@@ -364,16 +403,18 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         debugTime('buildStart:pipelineProcessing');
 
         // Process each cached file through the pipeline
-        // Only batch files eligible for fast-path (non-MDX, no imports/exports/JSX components)
+        // Only batch files eligible for fast-path (non-MDX, no imports, no JSX components)
+        // Note: Exports are now handled by Rust and injected via wrapHtmlInJsxModule
         for (const [filename, cached] of compilationCache) {
           const isMdx = filename.endsWith('.mdx');
           if (isMdx) continue;
 
           const hasUserImports = (cached.hoistedImports?.length ?? 0) > 0;
-          const hasUserDefaultExport = cached.hasUserDefaultExport === true;
           const hasJsxComponents = cached.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
 
-          if (hasUserImports || hasUserDefaultExport || hasJsxComponents) continue;
+          // Skip files with imports or JSX components - these need complex resolution
+          // Exports are handled by Rust and injected into the module
+          if (hasUserImports || hasJsxComponents) continue;
 
           // Parse frontmatter
           let frontmatter: Record<string, unknown> = {};
@@ -386,8 +427,11 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           }
           const headings = cached.headings || [];
 
-          // Wrap HTML in JSX module
-          const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename);
+          // Wrap HTML in JSX module with hoisted exports
+          const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename, {
+            hoistedExports: cached.hoistedExports,
+            hasUserDefaultExport: cached.hasUserDefaultExport,
+          });
 
           // PERF: Only enable shiki for files with code blocks
           const hasCodeBlocks = /<pre[\s>]/.test(jsxCode);
@@ -562,9 +606,10 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           for (const preprocessHook of hooks.preprocess) {
             processedSource = preprocessHook(processedSource, resolvedId);
           }
-          if (hasProblematicMdxPatterns(processedSource, mdxOptions)) {
+          const detection = detectProblematicMdxPatterns(processedSource, mdxOptions);
+          if (detection.hasProblematicPatterns) {
             fallbackFiles.add(resolvedId);
-            fallbackReasons.set(resolvedId, 'Pre-detected problematic MDX patterns (dev mode)');
+            fallbackReasons.set(resolvedId, detection.reason ?? 'Pre-detected problematic MDX patterns (dev mode)');
             return null; // Delegate to Astro's MDX plugin
           }
         } catch {
@@ -599,10 +644,10 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
         if (cached && !isMdx) {
           const hasUserImports = (cached.hoistedImports?.length ?? 0) > 0;
-          const hasUserDefaultExport = cached.hasUserDefaultExport === true;
           const hasJsxComponents = cached.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
 
-          if (!hasUserImports && !hasUserDefaultExport && !hasJsxComponents) {
+          // Exports are handled by Rust and injected into the module
+          if (!hasUserImports && !hasJsxComponents) {
             // FAST PATH: Use cached result without file I/O
             const startTime = performance.now();
             let frontmatter: Record<string, unknown> = {};
@@ -615,7 +660,10 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             }
             const headings = cached.headings || [];
 
-            const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename);
+            const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename, {
+              hoistedExports: cached.hoistedExports,
+              hasUserDefaultExport: cached.hasUserDefaultExport,
+            });
             const result: CompileResult = {
               code: jsxCode,
               map: null,
@@ -687,12 +735,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         // Early detection of problematic patterns - skip to fallback
         // Note: Pre-detected files from buildStart are handled by resolveId returning null
         // This catches files that weren't pre-detected (e.g., preprocess hooks revealed the pattern)
-        if (hasProblematicMdxPatterns(processedSource, mdxOptions)) {
+        const detection = detectProblematicMdxPatterns(processedSource, mdxOptions);
+        if (detection.hasProblematicPatterns) {
           this.warn(
-            `[markflow] Skipping ${filename}: contains patterns incompatible with markdown-rs`
+            `[markflow] Skipping ${filename}: ${detection.reason ?? 'contains patterns incompatible with markdown-rs'}`
           );
           fallbackFiles.add(filename);
-          fallbackReasons.set(filename, 'Detected problematic MDX patterns');
+          fallbackReasons.set(filename, detection.reason ?? 'Detected problematic MDX patterns');
           // Use @mdx-js/mdx as fallback compiler for runtime-detected files
           return compileFallbackModule(filename, processedSource, id, registry, hasStarlightConfigured);
         }

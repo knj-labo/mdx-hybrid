@@ -15,6 +15,16 @@ import { loadMarkflowBinding } from './binding-loader.js';
 import { rewriteFallbackDirectives, injectFallbackImports } from './directive-rewriter.js';
 
 /**
+ * Options for wrapping HTML in a JSX module.
+ */
+export interface WrapHtmlOptions {
+  /** User-defined exports from the MDX file (non-default) */
+  hoistedExports?: Array<{ source: string; isDefault: boolean }>;
+  /** Whether the user provided their own export default statement */
+  hasUserDefaultExport?: boolean;
+}
+
+/**
  * Wraps raw HTML in an Astro-compatible JSX module.
  * Used for fast path compilation without MDX processing.
  */
@@ -22,13 +32,33 @@ export function wrapHtmlInJsxModule(
   html: string,
   frontmatter: Record<string, unknown>,
   headings: Array<{ depth: number; slug: string; text: string }>,
-  filename: string
+  filename: string,
+  options?: WrapHtmlOptions
 ): string {
   const frontmatterJson = JSON.stringify(frontmatter);
   const headingsJson = JSON.stringify(headings);
 
+  // Inject user-defined exports (filter out default exports as they need special handling)
+  const nonDefaultExports = (options?.hoistedExports ?? [])
+    .filter(e => !e.isDefault)
+    .map(e => e.source)
+    .join('\n');
+
+  // Generate default export line unless user has their own
+  const defaultExportLine = options?.hasUserDefaultExport
+    ? '' // User's default export is in hoistedExports
+    : 'export default MarkflowContent;';
+
+  // If user has default export, include it in the module
+  const userDefaultExport = (options?.hoistedExports ?? [])
+    .filter(e => e.isDefault)
+    .map(e => e.source)
+    .join('\n');
+
   return `import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
 import { Fragment, jsx as _jsx } from 'astro/jsx-runtime';
+
+${nonDefaultExports}
 
 export const frontmatter = ${frontmatterJson};
 export function getHeadings() { return ${headingsJson}; }
@@ -42,7 +72,8 @@ const MarkflowContent = createComponent(
   ${JSON.stringify(filename)}
 );
 export const Content = MarkflowContent;
-export default MarkflowContent;
+${userDefaultExport}
+${defaultExportLine}
 `;
 }
 

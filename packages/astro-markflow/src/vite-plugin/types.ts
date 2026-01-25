@@ -56,6 +56,14 @@ export interface CompileResult {
 }
 
 /**
+ * Export specification from Rust compiler.
+ */
+export interface ExportSpec {
+  source: string;
+  isDefault: boolean;
+}
+
+/**
  * Result from batch compilation.
  */
 export interface BatchCompileResult {
@@ -65,7 +73,8 @@ export interface BatchCompileResult {
       html: string;
       frontmatterJson?: string;
       headings?: Array<{ depth: number; slug: string; text: string }>;
-      hoistedImports?: string[];
+      hoistedImports?: Array<{ source: string; kind: string }>;
+      hoistedExports?: ExportSpec[];
       hasUserDefaultExport?: boolean;
     };
   }>;

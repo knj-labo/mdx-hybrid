@@ -199,12 +199,12 @@ pub fn compile_ir(
 
     // Extract all imports/exports from the document (not just leading ones)
     // Uses code fence tracking to avoid extracting imports inside code blocks
-    let (hoisted_statements, body_lines) = code_fence::collect_root_imports(&raw_body);
+    let (hoisted_statements, body_lines) = code_fence::collect_root_statements(&raw_body);
     let body_without_imports = body_lines.join("\n");
     let has_user_default_export = hoisted_statements
+        .exports
         .iter()
         .any(|s| s.trim_start().starts_with("export default"));
-    let leading_imports = hoisted_statements;
 
     // Use mdast pipeline to generate blocks
     let mdast_options = MdastOptions {
@@ -233,10 +233,6 @@ pub fn compile_ir(
     };
     let jsx_body = blocks_to_jsx_string(&blocks_result.blocks, Some(directive_mapper));
 
-    // Merge leading imports with any imports found in the JSX body
-    let hoisted = leading_imports;
-    let jsx = jsx_body;
-
     // mdast doesn't produce diagnostics yet - return empty warnings
     let diagnostics = Diagnostics { warnings: vec![] };
 
@@ -257,15 +253,29 @@ pub fn compile_ir(
 
     let frontmatter_json = serde_json::to_string(&frontmatter).unwrap_or_else(|_| "{}".to_string());
 
+    // Build separate import and export specs
+    let hoisted_imports: Vec<ImportSpec> = hoisted_statements
+        .imports
+        .into_iter()
+        .map(|source| ImportSpec {
+            source,
+            kind: ImportKind::Hoisted,
+        })
+        .collect();
+
+    let hoisted_exports: Vec<ExportSpec> = hoisted_statements
+        .exports
+        .into_iter()
+        .map(|source| {
+            let is_default = source.trim_start().starts_with("export default");
+            ExportSpec { source, is_default }
+        })
+        .collect();
+
     Ok(CompileIrResult {
-        html: jsx,
-        hoisted_imports: hoisted
-            .into_iter()
-            .map(|source| ImportSpec {
-                source,
-                kind: ImportKind::Hoisted,
-            })
-            .collect(),
+        html: jsx_body,
+        hoisted_imports,
+        hoisted_exports,
         frontmatter_json,
         headings,
         file_path: effective_path,
@@ -294,8 +304,20 @@ pub(crate) fn compile_document_from_ir(ir: CompileIrResult) -> napi::Result<Comp
             .map(|spec| spec.source.clone())
             .collect(),
     );
+    // Include all exports (including default) - the has_user_default_export flag
+    // only controls whether we generate `export default MarkflowContent`
+    let hoisted_exports: Vec<String> = ir
+        .hoisted_exports
+        .iter()
+        .map(|spec| spec.source.clone())
+        .collect();
     let headings_json = serde_json::to_string(&ir.headings).unwrap_or_else(|_| "[]".to_string());
-    let code = super::codegen::generate_module_code_from_ir(&ir, &hoisted_imports, &headings_json)?;
+    let code = super::codegen::generate_module_code_from_ir(
+        &ir,
+        &hoisted_imports,
+        &hoisted_exports,
+        &headings_json,
+    )?;
     let imports = super::build_import_list(ir.layout_import.as_deref(), Path::new(&ir.file_path));
 
     Ok(CompileResult {
