@@ -3,11 +3,10 @@
 //! Run with: `cargo bench -p markflow-core`
 //! Or with specific benchmark: `cargo bench -p markflow-core -- to_blocks`
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use markflow_core::{
     renderer::MdastOptions,
-    slugify,
-    to_blocks,
+    slugify, to_blocks,
     transform::{jsx_normalize, smartypants},
 };
 
@@ -183,17 +182,23 @@ fn bench_to_blocks(c: &mut Criterion) {
         ..Default::default()
     };
 
-    group.bench_with_input(BenchmarkId::new("simple", "256b"), SIMPLE_MARKDOWN, |b, input| {
-        b.iter(|| to_blocks(black_box(input), black_box(&options)))
-    });
+    group.bench_with_input(
+        BenchmarkId::new("simple", "256b"),
+        SIMPLE_MARKDOWN,
+        |b, input| b.iter(|| to_blocks(black_box(input), black_box(&options))),
+    );
 
-    group.bench_with_input(BenchmarkId::new("medium", "800b"), MEDIUM_MARKDOWN, |b, input| {
-        b.iter(|| to_blocks(black_box(input), black_box(&options)))
-    });
+    group.bench_with_input(
+        BenchmarkId::new("medium", "800b"),
+        MEDIUM_MARKDOWN,
+        |b, input| b.iter(|| to_blocks(black_box(input), black_box(&options))),
+    );
 
-    group.bench_with_input(BenchmarkId::new("complex", "2kb"), COMPLEX_MARKDOWN, |b, input| {
-        b.iter(|| to_blocks(black_box(input), black_box(&options)))
-    });
+    group.bench_with_input(
+        BenchmarkId::new("complex", "2kb"),
+        COMPLEX_MARKDOWN,
+        |b, input| b.iter(|| to_blocks(black_box(input), black_box(&options))),
+    );
 
     group.finish();
 }
@@ -229,7 +234,10 @@ fn bench_slugify(c: &mut Criterion) {
     group.bench_function("complex", |b| {
         b.iter(|| {
             let mut counts = HashMap::new();
-            slugify(black_box("Getting Started with @astrojs/mdx (v2.0)"), &mut counts)
+            slugify(
+                black_box("Getting Started with @astrojs/mdx (v2.0)"),
+                &mut counts,
+            )
         })
     });
 
