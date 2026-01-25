@@ -8,8 +8,9 @@ test('compile converts directive to Aside component', (t) => {
   const result = compiler.compile(source, '/virtual.mdx');
 
   // Directive should be converted to Aside component
+  // Content is now wrapped in a JSON string literal via set:html, so quotes are escaped
   t.true(result.code.includes('<Aside'));
-  t.true(result.code.includes('"type": "note"'));
+  t.true(result.code.includes('\\"type\\": \\"note\\"'));
 });
 
 test('compile preserves existing Aside import without duplication', (t) => {
