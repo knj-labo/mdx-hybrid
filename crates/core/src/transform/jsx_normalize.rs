@@ -5,8 +5,6 @@
 struct JsxTagInfo {
     /// The tag name (e.g., "MyComponent", "div", "Fragment")
     name: String,
-    /// Whether this is an opening tag (vs closing tag)
-    is_opening: bool,
     /// Whether this is a self-closing tag (ends with `/>`)
     self_closing: bool,
     /// Whether this tag has a `slot=` attribute
@@ -36,7 +34,6 @@ fn parse_jsx_tag(trimmed: &str) -> Option<JsxTagInfo> {
 
     Some(JsxTagInfo {
         name: name.to_string(),
-        is_opening: true,
         self_closing,
         has_slot_attr,
     })
@@ -211,12 +208,9 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
     while i < lines.len() {
         let line = lines[i];
         let trimmed = line.trim_start();
-        let indent = line.len() - trimmed.len();
 
-        // Only process indented lines (list context)
-        if indent > 0
-            && let Some(tag_info) = parse_jsx_tag(trimmed).filter(is_list_jsx_component)
-        {
+        // Check if this is a list JSX component (opening tag)
+        if let Some(tag_info) = parse_jsx_tag(trimmed).filter(is_list_jsx_component) {
             // Check if we need a blank line before
             if i > 0 && needs_blank_line_before(&lines, i) {
                 output.push('\n');
@@ -225,49 +219,32 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
             output.push_str(line);
             output.push('\n');
 
-            // For self-closing tags or opening tags, check if we need blank line after
-            if tag_info.is_opening && !tag_info.self_closing {
-                // Find the closing tag
-                let close_tag = format!("</{}>", tag_info.name);
-                let mut j = i + 1;
-                let mut depth = 1;
-                while j < lines.len() && depth > 0 {
-                    let inner_trimmed = lines[j].trim();
-                    if inner_trimmed.starts_with(&format!("<{}", tag_info.name))
-                        && !inner_trimmed.ends_with("/>")
-                    {
-                        depth += 1;
-                    }
-                    if inner_trimmed.contains(&close_tag) {
-                        depth -= 1;
-                        if depth == 0 {
-                            // Output lines from i+1 to j (inclusive)
-                            for inner_line in lines.iter().take(j + 1).skip(i + 1) {
-                                output.push_str(inner_line);
-                                output.push('\n');
-                            }
-                            // Check if we need blank line after closing tag
-                            if j + 1 < lines.len() && needs_blank_line_after(&lines, j) {
-                                output.push('\n');
-                            }
-                            i = j + 1;
-                            break;
-                        }
-                    }
-                    j += 1;
-                }
-                if depth > 0 {
-                    // No closing tag found, just continue normally
-                    i += 1;
-                }
-                continue;
-            } else if tag_info.self_closing {
-                // Self-closing tag, check if we need blank line after
+            // For self-closing tags, check if we need blank line after
+            if tag_info.self_closing {
                 if i + 1 < lines.len() && needs_blank_line_after(&lines, i) {
                     output.push('\n');
                 }
-                i += 1;
-                continue;
+            }
+            // For non-self-closing opening tags, we continue processing line by line
+            // to allow nested components to also get blank line treatment
+            i += 1;
+            continue;
+        }
+
+        // Check if this is a closing tag for a list JSX component
+        if trimmed.starts_with("</") {
+            if let Some(close_name) = extract_closing_tag_name(trimmed) {
+                if is_list_jsx_component_name(&close_name) {
+                    output.push_str(line);
+                    output.push('\n');
+
+                    // Check if we need blank line after closing tag
+                    if i + 1 < lines.len() && needs_blank_line_after(&lines, i) {
+                        output.push('\n');
+                    }
+                    i += 1;
+                    continue;
+                }
             }
         }
 
@@ -284,18 +261,47 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
     output
 }
 
+/// Extracts the tag name from a closing tag like "</Box>" -> "Box"
+fn extract_closing_tag_name(trimmed: &str) -> Option<String> {
+    if !trimmed.starts_with("</") {
+        return None;
+    }
+    let rest = &trimmed[2..];
+    let name_end = rest.find(|c: char| c == '>' || c.is_whitespace()).unwrap_or(rest.len());
+    let name = &rest[..name_end];
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+/// Checks if a tag name is a list JSX component (without needing full JsxTagInfo)
+fn is_list_jsx_component_name(name: &str) -> bool {
+    LIST_JSX_COMPONENTS.contains(&name)
+        || name == "Fragment"
+        || name.contains('-')
+}
+
 /// List of tab component names that need special handling in list context.
 const LIST_JSX_COMPONENTS: &[&str] = &[
+    // Tab components
     "PackageManagerTabs",
     "StaticSsrTabs",
     "UIFrameworkTabs",
+    "Tabs",
     "TabItem",
+    // Tutorial/content components
+    "Steps",
+    "Box",
 ];
 
 /// Checks if a tag is a list-embedded JSX component that needs special handling.
 fn is_list_jsx_component(tag: &JsxTagInfo) -> bool {
     LIST_JSX_COMPONENTS.contains(&tag.name.as_str())
         || (tag.name == "Fragment" && tag.has_slot_attr)
+        // Handle custom elements (lowercase with dash, like mf-directive)
+        || tag.name.contains('-')
 }
 
 /// Checks if a blank line should be inserted before the component at index i.

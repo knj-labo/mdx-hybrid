@@ -31,6 +31,8 @@ export const STARLIGHT_DEFAULT_ALLOW_IMPORTS = [
   '@astrojs/starlight/*',
   // Astro virtual modules
   'astro:*',
+  // Local project components (common Astro convention)
+  '~/components/*',
   // Common image imports
   '*.svg',
   '*.png',
