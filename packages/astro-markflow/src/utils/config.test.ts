@@ -1,17 +1,15 @@
 import { describe, it, expect } from 'bun:test';
-import {
-  resolveExpressiveCodeConfig,
-  resolveStarlightConfig,
-  STARLIGHT_COMPONENTS,
-  STARLIGHT_COMPONENTS_MODULE,
-  EXPRESSIVE_CODE_COMPONENT,
-  EXPRESSIVE_CODE_MODULE,
-} from './config.js';
+import { resolveExpressiveCodeConfig, resolveStarlightConfig } from './config.js';
 import {
   createRegistry,
   starlightLibrary,
   expressiveCodeLibrary,
 } from 'markflow/registry';
+
+const STARLIGHT_COMPONENTS = starlightLibrary.components.map((c) => c.name);
+const STARLIGHT_COMPONENTS_MODULE = starlightLibrary.defaultModulePath;
+const EXPRESSIVE_CODE_COMPONENT = expressiveCodeLibrary.components[0]?.name ?? 'Code';
+const EXPRESSIVE_CODE_MODULE = expressiveCodeLibrary.defaultModulePath;
 
 describe('resolveExpressiveCodeConfig', () => {
   it('should return null for falsy values', () => {
@@ -164,30 +162,6 @@ describe('resolveStarlightConfig', () => {
     });
 
     expect(result?.components).toEqual([]);
-  });
-});
-
-describe('constants', () => {
-  it('should export STARLIGHT_COMPONENTS array', () => {
-    expect(Array.isArray(STARLIGHT_COMPONENTS)).toBe(true);
-    expect(STARLIGHT_COMPONENTS.length).toBeGreaterThan(0);
-    expect(STARLIGHT_COMPONENTS).toContain('Aside');
-  });
-
-  it('should export STARLIGHT_COMPONENTS_MODULE string', () => {
-    expect(typeof STARLIGHT_COMPONENTS_MODULE).toBe('string');
-    expect(STARLIGHT_COMPONENTS_MODULE).toBe('@astrojs/starlight/components');
-  });
-
-  it('should export EXPRESSIVE_CODE_COMPONENT string', () => {
-    expect(typeof EXPRESSIVE_CODE_COMPONENT).toBe('string');
-    // Now derived from expressiveCodeLibrary.components[0].name
-    expect(EXPRESSIVE_CODE_COMPONENT).toBe('Code');
-  });
-
-  it('should export EXPRESSIVE_CODE_MODULE string', () => {
-    expect(typeof EXPRESSIVE_CODE_MODULE).toBe('string');
-    expect(EXPRESSIVE_CODE_MODULE).toBe('astro-expressive-code/components');
   });
 });
 

@@ -10,18 +10,6 @@ import { resolveStarlightConfig, type StarlightUserConfig } from '../utils/confi
 import { stripHeadingsMeta } from '../utils/validation.js';
 
 /**
- * Default Astro component names
- * @deprecated Use astroLibrary.components from markflow/registry instead
- */
-export const ASTRO_COMPONENTS = astroLibrary.components.map((c) => c.name);
-
-/**
- * Default Astro components module path
- * @deprecated Use astroLibrary.defaultModulePath from markflow/registry instead
- */
-export const ASTRO_COMPONENTS_MODULE = astroLibrary.defaultModulePath;
-
-/**
  * Generic component import injection.
  * Scans code for component usage and injects missing imports.
  *
