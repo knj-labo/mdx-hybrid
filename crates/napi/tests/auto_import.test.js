@@ -7,10 +7,9 @@ test('compile converts directive to Aside component', (t) => {
   const source = ':::note\nBody\n:::';
   const result = compiler.compile(source, '/virtual.mdx');
 
-  // Directive should be converted to Aside component
-  // Content is now wrapped in a JSON string literal via set:html, so quotes are escaped
+  // Directive should be converted to Aside component with type in spread props
   t.true(result.code.includes('<Aside'));
-  t.true(result.code.includes('\\"type\\": \\"note\\"'));
+  t.true(result.code.includes('"type": "note"'));
 });
 
 test('compile preserves existing Aside import without duplication', (t) => {

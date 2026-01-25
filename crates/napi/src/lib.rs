@@ -435,7 +435,7 @@ mod tests {
             "fenced import should not be hoisted: {}",
             result.code
         );
-        // HTML is now inside a JSON string literal via set:html, so quotes are escaped
+        // HTML blocks are now wrapped with Fragment set:html, so quotes are escaped in JSON
         assert!(
             result.code.contains(r#"<pre class=\"astro-code\""#)
                 && result.code.contains("import Y from './y'"),
