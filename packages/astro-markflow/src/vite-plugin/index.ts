@@ -17,7 +17,7 @@ export type {
   TextNode,
 } from './types.js';
 
-export { DEFAULT_EXTENSIONS } from './types.js';
+export { DEFAULT_EXTENSIONS } from '../utils/paths.js';
 
 // Re-export binding loader
 export { loadMarkflowBinding, resetBindingPromise, ENABLE_SHIKI, IS_MDAST } from './binding-loader.js';
@@ -34,4 +34,4 @@ export type { NormalizedStarlightComponents } from './normalize-config.js';
 
 // Re-export shiki highlighter
 export { createShikiHighlighter } from './shiki-highlighter.js';
-export type { ShikiHighlighter } from './shiki-highlighter.js';
+export type { ShikiHighlighter } from '../transforms/shiki.js';

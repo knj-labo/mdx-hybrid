@@ -5,11 +5,10 @@
 
 import { codeToHtml, createCssVariablesTheme } from 'shiki';
 import { SHIKI_THEME } from '../constants.js';
+import type { ShikiHighlighter } from '../transforms/shiki.js';
 
-/**
- * Shiki highlighter function type.
- */
-export type ShikiHighlighter = (code: string, lang?: string) => Promise<string>;
+// Re-export for convenience
+export type { ShikiHighlighter } from '../transforms/shiki.js';
 
 /**
  * Creates a Shiki highlighter with CSS variables theme.
