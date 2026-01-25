@@ -33,7 +33,7 @@ const compiler = createCompiler()
 const source = readFileSync(directivesPath, 'utf8')
 const result = compiler.compile(source, directivesPath)
 
-// The compiler generates JSX with spread syntax: <Aside {...{"type": "note"}}>
+// The compiler generates JSX with type in spread props: <Aside {...{"type": "note"}} ...>
 assert(result.code.includes('<Aside'), 'Compiled code should contain Aside component')
 assert(result.code.includes('"type": "note"'), 'Compiled code should contain type="note" prop')
 

@@ -71,9 +71,9 @@ pub struct DirectiveMappingResult {
 ///     content: "<p>Hello</p>".to_string(),
 /// }];
 ///
-/// // Without directive mapping
+/// // Without directive mapping - HTML blocks use Fragment with set:html
 /// let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
-/// assert_eq!(jsx, "<p>Hello</p>");
+/// assert_eq!(jsx, "<Fragment set:html={\"<p>Hello</p>\"} />");
 /// ```
 pub fn blocks_to_jsx_string<F>(blocks: &[RenderBlock], directive_mapper: Option<F>) -> String
 where
@@ -105,8 +105,11 @@ where
     for block in blocks {
         match block {
             RenderBlock::Html { content } => {
-                let escaped = sanitize_html_block_for_jsx(content);
-                result.push_str(&escaped);
+                // Use set:html to avoid HTML entity parsing issues with esbuild
+                // JSON.stringify handles all escaping; Astro parses the HTML at runtime
+                result.push_str("<Fragment set:html={");
+                result.push_str(&js_string_literal(content));
+                result.push_str("} />");
             }
             RenderBlock::Component {
                 name,
@@ -115,8 +118,6 @@ where
             } => {
                 // Apply slot normalization based on registry configuration
                 let slot_html = normalize_slot_by_registry(name, slot_html, registry);
-                // Escape raw braces in slot HTML to avoid JSX expression parsing
-                let slot_html = slot_html.replace('{', "&#123;").replace('}', "&#125;");
 
                 // Apply directive mapping if provided
                 let (tag_name, type_prop) = if let Some(ref mapper) = directive_mapper {
@@ -170,90 +171,18 @@ where
                     result.push_str("}}");
                 }
 
-                result.push('>');
-                result.push_str(&slot_html);
-                result.push_str("</");
-                result.push_str(&tag_name);
-                result.push('>');
+                // Use set:html for slot content to avoid HTML entity parsing issues
+                if slot_html.is_empty() {
+                    result.push_str(" />");
+                } else {
+                    result.push_str(" set:html={");
+                    result.push_str(&js_string_literal(&slot_html));
+                    result.push_str("} />");
+                }
             }
         }
     }
     result
-}
-
-/// Escapes JSX-sensitive characters inside raw HTML blocks.
-///
-/// - Escapes `{` and `}` globally so they are not parsed as JSX expressions.
-/// - For backtick-delimited code spans (`, ```, etc.), wraps the contents in `<code>`
-///   and escapes `<`, `>`, `&`, and braces so code examples remain literal.
-/// - For `<script>` / `<style>` blocks we only escape braces to avoid breaking
-///   the embedded code while still keeping JSX safe.
-fn sanitize_html_block_for_jsx(content: &str) -> String {
-    let lower = content.to_ascii_lowercase();
-    let is_script_or_style =
-        lower.contains("<script") || lower.contains("<style") || lower.contains("</script>");
-
-    // For script/style we must keep the exact JS/CSS text (including braces) because
-    // escaping them to entities breaks the embedded code. These tags are wrapped in JSX
-    // as children text, which is allowed even when containing braces.
-    if is_script_or_style {
-        return content.to_string();
-    }
-
-    let mut out = String::with_capacity(content.len());
-    let mut chars = content.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        if ch == '`' {
-            // Count how many backticks start the span (supports ``` as well).
-            let mut tick_count = 1;
-            while let Some('`') = chars.peek() {
-                tick_count += 1;
-                chars.next();
-            }
-
-            let mut code = String::new();
-            while let Some(next) = chars.next() {
-                if next == '`' {
-                    let mut end_ticks = 1;
-                    while let Some('`') = chars.peek() {
-                        end_ticks += 1;
-                        chars.next();
-                    }
-                    if end_ticks == tick_count {
-                        break;
-                    } else {
-                        code.push_str(&"`".repeat(end_ticks));
-                        continue;
-                    }
-                } else {
-                    code.push(next);
-                }
-            }
-
-            // Escape code span contents
-            out.push_str("<code>");
-            for c in code.chars() {
-                match c {
-                    '<' => out.push_str("&lt;"),
-                    '>' => out.push_str("&gt;"),
-                    '&' => out.push_str("&amp;"),
-                    '{' => out.push_str("&#123;"),
-                    '}' => out.push_str("&#125;"),
-                    _ => out.push(c),
-                }
-            }
-            out.push_str("</code>");
-        } else {
-            match ch {
-                '{' => out.push_str("&#123;"),
-                '}' => out.push_str("&#125;"),
-                _ => out.push(ch),
-            }
-        }
-    }
-
-    out
 }
 
 /// Applies slot normalization based on registry configuration.
@@ -458,19 +387,18 @@ pub fn generate_astro_module(options: &AstroModuleOptions<'_>) -> String {
     let _ = writeln!(code, "}}");
 
     // MarkflowContent component
-    // Use set:html to avoid HTML entity parsing issues with esbuild
-    // JSON.stringify handles all escaping; Astro parses the HTML at runtime
     let _ = writeln!(code, "// function MarkflowContent");
     let _ = writeln!(
         code,
         "const MarkflowContent = createComponent((result, props) => {{"
     );
     let _ = writeln!(code, "  return renderJSX(result, (");
-    let _ = writeln!(
-        code,
-        "    <Fragment set:html={{{}}} />",
-        js_string_literal(options.jsx)
-    );
+    let _ = writeln!(code, "    <>");
+    code.push_str(options.jsx);
+    if !options.jsx.ends_with('\n') {
+        code.push('\n');
+    }
+    let _ = writeln!(code, "    </>");
     let _ = writeln!(code, "  ));");
     let _ = writeln!(code, "}}, file);");
 
@@ -549,9 +477,10 @@ mod tests {
             slot_html: "<p>Content</p>".to_string(),
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
+        // Component slot content uses set:html
         assert_eq!(
             jsx,
-            "<Card {...{\"title\": \"中文\\\"引用\\\"标题\"}}><p>Content</p></Card>"
+            "<Card {...{\"title\": \"中文\\\"引用\\\"标题\"}} set:html={\"<p>Content</p>\"} />"
         );
     }
 
@@ -561,7 +490,8 @@ mod tests {
             content: "<p>Hello</p>".to_string(),
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
-        assert_eq!(jsx, "<p>Hello</p>");
+        // HTML blocks are now wrapped in Fragment with set:html
+        assert_eq!(jsx, "<Fragment set:html={\"<p>Hello</p>\"} />");
     }
 
     #[test]
@@ -579,9 +509,10 @@ mod tests {
             slot_html: "<p>Content</p>".to_string(),
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
+        // Component slot content uses set:html
         assert_eq!(
             jsx,
-            "<Card {...{\"title\": \"Hello\"}}><p>Content</p></Card>"
+            "<Card {...{\"title\": \"Hello\"}} set:html={\"<p>Content</p>\"} />"
         );
     }
 
@@ -611,9 +542,10 @@ mod tests {
         };
 
         let jsx = blocks_to_jsx_string(&blocks, Some(mapper));
+        // Component slot content uses set:html
         assert_eq!(
             jsx,
-            "<Aside type=\"note\" {...{\"title\": \"Important\"}}><p>Content</p></Aside>"
+            "<Aside type=\"note\" {...{\"title\": \"Important\"}} set:html={\"<p>Content</p>\"} />"
         );
     }
 
@@ -637,8 +569,7 @@ mod tests {
         assert!(code.contains("export const frontmatter = {};"));
         assert!(code.contains("export const file = \"/test.md\";"));
         assert!(code.contains("export const url = undefined;"));
-        // HTML is now passed via set:html as a JSON string literal
-        assert!(code.contains("<Fragment set:html={\"<p>Hello</p>\"} />"));
+        assert!(code.contains("<p>Hello</p>"));
         assert!(code.contains("export default MarkflowContent;"));
     }
 

@@ -31,8 +31,9 @@ test('compileIr() handles images', (t) => {
   const input = '![Alt text](image.png)';
   const result = compileIr(input, '/virtual.md');
 
-  t.true(result.html.includes('alt="Alt text"'));
-  t.true(result.html.includes('src="image.png"'));
+  // HTML is now inside a JSON string (via set:html), so quotes are escaped
+  t.true(result.html.includes('alt=\\"Alt text\\"'));
+  t.true(result.html.includes('src=\\"image.png\\"'));
 });
 
 test('compileIr() handles lists', (t) => {
@@ -50,14 +51,16 @@ test('compileIr() assigns heading ids', (t) => {
   const input = '# Hello Heading';
   const result = compileIr(input, '/virtual.md');
 
-  t.true(result.html.includes('id="hello-heading"'));
+  // HTML is now inside a JSON string (via set:html), so quotes are escaped
+  t.true(result.html.includes('id=\\"hello-heading\\"'));
 });
 
 test('compileIr() handles links', (t) => {
   const input = '[Link text](https://example.com)';
   const result = compileIr(input, '/virtual.md');
 
-  t.true(result.html.includes('<a href="https://example.com">'));
+  // HTML is now inside a JSON string (via set:html), so quotes are escaped
+  t.true(result.html.includes('<a href=\\"https://example.com\\">'));
   t.true(result.html.includes('Link text'));
   t.true(result.html.includes('</a>'));
 });
