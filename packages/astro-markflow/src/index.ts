@@ -6,7 +6,7 @@
 import type { AstroIntegration } from 'astro';
 import type { ComponentLibrary } from 'markflow/registry';
 import { markflowPlugin } from './vite-plugin.js';
-import { mergePresets, type PresetConfig } from './presets/index.js';
+import { mergePresets, STARLIGHT_DEFAULT_ALLOW_IMPORTS, type PresetConfig } from './presets/index.js';
 import type { MarkflowPlugin, MdxImportHandlingOptions } from './types.js';
 
 /**
@@ -113,6 +113,20 @@ export default function markflow(options: MarkflowOptions = {}): AstroIntegratio
 
     // Remove presets from final options (not needed by vite plugin)
     delete (resolvedOptions as Record<string, unknown>).presets;
+  }
+
+  // Auto-apply Starlight default allowImports when starlightComponents is enabled
+  // This ensures imports like @astrojs/starlight/components don't trigger fallback
+  const hasStarlightComponents = resolvedOptions.starlightComponents === true ||
+    (typeof resolvedOptions.starlightComponents === 'object' && resolvedOptions.starlightComponents.enabled);
+  const hasAllowImports = resolvedOptions.mdx?.allowImports && resolvedOptions.mdx.allowImports.length > 0;
+
+  if (hasStarlightComponents && !hasAllowImports) {
+    resolvedOptions.mdx = {
+      ...resolvedOptions.mdx,
+      allowImports: [...STARLIGHT_DEFAULT_ALLOW_IMPORTS],
+      ignoreCodeFences: resolvedOptions.mdx?.ignoreCodeFences ?? true,
+    };
   }
 
   return {
