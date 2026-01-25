@@ -14,8 +14,6 @@ export interface MdxPatternDetectionResult {
   hasProblematicPatterns: boolean;
   /** Human-readable reason for fallback */
   reason?: string;
-  /** Export statements found (if any) */
-  exports?: string[];
   /** Disallowed import sources found (if any) */
   disallowedImports?: string[];
   /** All import sources found */
@@ -64,19 +62,6 @@ function extractImportSources(content: string): string[] {
     }
   }
   return sources;
-}
-
-/**
- * Extract export statement types from content.
- */
-function extractExportStatements(content: string): string[] {
-  const exports: string[] = [];
-  const exportRegex = /^export\s+(const|let|var|function|class|default)\b/gm;
-  let match;
-  while ((match = exportRegex.exec(content)) !== null) {
-    exports.push(`export ${match[1]}`);
-  }
-  return exports;
 }
 
 /**

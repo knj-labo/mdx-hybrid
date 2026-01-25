@@ -36,33 +36,6 @@ export function transformExpressiveCode(ctx: TransformContext): TransformContext
 }
 
 /**
- * Transform that injects Astro component imports (Code, Prism).
- */
-export function transformInjectAstroComponents(ctx: TransformContext): TransformContext {
-  if (!ctx.code) {
-    return ctx;
-  }
-  return {
-    ...ctx,
-    code: injectAstroComponents(ctx.code),
-  };
-}
-
-/**
- * Transform that injects Starlight component imports.
- * Only runs if starlightComponents is configured.
- */
-export function transformInjectStarlightComponents(ctx: TransformContext): TransformContext {
-  if (!ctx.config.starlightComponents || !ctx.code) {
-    return ctx;
-  }
-  return {
-    ...ctx,
-    code: injectStarlightComponents(ctx.code, ctx.config.starlightComponents),
-  };
-}
-
-/**
  * Transform that applies Shiki syntax highlighting.
  * Only runs if shiki highlighter is available.
  */

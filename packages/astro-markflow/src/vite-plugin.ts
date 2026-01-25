@@ -21,7 +21,7 @@ import { createPipeline } from './pipeline/index.js';
 import { blocksToJsx } from './transforms/blocks-to-jsx.js';
 import { resolveExpressiveCodeConfig } from './utils/config.js';
 import { stripFrontmatter } from './utils/frontmatter.js';
-import { hasProblematicMdxPatterns, detectProblematicMdxPatterns, type MdxPatternDetectionResult } from './utils/mdx-detection.js';
+import { hasProblematicMdxPatterns, detectProblematicMdxPatterns } from './utils/mdx-detection.js';
 import { stripQuery, deriveFileOptions, shouldCompile } from './utils/paths.js';
 import {
   VIRTUAL_MODULE_PREFIX,
@@ -273,7 +273,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
       // Track fallback pattern statistics
       const fallbackStats = {
-        exports: 0,
         disallowedImports: 0,
         noAllowImports: 0,
       };
@@ -297,9 +296,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             fallbackReasons.set(file, detection.reason ?? 'Unknown pattern');
 
             // Track statistics
-            if (detection.exports && detection.exports.length > 0) {
-              fallbackStats.exports++;
-            } else if (detection.disallowedImports && detection.disallowedImports.length > 0) {
+            if (detection.disallowedImports && detection.disallowedImports.length > 0) {
               fallbackStats.disallowedImports++;
               for (const src of detection.disallowedImports) {
                 disallowedImportSources.set(src, (disallowedImportSources.get(src) ?? 0) + 1);
@@ -325,9 +322,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
       if (fallbackFiles.size > 0) {
         const breakdown: string[] = [];
-        if (fallbackStats.exports > 0) {
-          breakdown.push(`${fallbackStats.exports} with exports`);
-        }
         if (fallbackStats.disallowedImports > 0) {
           breakdown.push(`${fallbackStats.disallowedImports} with disallowed imports`);
         }
