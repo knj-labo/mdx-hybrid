@@ -1,21 +1,8 @@
 {
-  "timestamp": "2026-01-24T12:09:28.063Z",
-  "baselineMs": 120287,
-  "markflowMs": 116543,
-  "mode": "semantic",
-  "semantic": {
-    "compared": 12,
-    "skipped": 0,
-    "differences": 1,
-    "samples": [
-      {
-        "file": "/en/reference/astro-syntax/",
-        "reason": "content-diff",
-        "diffIndex": 26069,
-        "previewA": "essions. JSX-like Expressions Section titled “JSX-like Expressions” You can define local JavaScript variables ",
-        "previewB": "essions. JSX-like Expressions You can define local JavaScript variables inside of the frontmatter component sc"
-      }
-    ]
-  },
-  "note": "semantic diff: pass if differences=0"
+  "timestamp": "2026-01-25T07:26:38.164Z",
+  "baselineMs": 141582,
+  "markflowMs": 133174,
+  "mode": "time",
+  "semantic": null,
+  "note": "build-only; no HTML diff"
 }

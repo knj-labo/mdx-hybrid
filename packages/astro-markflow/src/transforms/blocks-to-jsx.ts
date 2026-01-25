@@ -35,14 +35,6 @@ function escapeJsString(value: string): string {
 }
 
 /**
- * Sanitizes raw HTML content for JSX embedding.
- * Escapes { and } to prevent esbuild from interpreting them as JSX expressions.
- */
-function sanitizeHtmlForJsx(content: string): string {
-  return content.replaceAll('{', '&#123;').replaceAll('}', '&#125;');
-}
-
-/**
  * Normalizes slot content based on a slot normalization strategy.
  * Ensures content is wrapped in the appropriate list structure.
  *
@@ -97,7 +89,9 @@ export function blocksToJsx(
 
   for (const block of blocks) {
     if (block.type === 'html') {
-      fragments.push(sanitizeHtmlForJsx(block.content ?? ''));
+      // Use set:html to avoid HTML entity parsing issues with esbuild
+      // JSON.stringify handles all escaping; Astro parses the HTML at runtime
+      fragments.push(`<_Fragment set:html={${JSON.stringify(block.content ?? '')}} />`);
     } else if (block.type === 'component') {
       // Handle directive components using registry
       const isDirective = block.name ? supportedDirectives.includes(block.name) : false;
@@ -129,8 +123,6 @@ export function blocksToJsx(
       if (slotNorm) {
         effectiveSlot = normalizeSlotByStrategy(effectiveSlot, slotNorm.strategy);
       }
-      // Escape raw JSX braces inside slot HTML to prevent expression evaluation
-      effectiveSlot = sanitizeHtmlForJsx(effectiveSlot);
 
       // Skip Fragment - it's a built-in Astro component
       if (componentName !== 'Fragment') {
@@ -159,10 +151,17 @@ export function blocksToJsx(
             })
             .join(' ')
         : '';
-      const openTag = propsStr
-        ? `<${componentName} ${propsStr}>`
-        : `<${componentName}>`;
-      fragments.push(`${openTag}${effectiveSlot}</${componentName}>`);
+
+      // Use set:html for slot content to avoid HTML entity parsing issues with esbuild
+      // JSON.stringify handles all escaping; Astro parses the HTML at runtime
+      if (effectiveSlot) {
+        const allProps = propsStr
+          ? `${propsStr} set:html={${JSON.stringify(effectiveSlot)}}`
+          : `set:html={${JSON.stringify(effectiveSlot)}}`;
+        fragments.push(`<${componentName} ${allProps} />`);
+      } else {
+        fragments.push(propsStr ? `<${componentName} ${propsStr} />` : `<${componentName} />`);
+      }
     }
   }
 

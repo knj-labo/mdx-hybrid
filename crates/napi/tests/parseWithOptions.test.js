@@ -5,8 +5,9 @@ test('compileIr() handles images', (t) => {
   const input = '![alt](image.png)';
   const result = compileIr(input, '/virtual.md');
 
-  t.true(result.html.includes('alt="alt"'));
-  t.true(result.html.includes('src="image.png"'));
+  // HTML is now inside a JSON string (via set:html), so quotes are escaped
+  t.true(result.html.includes('alt=\\"alt\\"'));
+  t.true(result.html.includes('src=\\"image.png\\"'));
 });
 
 test('compileIr() handles raw HTML img tags', (t) => {

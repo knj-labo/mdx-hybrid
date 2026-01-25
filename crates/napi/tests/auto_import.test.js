@@ -7,7 +7,7 @@ test('compile converts directive to Aside component', (t) => {
   const source = ':::note\nBody\n:::';
   const result = compiler.compile(source, '/virtual.mdx');
 
-  // Directive should be converted to Aside component
+  // Directive should be converted to Aside component with type in spread props
   t.true(result.code.includes('<Aside'));
   t.true(result.code.includes('"type": "note"'));
 });

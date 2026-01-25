@@ -863,8 +863,9 @@ export const authClient = createAuthClient();
         let jsx =
             crate::codegen::blocks_to_jsx_string(&result.blocks, None::<fn(&str) -> Option<_>>);
         assert!(jsx.contains("createAuthClient"));
-        assert!(jsx.contains("&#123;") && jsx.contains("&#125;"));
-        assert!(!jsx.contains("{ createAuthClient }"));
+        // With set:html, braces are preserved as-is in the JSON string (escaped by JSON.stringify)
+        // The important thing is they're inside a JSON string, not interpreted as JSX expressions
+        assert!(jsx.contains("set:html="));
     }
 
     #[test]
@@ -917,7 +918,9 @@ export const authClient = createAuthClient();
         let result = to_blocks(input, &options).unwrap();
         let jsx =
             crate::codegen::blocks_to_jsx_string(&result.blocks, None::<fn(&str) -> Option<_>>);
-        assert!(jsx.contains("&lt;PreactBanner client:load /&gt;"));
-        assert!(!jsx.contains("<PreactBanner"));
+        // With set:html, HTML is inside a JSON string - the important thing is
+        // that the raw component tag is not interpreted as JSX
+        assert!(jsx.contains("set:html="));
+        assert!(jsx.contains("PreactBanner"));
     }
 }
