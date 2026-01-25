@@ -387,18 +387,19 @@ pub fn generate_astro_module(options: &AstroModuleOptions<'_>) -> String {
     let _ = writeln!(code, "}}");
 
     // MarkflowContent component
+    // Use set:html to avoid HTML entity parsing issues with esbuild
+    // JSON.stringify handles all escaping; Astro parses the HTML at runtime
     let _ = writeln!(code, "// function MarkflowContent");
     let _ = writeln!(
         code,
         "const MarkflowContent = createComponent((result, props) => {{"
     );
     let _ = writeln!(code, "  return renderJSX(result, (");
-    let _ = writeln!(code, "    <>");
-    code.push_str(options.jsx);
-    if !options.jsx.ends_with('\n') {
-        code.push('\n');
-    }
-    let _ = writeln!(code, "    </>");
+    let _ = writeln!(
+        code,
+        "    <Fragment set:html={{{}}} />",
+        js_string_literal(options.jsx)
+    );
     let _ = writeln!(code, "  ));");
     let _ = writeln!(code, "}}, file);");
 
@@ -569,7 +570,8 @@ mod tests {
         assert!(code.contains("export const frontmatter = {};"));
         assert!(code.contains("export const file = \"/test.md\";"));
         assert!(code.contains("export const url = undefined;"));
-        assert!(code.contains("<p>Hello</p>"));
+        // HTML is now passed via set:html as a JSON string literal
+        assert!(code.contains("<Fragment set:html={\"<p>Hello</p>\"} />"));
         assert!(code.contains("export default MarkflowContent;"));
     }
 
