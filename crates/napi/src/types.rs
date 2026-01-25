@@ -118,8 +118,10 @@ pub struct CompileResult {
 pub struct CompileIrResult {
     /// Rendered JSX output (string form).
     pub html: String,
-    /// Hoisted imports/exports captured during parsing (structured).
+    /// Hoisted imports captured during parsing (structured).
     pub hoisted_imports: Vec<ImportSpec>,
+    /// Hoisted exports captured during parsing (structured).
+    pub hoisted_exports: Vec<ExportSpec>,
     /// Serialized frontmatter JSON string.
     pub frontmatter_json: String,
     /// Heading metadata collected during parsing.
@@ -142,17 +144,27 @@ pub struct CompileIrResult {
 #[napi(object)]
 #[derive(Debug, Clone)]
 pub struct ImportSpec {
-    /// Raw import/export statement text.
+    /// Raw import statement text.
     pub source: String,
     /// Logical kind (hoisted or transform-required).
     pub kind: ImportKind,
+}
+
+/// Structured export returned by the compiler IR.
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct ExportSpec {
+    /// Raw export statement text.
+    pub source: String,
+    /// Whether this is a default export (`export default ...`).
+    pub is_default: bool,
 }
 
 /// Import category surfaced to JS callers.
 #[napi(string_enum)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImportKind {
-    /// Import/export lifted from document root.
+    /// Import lifted from document root.
     Hoisted,
     /// Import required by transforms (e.g., directive mapper).
     Transform,

@@ -1,5 +1,14 @@
 //! Code fence detection utilities to guard import/export hoisting.
 
+/// Separated import and export statements from document root.
+#[derive(Debug, Clone, Default)]
+pub struct HoistedStatements {
+    /// Import statements (e.g., `import X from 'module'`).
+    pub imports: Vec<String>,
+    /// Export statements (e.g., `export const X = 1`).
+    pub exports: Vec<String>,
+}
+
 /// Fence parsing phases tracked across lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FencePhase {
@@ -82,13 +91,26 @@ pub fn advance_fence_state(line: &str, state: FenceState) -> LineParseOutcome {
 }
 
 /// Collect root-level import/export statements while preserving the remaining lines.
+/// Returns (hoisted_statements, body_lines) tuple.
 pub fn collect_root_imports(body: &str) -> (Vec<String>, Vec<String>) {
+    let (hoisted, body_lines) = collect_root_statements(body);
+    // Combine imports and exports for backward compatibility
+    let mut all_hoisted = hoisted.imports;
+    all_hoisted.extend(hoisted.exports);
+    (all_hoisted, body_lines)
+}
+
+/// Collect root-level import and export statements separately.
+/// Returns (HoistedStatements, body_lines) tuple where imports and exports are separated.
+pub fn collect_root_statements(body: &str) -> (HoistedStatements, Vec<String>) {
     let mut fence_state = FenceState::default();
-    let mut hoisted = Vec::new();
+    let mut imports = Vec::new();
+    let mut exports = Vec::new();
     let mut body_lines = Vec::new();
     let mut buffer = String::new();
     let mut depth: isize = 0;
     let mut collecting = false;
+    let mut collecting_import = false; // true = import, false = export
     let mut lines_iter = body.lines().peekable();
 
     while let Some(line) = lines_iter.next() {
@@ -106,20 +128,30 @@ pub fn collect_root_imports(body: &str) -> (Vec<String>, Vec<String>) {
         }
 
         let trimmed = line.trim_start();
-        if !collecting && (is_import_start(trimmed) || is_export_start(trimmed)) {
-            collecting = true;
-            depth = 0;
-            buffer.push_str(line);
-            buffer.push('\n');
-            depth += paren_delta(line);
-            let next = lines_iter.peek().copied();
-            if ends_statement(line, depth, next) {
-                hoisted.push(buffer.trim_end().to_string());
-                buffer.clear();
-                collecting = false;
+        if !collecting {
+            let is_import = is_import_start(trimmed);
+            let is_export = is_export_start(trimmed);
+            if is_import || is_export {
+                collecting = true;
+                collecting_import = is_import;
                 depth = 0;
+                buffer.push_str(line);
+                buffer.push('\n');
+                depth += paren_delta(line);
+                let next = lines_iter.peek().copied();
+                if ends_statement(line, depth, next) {
+                    let statement = buffer.trim_end().to_string();
+                    if collecting_import {
+                        imports.push(statement);
+                    } else {
+                        exports.push(statement);
+                    }
+                    buffer.clear();
+                    collecting = false;
+                    depth = 0;
+                }
+                continue;
             }
-            continue;
         }
 
         if collecting {
@@ -128,7 +160,12 @@ pub fn collect_root_imports(body: &str) -> (Vec<String>, Vec<String>) {
             depth += paren_delta(line);
             let next = lines_iter.peek().copied();
             if ends_statement(line, depth, next) {
-                hoisted.push(buffer.trim_end().to_string());
+                let statement = buffer.trim_end().to_string();
+                if collecting_import {
+                    imports.push(statement);
+                } else {
+                    exports.push(statement);
+                }
                 buffer.clear();
                 collecting = false;
                 depth = 0;
@@ -139,10 +176,15 @@ pub fn collect_root_imports(body: &str) -> (Vec<String>, Vec<String>) {
     }
 
     if collecting && !buffer.is_empty() {
-        hoisted.push(buffer.trim_end().to_string());
+        let statement = buffer.trim_end().to_string();
+        if collecting_import {
+            imports.push(statement);
+        } else {
+            exports.push(statement);
+        }
     }
 
-    (hoisted, body_lines)
+    (HoistedStatements { imports, exports }, body_lines)
 }
 
 fn is_import_start(trimmed: &str) -> bool {
@@ -455,5 +497,90 @@ mod tests {
         // Too few markers
         assert!(!is_closing_fence("``"));
         assert!(!is_closing_fence("~"));
+    }
+
+    #[test]
+    fn collects_imports_and_exports_separately() {
+        let body = "import A from './a'\nexport const x = 1;\nconst y = 2;";
+        let (hoisted, rest) = collect_root_statements(body);
+        assert_eq!(hoisted.imports, vec!["import A from './a'"]);
+        assert_eq!(hoisted.exports, vec!["export const x = 1;"]);
+        assert_eq!(rest, vec!["const y = 2;"]);
+    }
+
+    #[test]
+    fn identifies_default_export() {
+        let body = "export default function App() { return 1; }\n# Title";
+        let (hoisted, rest) = collect_root_statements(body);
+        assert!(hoisted.imports.is_empty());
+        assert_eq!(hoisted.exports.len(), 1);
+        assert!(hoisted.exports[0].starts_with("export default"));
+        assert_eq!(rest, vec!["# Title"]);
+    }
+
+    #[test]
+    fn handles_multiline_export() {
+        let body = "export const config = {\n  foo: 1,\n  bar: 2,\n};\nContent";
+        let (hoisted, rest) = collect_root_statements(body);
+        assert!(hoisted.imports.is_empty());
+        assert_eq!(
+            hoisted.exports,
+            vec!["export const config = {\n  foo: 1,\n  bar: 2,\n};"]
+        );
+        assert_eq!(rest, vec!["Content"]);
+    }
+
+    #[test]
+    fn separates_multiple_imports_and_exports() {
+        let body = "import A from 'a';\nimport B from 'b';\nexport const x = 1;\nexport const y = 2;\n# Heading";
+        let (hoisted, rest) = collect_root_statements(body);
+        assert_eq!(
+            hoisted.imports,
+            vec!["import A from 'a';", "import B from 'b';"]
+        );
+        assert_eq!(
+            hoisted.exports,
+            vec!["export const x = 1;", "export const y = 2;"]
+        );
+        assert_eq!(rest, vec!["# Heading"]);
+    }
+
+    #[test]
+    fn handles_export_all_from() {
+        let body = "export * from './module';\nText";
+        let (hoisted, rest) = collect_root_statements(body);
+        assert!(hoisted.imports.is_empty());
+        assert_eq!(hoisted.exports, vec!["export * from './module';"]);
+        assert_eq!(rest, vec!["Text"]);
+    }
+
+    #[test]
+    fn handles_export_named_from() {
+        let body = "export { foo, bar } from './module';\nText";
+        let (hoisted, rest) = collect_root_statements(body);
+        assert!(hoisted.imports.is_empty());
+        assert_eq!(
+            hoisted.exports,
+            vec!["export { foo, bar } from './module';"]
+        );
+        assert_eq!(rest, vec!["Text"]);
+    }
+
+    #[test]
+    fn ignores_exports_inside_fence() {
+        let body = "```\nexport const bad = true\n```\nexport const good = false;";
+        let (hoisted, rest) = collect_root_statements(body);
+        assert!(hoisted.imports.is_empty());
+        assert_eq!(hoisted.exports, vec!["export const good = false;"]);
+        assert_eq!(rest, vec!["```", "export const bad = true", "```"]);
+    }
+
+    #[test]
+    fn backward_compat_collect_root_imports() {
+        // Ensure collect_root_imports still returns combined imports + exports
+        let body = "import A from 'a';\nexport const x = 1;\nText";
+        let (hoisted, rest) = collect_root_imports(body);
+        assert_eq!(hoisted, vec!["import A from 'a';", "export const x = 1;"]);
+        assert_eq!(rest, vec!["Text"]);
     }
 }

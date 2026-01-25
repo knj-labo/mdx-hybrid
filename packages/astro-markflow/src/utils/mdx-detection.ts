@@ -7,6 +7,22 @@ import { stripFrontmatter } from './frontmatter.js';
 import type { MdxImportHandlingOptions } from '../types.js';
 
 /**
+ * Detailed result from pattern detection.
+ */
+export interface MdxPatternDetectionResult {
+  /** Whether problematic patterns were found */
+  hasProblematicPatterns: boolean;
+  /** Human-readable reason for fallback */
+  reason?: string;
+  /** Export statements found (if any) */
+  exports?: string[];
+  /** Disallowed import sources found (if any) */
+  disallowedImports?: string[];
+  /** All import sources found */
+  allImports?: string[];
+}
+
+/**
  * Strip code fences from content to avoid false positives.
  */
 export function stripCodeFences(content: string): string {
@@ -51,6 +67,92 @@ function extractImportSources(content: string): string[] {
 }
 
 /**
+ * Extract export statement types from content.
+ */
+function extractExportStatements(content: string): string[] {
+  const exports: string[] = [];
+  const exportRegex = /^export\s+(const|let|var|function|class|default)\b/gm;
+  let match;
+  while ((match = exportRegex.exec(content)) !== null) {
+    exports.push(`export ${match[1]}`);
+  }
+  return exports;
+}
+
+/**
+ * Detect MDX patterns that markdown-rs cannot parse correctly with detailed results.
+ * This includes:
+ * - MDX import statements (import ... from '...')
+ *
+ * Note: Export statements are now handled by Rust (hoisted_exports) and no longer
+ * trigger fallback. This significantly reduces fallback rate.
+ *
+ * @param source - The markdown/MDX source content
+ * @param options - MDX handling options
+ * @returns Detailed detection result with reasons
+ */
+export function detectProblematicMdxPatterns(
+  source: string,
+  options?: MdxImportHandlingOptions
+): MdxPatternDetectionResult {
+  // Skip frontmatter when checking for imports
+  let content = stripFrontmatter(source);
+
+  // Optionally strip code fences (default: true when options provided)
+  const ignoreCodeFences = options?.ignoreCodeFences ?? true;
+  if (ignoreCodeFences) {
+    content = stripCodeFences(content);
+  }
+
+  // Note: Export statements are now handled by Rust and no longer trigger fallback
+  // The Rust compiler extracts exports via collect_root_statements() and includes
+  // them in hoisted_exports, which TypeScript then injects into the JSX module.
+
+  // Check for import statements
+  const importPatterns = [
+    /^import\s+(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s+['"][^'"]+['"]/m,
+    /^import\s+['"][^'"]+['"]/m,
+  ];
+
+  const hasImports = importPatterns.some((pattern) => pattern.test(content));
+  if (!hasImports) {
+    return { hasProblematicPatterns: false };
+  }
+
+  const allImports = extractImportSources(content);
+
+  // If no allowed imports configured, any import is problematic
+  const allowImports = options?.allowImports;
+  if (!allowImports || allowImports.length === 0) {
+    return {
+      hasProblematicPatterns: true,
+      reason: `Contains imports with no allowImports configured: ${allImports.slice(0, 3).join(', ')}${allImports.length > 3 ? ` (+${allImports.length - 3} more)` : ''}`,
+      allImports,
+      disallowedImports: allImports,
+    };
+  }
+
+  // Check if all imports are from allowed sources
+  const disallowedImports = allImports.filter(
+    (src) => !isAllowedImport(src, allowImports)
+  );
+
+  if (disallowedImports.length > 0) {
+    return {
+      hasProblematicPatterns: true,
+      reason: `Contains disallowed imports: ${disallowedImports.slice(0, 3).join(', ')}${disallowedImports.length > 3 ? ` (+${disallowedImports.length - 3} more)` : ''}`,
+      allImports,
+      disallowedImports,
+    };
+  }
+
+  return {
+    hasProblematicPatterns: false,
+    allImports,
+  };
+}
+
+/**
  * Detect MDX patterns that markdown-rs cannot parse correctly.
  * This includes:
  * - MDX import statements (import ... from '...')
@@ -64,43 +166,5 @@ export function hasProblematicMdxPatterns(
   source: string,
   options?: MdxImportHandlingOptions
 ): boolean {
-  // Skip frontmatter when checking for imports/exports
-  let content = stripFrontmatter(source);
-
-  // Optionally strip code fences (default: true when options provided)
-  const ignoreCodeFences = options?.ignoreCodeFences ?? true;
-  if (ignoreCodeFences) {
-    content = stripCodeFences(content);
-  }
-
-  // Check for export statements (always problematic)
-  const exportPattern = /^export\s+(?:const|let|var|function|class|default)\b/m;
-  if (exportPattern.test(content)) {
-    return true;
-  }
-
-  // Check for import statements
-  const importPatterns = [
-    /^import\s+(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s+['"][^'"]+['"]/m,
-    /^import\s+['"][^'"]+['"]/m,
-  ];
-
-  const hasImports = importPatterns.some((pattern) => pattern.test(content));
-  if (!hasImports) {
-    return false;
-  }
-
-  // If no allowed imports configured, any import is problematic
-  const allowImports = options?.allowImports;
-  if (!allowImports || allowImports.length === 0) {
-    return true;
-  }
-
-  // Check if all imports are from allowed sources
-  const importSources = extractImportSources(content);
-  const hasDisallowedImports = importSources.some(
-    (source) => !isAllowedImport(source, allowImports)
-  );
-
-  return hasDisallowedImports;
+  return detectProblematicMdxPatterns(source, options).hasProblematicPatterns;
 }

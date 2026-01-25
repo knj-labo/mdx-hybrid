@@ -378,6 +378,8 @@ pub struct AstroModuleOptions<'a> {
     pub jsx: &'a str,
     /// Hoisted import statements.
     pub hoisted_imports: &'a [String],
+    /// Hoisted export statements (non-default).
+    pub hoisted_exports: &'a [String],
     /// Serialized frontmatter as JSON.
     pub frontmatter_json: &'a str,
     /// Serialized headings as JSON.
@@ -429,7 +431,12 @@ pub fn generate_astro_module(options: &AstroModuleOptions<'_>) -> String {
         let _ = writeln!(code, "{}", import);
     }
 
-    // Exports
+    // Hoisted exports (user-defined exports from the MDX file)
+    for export in options.hoisted_exports {
+        let _ = writeln!(code, "{}", export);
+    }
+
+    // Standard Astro exports
     let _ = writeln!(
         code,
         "export const frontmatter = {};",
@@ -614,6 +621,7 @@ mod tests {
         let options = AstroModuleOptions {
             jsx: "<p>Hello</p>",
             hoisted_imports: &[],
+            hoisted_exports: &[],
             frontmatter_json: "{}",
             headings_json: "[]",
             filepath: "/test.md",
@@ -637,6 +645,7 @@ mod tests {
         let options = AstroModuleOptions {
             jsx: "<p>Hello</p>",
             hoisted_imports: &[],
+            hoisted_exports: &[],
             frontmatter_json: "{}",
             headings_json: "[]",
             filepath: "/test.md",
@@ -656,6 +665,7 @@ mod tests {
         let options = AstroModuleOptions {
             jsx: "<p>Hello</p>",
             hoisted_imports: &[],
+            hoisted_exports: &[],
             frontmatter_json: "{}",
             headings_json: "[]",
             filepath: "/test.md",
@@ -667,5 +677,32 @@ mod tests {
         let code = generate_astro_module(&options);
 
         assert!(!code.contains("export default MarkflowContent;"));
+    }
+
+    #[test]
+    fn test_generate_astro_module_with_exports() {
+        let options = AstroModuleOptions {
+            jsx: "<p>Hello</p>",
+            hoisted_imports: &["import Foo from './foo';".to_string()],
+            hoisted_exports: &["export const bar = 1;".to_string()],
+            frontmatter_json: "{}",
+            headings_json: "[]",
+            filepath: "/test.md",
+            url: None,
+            layout_import: None,
+            has_user_default_export: false,
+        };
+
+        let code = generate_astro_module(&options);
+
+        assert!(code.contains("import Foo from './foo';"));
+        assert!(code.contains("export const bar = 1;"));
+        // Exports should appear before the component
+        let export_pos = code.find("export const bar = 1;").unwrap();
+        let component_pos = code.find("const MarkflowContent").unwrap();
+        assert!(
+            export_pos < component_pos,
+            "User exports should appear before MarkflowContent"
+        );
     }
 }
