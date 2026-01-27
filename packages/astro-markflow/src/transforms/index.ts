@@ -3,7 +3,11 @@
  * @module transforms
  */
 
-import { rewriteExpressiveCodeBlocks, injectExpressiveCodeComponent } from './expressive-code.js';
+import {
+  rewriteExpressiveCodeBlocks,
+  rewriteSetHtmlCodeBlocks,
+  injectExpressiveCodeComponent,
+} from './expressive-code.js';
 import {
   injectAstroComponents,
   injectStarlightComponents,
@@ -16,16 +20,24 @@ import { normalizeFileTree } from './normalize-filetree.js';
 
 /**
  * Transform that rewrites <pre><code> blocks to ExpressiveCode components.
+ * Also handles code blocks inside set:html JSON strings (component slots).
  * Only runs if expressiveCode is configured.
  */
 export function transformExpressiveCode(ctx: TransformContext): TransformContext {
   if (!ctx.config.expressiveCode || !ctx.code) {
     return ctx;
   }
-  const { code, changed } = rewriteExpressiveCodeBlocks(
-    ctx.code,
-    ctx.config.expressiveCode.component
-  );
+
+  const componentName = ctx.config.expressiveCode.component;
+
+  // First, rewrite loose <pre><code> blocks
+  let { code, changed } = rewriteExpressiveCodeBlocks(ctx.code, componentName);
+
+  // Then, rewrite code blocks inside set:html JSON strings
+  const setHtmlResult = rewriteSetHtmlCodeBlocks(code, componentName);
+  code = setHtmlResult.code;
+  changed = changed || setHtmlResult.changed;
+
   if (changed) {
     return {
       ...ctx,
@@ -65,7 +77,11 @@ export function transformInjectComponentsFromRegistry(ctx: TransformContext): Tr
 }
 
 // Re-export from sub-modules
-export { rewriteExpressiveCodeBlocks, injectExpressiveCodeComponent } from './expressive-code.js';
+export {
+  rewriteExpressiveCodeBlocks,
+  rewriteSetHtmlCodeBlocks,
+  injectExpressiveCodeComponent,
+} from './expressive-code.js';
 export {
   injectAstroComponents,
   injectStarlightComponents,
