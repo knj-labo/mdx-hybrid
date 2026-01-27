@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { collectImportedNames, insertAfterImports } from './imports.js';
+import { collectImportedNames, insertAfterImports, extractImportStatements } from './imports.js';
 
 describe('collectImportedNames', () => {
   it('should collect default imports', () => {
@@ -282,5 +282,171 @@ export default function Content() {
     // Should not modify code
     const shouldNotModify = imported.has('Aside');
     expect(shouldNotModify).toBe(true);
+  });
+});
+
+describe('extractImportStatements', () => {
+  it('should extract default imports', () => {
+    const code = `import Card from '~/components/Landing/Card.astro';
+
+# Hello World`;
+
+    const imports = extractImportStatements(code);
+
+    expect(imports).toHaveLength(1);
+    expect(imports[0]).toBe("import Card from '~/components/Landing/Card.astro';");
+  });
+
+  it('should extract named imports', () => {
+    const code = `import { useState, useEffect } from 'react';
+
+export default function App() {}`;
+
+    const imports = extractImportStatements(code);
+
+    expect(imports).toHaveLength(1);
+    expect(imports[0]).toBe("import { useState, useEffect } from 'react';");
+  });
+
+  it('should extract namespace imports', () => {
+    const code = `import * as React from 'react';`;
+
+    const imports = extractImportStatements(code);
+
+    expect(imports).toHaveLength(1);
+    expect(imports[0]).toBe("import * as React from 'react';");
+  });
+
+  it('should extract multiple import statements', () => {
+    const code = `import Card from '~/components/Card.astro';
+import { Aside, Tabs } from '@astrojs/starlight/components';
+import * as utils from './utils';
+
+# Hello World
+
+<Card>Content</Card>`;
+
+    const imports = extractImportStatements(code);
+
+    expect(imports).toHaveLength(3);
+    expect(imports[0]).toBe("import Card from '~/components/Card.astro';");
+    expect(imports[1]).toBe("import { Aside, Tabs } from '@astrojs/starlight/components';");
+    expect(imports[2]).toBe("import * as utils from './utils';");
+  });
+
+  it('should ignore dynamic imports', () => {
+    const code = `import Card from './Card';
+const lazy = import('./lazy.js');`;
+
+    const imports = extractImportStatements(code);
+
+    expect(imports).toHaveLength(1);
+    expect(imports[0]).toBe("import Card from './Card';");
+  });
+
+  it('should return empty array for code without imports', () => {
+    const code = `# Hello World
+
+This is some markdown content.`;
+
+    const imports = extractImportStatements(code);
+
+    expect(imports).toHaveLength(0);
+  });
+
+  it('should return empty array for empty or invalid input', () => {
+    expect(extractImportStatements('')).toHaveLength(0);
+    expect(extractImportStatements(null as unknown as string)).toHaveLength(0);
+    expect(extractImportStatements(undefined as unknown as string)).toHaveLength(0);
+  });
+
+  it('should ignore imports inside code fences', () => {
+    const code = `import Card from './Card.astro';
+
+\`\`\`js
+import React from 'react';
+\`\`\`
+
+Some content`;
+
+    const imports = extractImportStatements(code);
+
+    expect(imports).toHaveLength(1);
+    expect(imports[0]).toBe("import Card from './Card.astro';");
+  });
+
+  it('should handle MDX with frontmatter', () => {
+    const code = `---
+title: Hello
+---
+import Card from '~/components/Card.astro';
+
+# Hello World`;
+
+    const imports = extractImportStatements(code);
+
+    expect(imports).toHaveLength(1);
+    expect(imports[0]).toBe("import Card from '~/components/Card.astro';");
+  });
+
+  it('should preserve exact import statement format', () => {
+    const code = `import { Component as Comp } from 'lib';`;
+
+    const imports = extractImportStatements(code);
+
+    expect(imports).toHaveLength(1);
+    expect(imports[0]).toBe("import { Component as Comp } from 'lib';");
+  });
+
+  it('should extract multi-line imports', () => {
+    const code = `import {
+  Foo,
+  Bar
+} from 'something';`;
+
+    const result = extractImportStatements(code);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toContain('Foo');
+    expect(result[0]).toContain('Bar');
+    expect(result[0]).toContain('something');
+  });
+
+  it('should extract multiple multi-line imports', () => {
+    const code = `import {
+  Aside,
+  Tabs
+} from '@astrojs/starlight/components';
+import {
+  Card,
+  CardGrid
+} from './components';
+
+# Content`;
+
+    const result = extractImportStatements(code);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toContain('Aside');
+    expect(result[0]).toContain('Tabs');
+    expect(result[1]).toContain('Card');
+    expect(result[1]).toContain('CardGrid');
+  });
+
+  it('should handle mix of single-line and multi-line imports', () => {
+    const code = `import React from 'react';
+import {
+  Foo,
+  Bar
+} from 'module';
+import { Simple } from 'simple';`;
+
+    const result = extractImportStatements(code);
+
+    expect(result).toHaveLength(3);
+    expect(result[0]).toBe("import React from 'react';");
+    expect(result[1]).toContain('Foo');
+    expect(result[1]).toContain('Bar');
+    expect(result[2]).toBe("import { Simple } from 'simple';");
   });
 });
