@@ -157,11 +157,12 @@ fn preprocess_jsx_expression_braces(s: &str) -> String {
         .replace("&#125; ", "} ")
 }
 
-/// Finds the position of `>` that closes a tag, handling quoted attributes.
+/// Finds the position of `>` that closes a tag, handling quoted attributes and JSX expressions.
 fn find_tag_end(bytes: &[u8]) -> Option<usize> {
     let mut i = 1; // Skip the opening <
     let mut in_quote = false;
     let mut quote_char = b'"';
+    let mut brace_depth = 0;
 
     while i < bytes.len() {
         let b = bytes[i];
@@ -169,9 +170,18 @@ fn find_tag_end(bytes: &[u8]) -> Option<usize> {
             if b == quote_char {
                 in_quote = false;
             }
+        } else if brace_depth > 0 {
+            // Inside JSX expression - track nested braces
+            if b == b'{' {
+                brace_depth += 1;
+            } else if b == b'}' {
+                brace_depth -= 1;
+            }
         } else if b == b'"' || b == b'\'' {
             in_quote = true;
             quote_char = b;
+        } else if b == b'{' {
+            brace_depth = 1;
         } else if b == b'>' {
             return Some(i);
         }

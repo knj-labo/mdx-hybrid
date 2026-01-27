@@ -35,22 +35,29 @@ function escapeJsString(value: string): string {
 }
 
 /**
- * Finds the end of an HTML tag, accounting for > inside quoted attributes.
+ * Finds the end of an HTML tag, accounting for > inside quoted attributes and JSX expressions.
  * Returns the index of the closing > or -1 if not found.
  */
 function findTagEnd(str: string, start: number): number {
   let i = start + 1; // Skip opening <
   let inQuote = false;
   let quoteChar = '';
+  let braceDepth = 0;
 
   while (i < str.length) {
     const c = str[i];
     if (inQuote) {
       if (c === quoteChar) inQuote = false;
+    } else if (braceDepth > 0) {
+      // Inside JSX expression - track nested braces
+      if (c === '{') braceDepth++;
+      else if (c === '}') braceDepth--;
     } else {
       if (c === '"' || c === "'") {
         inQuote = true;
         quoteChar = c;
+      } else if (c === '{') {
+        braceDepth = 1;
       } else if (c === '>') {
         return i;
       }
