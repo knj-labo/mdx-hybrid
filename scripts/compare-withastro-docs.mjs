@@ -89,6 +89,12 @@ async function main() {
   console.log(`Harness summary written to ${summary}`);
   console.log(report);
 
+  // Log full sample details for debugging
+  if (report.semantic?.samples?.length > 0) {
+    console.log('\n=== SEMANTIC DIFF SAMPLES ===');
+    console.log(JSON.stringify(report.semantic.samples, null, 2));
+  }
+
   if (semantic && semantic.differences > 0) {
     process.exitCode = 1;
   }
