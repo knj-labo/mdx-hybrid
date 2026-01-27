@@ -192,44 +192,42 @@ fn find_tag_end(bytes: &[u8]) -> Option<usize> {
 
 /// Converts HTML entities and JSX-special characters in text content.
 fn convert_entities_in_text(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let len = bytes.len();
     let mut result = String::with_capacity(text.len() * 2);
-    let mut i = 0;
+    let mut chars = text.char_indices().peekable();
 
-    while i < len {
-        match bytes[i] {
-            b'&' => {
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '&' => {
+                let bytes = &text.as_bytes()[i..];
                 // Try to match known entities first
-                if let Some(entity_match) = try_match_entity_text(&bytes[i..]) {
+                if let Some(entity_match) = try_match_entity_text(bytes) {
                     result.push_str(entity_match.replacement);
-                    i += entity_match.len;
+                    // Skip the remaining entity characters
+                    for _ in 1..entity_match.len {
+                        chars.next();
+                    }
                     continue;
                 }
                 // Check if this looks like an unknown HTML entity
-                if is_unknown_entity(&bytes[i..]) {
+                if is_unknown_entity(bytes) {
                     // Unknown entity like &nbsp; - leave as-is
                     result.push('&');
-                    i += 1;
                 } else {
                     // Literal & not part of entity - convert to JSX expression
                     result.push_str("{\"&\"}");
-                    i += 1;
                 }
             }
-            b'{' => {
+            '{' => {
                 // Raw { in text content - convert to JSX expression
                 result.push_str("{\"{\"}");
-                i += 1;
             }
-            b'}' => {
+            '}' => {
                 // Raw } in text content - convert to JSX expression
                 result.push_str("{\"}\"}");
-                i += 1;
             }
             _ => {
-                result.push(bytes[i] as char);
-                i += 1;
+                // Correctly handles multi-byte UTF-8 characters
+                result.push(c);
             }
         }
     }
@@ -960,6 +958,19 @@ mod tests {
 
         // Curly brace entities in text content should become JSX expressions
         assert_eq!(html_entities_to_jsx("&#123;&#125;"), "{\"{\"}{\"}\"}");
+
+        // UTF-8 multibyte characters (CJK, emoji) should be preserved correctly
+        assert_eq!(html_entities_to_jsx("日本語テキスト"), "日本語テキスト");
+        assert_eq!(html_entities_to_jsx("Hello 世界!"), "Hello 世界!");
+        assert_eq!(html_entities_to_jsx("Emoji: 🎉🚀"), "Emoji: 🎉🚀");
+        assert_eq!(
+            html_entities_to_jsx("中文 &amp; 日本語"),
+            "中文 {\"&\"} 日本語"
+        );
+        assert_eq!(
+            html_entities_to_jsx("<p>こんにちは &lt;world&gt;</p>"),
+            "<p>こんにちは {\"<\"}world{\">\"}</p>"
+        );
     }
 
     #[test]
