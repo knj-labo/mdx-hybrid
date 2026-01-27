@@ -22,6 +22,7 @@ import { blocksToJsx } from './transforms/blocks-to-jsx.js';
 import { resolveExpressiveCodeConfig } from './utils/config.js';
 import { stripFrontmatter } from './utils/frontmatter.js';
 import { hasProblematicMdxPatterns, detectProblematicMdxPatterns } from './utils/mdx-detection.js';
+import { extractImportStatements } from './utils/imports.js';
 import { stripQuery, deriveFileOptions, shouldCompile } from './utils/paths.js';
 import {
   VIRTUAL_MODULE_PREFIX,
@@ -754,6 +755,9 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         if (IS_MDAST) {
           const binding = await loadMarkflowBinding();
 
+          // Extract user imports BEFORE processing (user imports take precedence over registry)
+          const userImports = extractImportStatements(processedSource);
+
           // Strip frontmatter before passing to parseBlocks
           // Otherwise the mdast pipeline renders YAML as regular text
           const contentSource = stripFrontmatter(processedSource);
@@ -768,7 +772,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           frontmatter = frontmatterResult.frontmatter || {};
 
           result = {
-            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry, filename),
+            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry, filename, userImports),
             map: null,
             frontmatter_json: JSON.stringify(frontmatter),
             headings,
