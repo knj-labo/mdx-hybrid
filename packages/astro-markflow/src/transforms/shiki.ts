@@ -114,7 +114,8 @@ export async function highlightHtmlBlocks(
 
 /**
  * Rewrites Astro set:html fragments with Shiki-highlighted code.
- * Searches for <Fragment set:html={...} /> patterns and applies syntax highlighting.
+ * Searches for <_Fragment set:html={...} /> patterns and applies syntax highlighting.
+ * Processes ALL occurrences in the code, not just the first one.
  */
 export async function rewriteAstroSetHtml(
   code: string,
@@ -123,24 +124,39 @@ export async function rewriteAstroSetHtml(
   if (!code || typeof code !== 'string') {
     return code;
   }
-  const marker = '<Fragment set:html={';
-  const idx = code.indexOf(marker);
-  if (idx === -1) return code;
-  const start = idx + marker.length;
-  const end = code.indexOf('} />', start);
-  if (end === -1) return code;
 
-  const literal = code.slice(start, end).trim();
-  if (!literal) return code;
+  const marker = '<_Fragment set:html={';
+  let result = code;
+  let searchStart = 0;
 
-  let html: string;
-  try {
-    html = JSON.parse(literal) as string;
-  } catch {
-    return code;
+  // Process ALL occurrences in a loop
+  while (true) {
+    const idx = result.indexOf(marker, searchStart);
+    if (idx === -1) break;
+
+    const start = idx + marker.length;
+    const end = result.indexOf('} />', start);
+    if (end === -1) break;
+
+    const literal = result.slice(start, end).trim();
+    if (!literal) {
+      searchStart = end;
+      continue;
+    }
+
+    let html: string;
+    try {
+      html = JSON.parse(literal) as string;
+    } catch {
+      searchStart = end;
+      continue;
+    }
+
+    const rewritten = await highlightHtmlBlocks(html, highlight);
+    const encoded = JSON.stringify(rewritten);
+    result = result.slice(0, start) + encoded + result.slice(end);
+    searchStart = start + encoded.length + 4; // Move past this occurrence
   }
 
-  const rewritten = await highlightHtmlBlocks(html, highlight);
-  const encoded = JSON.stringify(rewritten);
-  return `${code.slice(0, start)}${encoded}${code.slice(end)}`;
+  return result;
 }

@@ -61,6 +61,68 @@ export function rewriteExpressiveCodeBlocks(
 }
 
 /**
+ * Rewrites code blocks inside Fragment set:html JSON strings.
+ *
+ * Handles: <_Fragment set:html={"<pre><code>...</code></pre>"} />
+ *
+ * When a code block inside a slot is transformed to ExpressiveCode component,
+ * the entire Fragment wrapper is replaced with the component directly.
+ */
+export function rewriteSetHtmlCodeBlocks(
+  code: string,
+  componentName: string
+): RewriteResult {
+  if (!code || typeof code !== 'string') {
+    return { code, changed: false };
+  }
+
+  const marker = '<_Fragment set:html={';
+  let result = code;
+  let changed = false;
+  let searchStart = 0;
+
+  while (true) {
+    const idx = result.indexOf(marker, searchStart);
+    if (idx === -1) break;
+
+    const start = idx + marker.length;
+    const end = result.indexOf('} />', start);
+    if (end === -1) break;
+
+    const literal = result.slice(start, end).trim();
+    let html: string;
+    try {
+      html = JSON.parse(literal) as string;
+    } catch {
+      searchStart = end;
+      continue;
+    }
+
+    // Apply ExpressiveCode rewrite to the HTML content
+    const rewritten = rewriteExpressiveCodeBlocks(html, componentName);
+    if (rewritten.changed) {
+      changed = true;
+      // If the rewritten content now has components, embed directly
+      // (replace the entire Fragment set:html wrapper)
+      if (/<[A-Z]/.test(rewritten.code)) {
+        // Replace Fragment set:html with direct content
+        result = result.slice(0, idx) + rewritten.code + result.slice(end + 4);
+        searchStart = idx + rewritten.code.length;
+      } else {
+        // Still pure HTML, re-encode
+        const encoded = JSON.stringify(rewritten.code);
+        result = result.slice(0, start) + encoded + result.slice(end);
+        searchStart = start + encoded.length + 4;
+      }
+    } else {
+      searchStart = end + 4;
+    }
+  }
+
+  return { code: result, changed };
+}
+
+/**
  * Injects ExpressiveCode component import if needed.
  */
 export function injectExpressiveCodeComponent(

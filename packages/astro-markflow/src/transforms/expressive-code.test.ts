@@ -2,6 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import {
   decodeHtmlEntities,
   rewriteExpressiveCodeBlocks,
+  rewriteSetHtmlCodeBlocks,
   injectExpressiveCodeComponent,
 } from './expressive-code.js';
 
@@ -106,6 +107,92 @@ describe('rewriteExpressiveCodeBlocks', () => {
     const code = '<pre><code>const str = "hello";</code></pre>';
     const result = rewriteExpressiveCodeBlocks(code, 'Code');
     expect(result.code).toBe('<Code code={"const str = \\"hello\\";"} />');
+    expect(result.changed).toBe(true);
+  });
+});
+
+describe('rewriteSetHtmlCodeBlocks', () => {
+  test('returns unchanged when no Fragment marker found', () => {
+    const code = '<div><p>Hello</p></div>';
+    const result = rewriteSetHtmlCodeBlocks(code, 'Code');
+    expect(result.code).toBe(code);
+    expect(result.changed).toBe(false);
+  });
+
+  test('returns unchanged when no code blocks inside Fragment', () => {
+    const code = '<_Fragment set:html={"<p>Hello world</p>"} />';
+    const result = rewriteSetHtmlCodeBlocks(code, 'Code');
+    expect(result.code).toBe(code);
+    expect(result.changed).toBe(false);
+  });
+
+  test('rewrites code block inside Fragment', () => {
+    const code = '<_Fragment set:html={"<pre><code>const x = 1;</code></pre>"} />';
+    const result = rewriteSetHtmlCodeBlocks(code, 'Code');
+    expect(result.code).toBe('<Code code={"const x = 1;"} />');
+    expect(result.changed).toBe(true);
+  });
+
+  test('rewrites code block with language inside Fragment', () => {
+    const html = '<pre><code class="language-js">let a = 1;</code></pre>';
+    const code = `<_Fragment set:html={${JSON.stringify(html)}} />`;
+    const result = rewriteSetHtmlCodeBlocks(code, 'Code');
+    expect(result.code).toBe('<Code code={"let a = 1;"} lang="js" />');
+    expect(result.changed).toBe(true);
+  });
+
+  test('processes multiple Fragment occurrences', () => {
+    const code = `
+      <_Fragment set:html={"<pre><code>first</code></pre>"} />
+      <_Fragment set:html={"<pre><code>second</code></pre>"} />
+    `;
+    const result = rewriteSetHtmlCodeBlocks(code, 'Code');
+    expect(result.code).toContain('<Code code={"first"} />');
+    expect(result.code).toContain('<Code code={"second"} />');
+    expect(result.changed).toBe(true);
+  });
+
+  test('preserves surrounding JSX', () => {
+    const code = `
+      <SplitCard>
+        <_Fragment set:html={"<pre><code>npm install</code></pre>"} />
+      </SplitCard>
+    `;
+    const result = rewriteSetHtmlCodeBlocks(code, 'Code');
+    expect(result.code).toContain('<SplitCard>');
+    expect(result.code).toContain('</SplitCard>');
+    expect(result.code).toContain('<Code code={"npm install"} />');
+    expect(result.changed).toBe(true);
+  });
+
+  test('uses custom component name', () => {
+    const code = '<_Fragment set:html={"<pre><code>test</code></pre>"} />';
+    const result = rewriteSetHtmlCodeBlocks(code, 'MyCodeBlock');
+    expect(result.code).toBe('<MyCodeBlock code={"test"} />');
+    expect(result.changed).toBe(true);
+  });
+
+  test('handles JSON with escaped quotes', () => {
+    const html = '<pre><code>const str = "hello";</code></pre>';
+    const code = `<_Fragment set:html={${JSON.stringify(html)}} />`;
+    const result = rewriteSetHtmlCodeBlocks(code, 'Code');
+    expect(result.code).toBe('<Code code={"const str = \\"hello\\";"} />');
+    expect(result.changed).toBe(true);
+  });
+
+  test('skips invalid JSON', () => {
+    const code = '<_Fragment set:html={not valid json} />';
+    const result = rewriteSetHtmlCodeBlocks(code, 'Code');
+    expect(result.code).toBe(code);
+    expect(result.changed).toBe(false);
+  });
+
+  test('handles mixed HTML and code - keeps Fragment for mixed content', () => {
+    const html = '<p>text</p><pre><code>hello</code></pre>';
+    const code = `<_Fragment set:html={${JSON.stringify(html)}} />`;
+    const result = rewriteSetHtmlCodeBlocks(code, 'Code');
+    // When there's mixed content, the code block is replaced inline
+    expect(result.code).toContain('<Code code={"hello"} />');
     expect(result.changed).toBe(true);
   });
 });

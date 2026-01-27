@@ -100,34 +100,34 @@ describe('rewriteAstroSetHtml', () => {
   });
 
   test('returns unchanged when marker found but no closing', async () => {
-    const code = `<Fragment set:html={"<div>hello</div>`;
+    const code = `<_Fragment set:html={"<div>hello</div>`;
     const result = await rewriteAstroSetHtml(code, mockHighlight);
     expect(result).toBe(code);
   });
 
   test('returns unchanged when literal is empty', async () => {
-    const code = `<Fragment set:html={} />`;
+    const code = `<_Fragment set:html={} />`;
     const result = await rewriteAstroSetHtml(code, mockHighlight);
     expect(result).toBe(code);
   });
 
   test('returns unchanged when JSON is invalid', async () => {
-    const code = `<Fragment set:html={not valid json} />`;
+    const code = `<_Fragment set:html={not valid json} />`;
     const result = await rewriteAstroSetHtml(code, mockHighlight);
     expect(result).toBe(code);
   });
 
   test('highlights code blocks in Fragment', async () => {
-    const code = `<Fragment set:html={"<pre><code>const x = 1;</code></pre>"} />`;
+    const code = `<_Fragment set:html={"<pre><code>const x = 1;</code></pre>"} />`;
     const result = await rewriteAstroSetHtml(code, mockHighlight);
     expect(result).toContain('CONST X = 1;');
-    expect(result).toContain('<Fragment set:html={');
+    expect(result).toContain('<_Fragment set:html={');
     expect(result).toContain('} />');
   });
 
   test('highlights multiple code blocks in Fragment', async () => {
     const html = '<pre><code class="language-js">let a;</code></pre><pre><code class="language-ts">let b;</code></pre>';
-    const code = `<Fragment set:html={${JSON.stringify(html)}} />`;
+    const code = `<_Fragment set:html={${JSON.stringify(html)}} />`;
     const result = await rewriteAstroSetHtml(code, mockHighlight);
     expect(result).toContain('LET A;');
     expect(result).toContain('LET B;');
@@ -138,7 +138,7 @@ describe('rewriteAstroSetHtml', () => {
       import { Fragment } from 'astro';
 
       <div>
-        <Fragment set:html={"<pre><code>hello</code></pre>"} />
+        <_Fragment set:html={"<pre><code>hello</code></pre>"} />
       </div>
     `;
     const result = await rewriteAstroSetHtml(code, mockHighlight);
@@ -149,28 +149,28 @@ describe('rewriteAstroSetHtml', () => {
   });
 
   test('handles HTML with no code blocks', async () => {
-    const code = `<Fragment set:html={"<div><p>No code here</p></div>"} />`;
+    const code = `<_Fragment set:html={"<div><p>No code here</p></div>"} />`;
     const result = await rewriteAstroSetHtml(code, mockHighlight);
     // Should still parse and serialize, result may differ slightly
-    expect(result).toContain('<Fragment set:html={');
+    expect(result).toContain('<_Fragment set:html={');
     expect(result).toContain('No code here');
   });
 
   test('handles escaped quotes in JSON', async () => {
     const html = '<pre><code>const str = \\"hello\\";</code></pre>';
-    const code = `<Fragment set:html={${JSON.stringify(html)}} />`;
+    const code = `<_Fragment set:html={${JSON.stringify(html)}} />`;
     const result = await rewriteAstroSetHtml(code, mockHighlight);
     expect(result).toContain('CONST STR');
   });
 
-  test('only processes first Fragment occurrence', async () => {
+  test('processes ALL Fragment occurrences', async () => {
     const code = `
-      <Fragment set:html={"<pre><code>first</code></pre>"} />
-      <Fragment set:html={"<pre><code>second</code></pre>"} />
+      <_Fragment set:html={"<pre><code>first</code></pre>"} />
+      <_Fragment set:html={"<pre><code>second</code></pre>"} />
     `;
     const result = await rewriteAstroSetHtml(code, mockHighlight);
+    // Both should be highlighted now
     expect(result).toContain('FIRST');
-    // Second one should be unchanged because function only processes first occurrence
-    expect(result).toContain('"<pre><code>second</code></pre>"');
+    expect(result).toContain('SECOND');
   });
 });
