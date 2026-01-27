@@ -481,12 +481,14 @@ function stripTags(text) {
     const strippedCode = decodeHtmlEntities(
       code
         // Convert ExpressiveCode line divs to newlines before stripping
-        .replace(/<\/div>\s*<div class="ec-line">/gi, '\n')
-        .replace(/<div class="ec-line"[^>]*>/gi, '')
-        .replace(/<\/div>/gi, '')
+        // Each <div class="ec-line"> represents a line of code
+        .replace(/<div class="ec-line"[^>]*>/gi, '\n')
+        .replace(/<\/?div[^>]*>/gi, '')  // Remove remaining divs
         .replace(/<[^>]+>/g, '')  // Strip remaining HTML tags
         .replace(/\r\n?/g, '\n')
-        .replace(/\n{2,}/g, '\n')  // Normalize multiple newlines to single
+        .replace(/^\n+/, '')      // Remove leading newlines
+        .replace(/\n+$/, '')      // Remove trailing newlines
+        .replace(/\n{2,}/g, '\n') // Normalize multiple newlines to single
     );
     processed = processed.replace(
       `__CODE_BLOCK_${i}__`,
