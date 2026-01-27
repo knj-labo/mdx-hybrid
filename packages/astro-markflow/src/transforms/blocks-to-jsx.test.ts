@@ -181,6 +181,25 @@ describe('blocksToJsx', () => {
       expect(result).toContain('<Card><_Fragment set:html=');
     });
 
+    it('should use set:html for uppercase HTML tags (not components)', () => {
+      // Uppercase HTML tags like <SVG>, <DIV> should NOT be treated as components
+      // Only true PascalCase (uppercase followed by lowercase) should be components
+      const blocks: Block[] = [
+        {
+          type: 'component',
+          name: 'Container',
+          props: {},
+          slotHtml: '<SVG><path d="M0 0h24v24H0z"/></SVG>',
+        },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      // Should use set:html because <SVG> is not a PascalCase component
+      expect(result).toContain('set:html=');
+      expect(result).toContain('<Container><_Fragment set:html=');
+    });
+
     it('should handle multiple nested components', () => {
       const blocks: Block[] = [
         {
