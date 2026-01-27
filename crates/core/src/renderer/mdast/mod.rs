@@ -122,6 +122,10 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
     // 6. Parse markdown to MDAST with enhanced options
     let parse_options = markdown::ParseOptions {
         constructs: markdown::Constructs {
+            // Disable indented code blocks - MDX content inside JSX components
+            // is often indented 4+ spaces for readability, which would otherwise
+            // be parsed as code blocks instead of paragraphs
+            code_indented: false,
             // MDX: JSX support for <Component>...</Component>
             mdx_jsx_flow: true,
             mdx_jsx_text: true,
@@ -177,24 +181,24 @@ fn mask_raw_html_blocks(input: &str) -> (String, Vec<RawHtmlMask>) {
     let mut masks = Vec::new();
     let mut cursor = 0;
 
-    while let Some((fence_start, fence_delim)) = find_fence_start(&input[cursor..]) {
-        // absolute position of fence start
-        let abs_start = cursor + fence_start;
+    while let Some((line_start, after_line, fence_delim)) = find_fence_start(&input[cursor..]) {
+        // absolute positions
+        let abs_line_start = cursor + line_start;
+        let abs_after_line = cursor + after_line;
 
-        // Mask any raw HTML that appears before the fence
-        let plain = &input[cursor..abs_start];
+        // Mask any raw HTML that appears before the fence line
+        let plain = &input[cursor..abs_line_start];
         mask_in_plain_text(plain, &mut output, &mut masks);
 
-        // Find fence end
-        let fence_body_start = abs_start;
-        let after_start = abs_start + fence_delim.len();
-        if let Some(end_rel) = find_fence_end(&input[after_start..], &fence_delim) {
-            let abs_end = after_start + end_rel;
-            output.push_str(&input[fence_body_start..abs_end]);
+        // Find fence end - search starts AFTER the opening fence line
+        if let Some(end_rel) = find_fence_end(&input[abs_after_line..], &fence_delim) {
+            let abs_end = abs_after_line + end_rel;
+            // Copy entire fence including opening line, content, and closing line
+            output.push_str(&input[abs_line_start..abs_end]);
             cursor = abs_end;
         } else {
             // No closing fence; push remainder and finish
-            output.push_str(&input[fence_body_start..]);
+            output.push_str(&input[abs_line_start..]);
             cursor = input.len();
             break;
         }
@@ -287,8 +291,9 @@ fn mask_in_plain_text(segment: &str, out: &mut String, masks: &mut Vec<RawHtmlMa
     out.push_str(rest);
 }
 
-/// Locate the next code fence start (``` or ~~~) returning its start offset and delimiter.
-fn find_fence_start(input: &str) -> Option<(usize, String)> {
+/// Locate the next code fence start (``` or ~~~) returning line start offset, after-line offset, and delimiter.
+/// Returns (line_offset, after_line_offset, delimiter) where after_line_offset is the position after the opening fence line.
+fn find_fence_start(input: &str) -> Option<(usize, usize, String)> {
     let mut offset = 0;
     for line in input.split_inclusive('\n') {
         let trimmed = line.trim_start();
@@ -297,7 +302,9 @@ fn find_fence_start(input: &str) -> Option<(usize, String)> {
                 .chars()
                 .take_while(|c| *c == '`' || *c == '~')
                 .collect();
-            return Some((offset, delim));
+            // Calculate the position after this entire line (i.e., start of next line)
+            let after_line = offset + line.len();
+            return Some((offset, after_line, delim));
         }
         offset += line.len();
     }
@@ -922,5 +929,99 @@ export const authClient = createAuthClient();
         // that the raw component tag is not interpreted as JSX
         assert!(jsx.contains("set:html="));
         assert!(jsx.contains("PreactBanner"));
+    }
+
+    #[test]
+    fn test_card_indented_content_not_code_block() {
+        // Regression test: Indented content inside JSX components should be
+        // parsed as markdown paragraphs, not code blocks.
+        // See: https://github.com/anthropics/markflow/issues/XXX
+        let input = r#"<Card title="Test" icon="laptop">
+    Explore [Astro starter themes](https://astro.build/themes/) for blogs.
+</Card>"#;
+        let options = Options {
+            enable_directives: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+
+        // Find the Card component block
+        let card = result
+            .blocks
+            .iter()
+            .find(|b| matches!(b, RenderBlock::Component { name, .. } if name == "Card"));
+
+        assert!(card.is_some(), "Expected Card component block");
+
+        if let RenderBlock::Component { slot_html, .. } = card.unwrap() {
+            // Should contain paragraph with link, NOT code block
+            assert!(
+                !slot_html.contains("<pre"),
+                "slot_html should NOT contain <pre>: {}",
+                slot_html
+            );
+            assert!(
+                !slot_html.contains("<code>Explore"),
+                "Content should NOT be wrapped in code: {}",
+                slot_html
+            );
+            assert!(
+                slot_html.contains("<a href="),
+                "Content SHOULD contain rendered link: {}",
+                slot_html
+            );
+        }
+    }
+
+    #[test]
+    fn test_card_mdast_structure_via_to_blocks() {
+        // Test that to_blocks correctly processes Card component
+        // This verifies the full preprocessing + parsing pipeline
+        let input = r#"<Card title="Test">
+    Indented content with [link](url).
+</Card>"#;
+
+        let options = Options {
+            enable_directives: true,
+            allow_raw_html: false, // Use MDX JSX mode
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+
+        // Verify we get a Component block (not HTML)
+        assert_eq!(result.blocks.len(), 1);
+
+        match &result.blocks[0] {
+            RenderBlock::Component {
+                name, slot_html, ..
+            } => {
+                assert_eq!(name, "Card", "Should be a Card component");
+                // The slot_html should contain a paragraph with a link
+                assert!(
+                    slot_html.contains("<p>"),
+                    "Should have paragraph tag: {}",
+                    slot_html
+                );
+                assert!(
+                    slot_html.contains("<a href="),
+                    "Should have link: {}",
+                    slot_html
+                );
+                // Should NOT be a code block
+                assert!(
+                    !slot_html.contains("<pre"),
+                    "Should NOT have pre tag: {}",
+                    slot_html
+                );
+                assert!(
+                    !slot_html.contains("<code>Indented"),
+                    "Content should NOT be code: {}",
+                    slot_html
+                );
+            }
+            other => panic!("Expected Component block, got: {:?}", other),
+        }
     }
 }

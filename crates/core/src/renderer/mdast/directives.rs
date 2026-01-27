@@ -47,7 +47,7 @@ pub fn preprocess_directives(input: &str) -> String {
         // Auto-close indented directives when indentation decreases or a new list item starts
         // This handles directives inside list items that don't have explicit closing :::
         if !directive_stack.is_empty() && !is_directive_closer(line) && !trimmed.is_empty() {
-            let should_auto_close = {
+            let mut should_auto_close = {
                 let (_, opener_ws, _) = directive_stack.last().unwrap();
                 let opener_indent = opener_ws.len();
 
@@ -62,9 +62,23 @@ pub fn preprocess_directives(input: &str) -> String {
                 }
             };
 
-            if should_auto_close {
+            // Close ALL directives whose indentation exceeds the current line's indent
+            while should_auto_close {
                 let (_, leading_ws, _) = directive_stack.pop().unwrap();
                 writeln!(output, "{}</mf-directive>", leading_ws).ok();
+
+                // Re-evaluate for remaining directives
+                should_auto_close = if let Some((_, opener_ws, _)) = directive_stack.last() {
+                    let opener_indent = opener_ws.len();
+                    if opener_indent > 0 {
+                        (line_indent < opener_indent)
+                            || (is_numbered_list_item(trimmed) && line_indent <= opener_indent)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
             }
         }
 
@@ -111,10 +125,10 @@ pub fn preprocess_directives(input: &str) -> String {
         }
 
         // Mark that we've seen content in the current directive
-        if !directive_stack.is_empty() && !trimmed.is_empty() {
-            if let Some((_, _, has_content)) = directive_stack.last_mut() {
-                *has_content = true;
-            }
+        if let Some((_, _, has_content)) = directive_stack.last_mut()
+            && !trimmed.is_empty()
+        {
+            *has_content = true;
         }
 
         // Regular line - passthrough

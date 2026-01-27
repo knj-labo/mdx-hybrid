@@ -200,6 +200,10 @@ pub fn collapse_multiline_wrapper_tags(input: &str) -> String {
 /// Target components:
 /// - `PackageManagerTabs`, `StaticSsrTabs`, `UIFrameworkTabs`, `TabItem`
 /// - `Fragment` (when `slot=` attribute is present)
+///
+/// IMPORTANT: This function processes entire components as units using depth-tracking.
+/// Nested components (like `<Fragment slot="...">` inside `<StaticSsrTabs>`) are passed
+/// through as-is without blank line insertion, which would break the parent component.
 pub fn normalize_list_jsx_components(input: &str) -> String {
     let lines: Vec<&str> = input.lines().collect();
     let mut output = String::with_capacity(input.len() + 100);
@@ -224,28 +228,65 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
                 if i + 1 < lines.len() && needs_blank_line_after(&lines, i) {
                     output.push('\n');
                 }
+                i += 1;
+                continue;
             }
-            // For non-self-closing opening tags, we continue processing line by line
-            // to allow nested components to also get blank line treatment
+
+            // For non-self-closing tags, find matching closing tag with depth tracking
+            // and output all inner content as-is (no blank line insertion for nested components)
+            let close_tag = format!("</{}>", tag_info.name);
+            let open_prefix = format!("<{}", tag_info.name);
+            let mut j = i + 1;
+            let mut depth = 1;
+
+            while j < lines.len() && depth > 0 {
+                let inner_trimmed = lines[j].trim_start();
+
+                // Track nested same-name components (opening tags increase depth)
+                if inner_trimmed.starts_with(&open_prefix) {
+                    // Check it's actually an opening tag, not a different component
+                    // e.g., <Tabs vs <TabsItem - we need the char after open_prefix
+                    let after_name = inner_trimmed.get(open_prefix.len()..);
+                    let is_same_component = after_name.is_none_or(|s| {
+                        s.is_empty()
+                            || s.starts_with('>')
+                            || s.starts_with(' ')
+                            || s.starts_with('/')
+                    });
+                    if is_same_component && !inner_trimmed.trim_end().ends_with("/>") {
+                        depth += 1;
+                    }
+                }
+
+                // Track closing tags (decrease depth)
+                if inner_trimmed.starts_with(&close_tag) {
+                    depth -= 1;
+                }
+
+                if depth > 0 {
+                    // Output inner lines as-is (no blank line insertion)
+                    output.push_str(lines[j]);
+                    output.push('\n');
+                }
+                j += 1;
+            }
+
+            // Output closing tag
+            if j > i + 1 && depth == 0 {
+                output.push_str(lines[j - 1]);
+                output.push('\n');
+
+                // Blank line after closing if needed
+                if j < lines.len() && needs_blank_line_after(&lines, j - 1) {
+                    output.push('\n');
+                }
+                i = j;
+                continue;
+            }
+
+            // If we couldn't find matching closing tag, just continue normally
             i += 1;
             continue;
-        }
-
-        // Check if this is a closing tag for a list JSX component
-        if trimmed.starts_with("</") {
-            if let Some(close_name) = extract_closing_tag_name(trimmed) {
-                if is_list_jsx_component_name(&close_name) {
-                    output.push_str(line);
-                    output.push('\n');
-
-                    // Check if we need blank line after closing tag
-                    if i + 1 < lines.len() && needs_blank_line_after(&lines, i) {
-                        output.push('\n');
-                    }
-                    i += 1;
-                    continue;
-                }
-            }
         }
 
         output.push_str(line);
@@ -259,28 +300,6 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
     }
 
     output
-}
-
-/// Extracts the tag name from a closing tag like "</Box>" -> "Box"
-fn extract_closing_tag_name(trimmed: &str) -> Option<String> {
-    if !trimmed.starts_with("</") {
-        return None;
-    }
-    let rest = &trimmed[2..];
-    let name_end = rest.find(|c: char| c == '>' || c.is_whitespace()).unwrap_or(rest.len());
-    let name = &rest[..name_end];
-    if name.is_empty() {
-        None
-    } else {
-        Some(name.to_string())
-    }
-}
-
-/// Checks if a tag name is a list JSX component (without needing full JsxTagInfo)
-fn is_list_jsx_component_name(name: &str) -> bool {
-    LIST_JSX_COMPONENTS.contains(&name)
-        || name == "Fragment"
-        || name.contains('-')
 }
 
 /// List of tab component names that need special handling in list context.
@@ -306,6 +325,11 @@ fn is_list_jsx_component(tag: &JsxTagInfo) -> bool {
 
 /// Checks if a blank line should be inserted before the component at index i.
 fn needs_blank_line_before(lines: &[&str], i: usize) -> bool {
+    // If the line immediately before is blank, don't insert another blank line
+    if i > 0 && lines[i - 1].trim().is_empty() {
+        return false;
+    }
+
     // Look backwards for the previous non-blank line
     let mut prev_idx = i.saturating_sub(1);
     while prev_idx > 0 && lines[prev_idx].trim().is_empty() {
@@ -314,7 +338,7 @@ fn needs_blank_line_before(lines: &[&str], i: usize) -> bool {
 
     let prev_trimmed = lines[prev_idx].trim();
 
-    // Don't insert if already blank or if previous is a closing component tag
+    // Don't insert if the first line is this component (nothing before it)
     if prev_trimmed.is_empty() {
         return false;
     }
@@ -454,5 +478,63 @@ mod tests {
         let result = normalize_list_jsx_components(input);
         // No indentation = not in list context, should not change
         assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_nested_components_preserved() {
+        // Nested Fragment inside StaticSsrTabs should NOT get blank lines inserted
+        // This was the bug that caused "Unexpected closing tag </StaticSsrTabs>, expected </Fragment>"
+        let input = r#"1. Item
+
+    <StaticSsrTabs>
+    <Fragment slot="static">
+    Static content
+    </Fragment>
+    <Fragment slot="ssr">
+    SSR content
+    </Fragment>
+    </StaticSsrTabs>
+
+2. Next item
+"#;
+        let result = normalize_list_jsx_components(input);
+
+        // Should NOT have blank lines around nested Fragment tags
+        assert!(
+            !result.contains("</Fragment>\n\n    <Fragment"),
+            "Should NOT insert blank line between nested Fragment tags. Got:\n{}",
+            result
+        );
+
+        // The overall structure should be preserved - blank line before StaticSsrTabs
+        // and blank line after (which already exists)
+        assert!(
+            result.contains("1. Item\n\n    <StaticSsrTabs>"),
+            "Should preserve blank line before StaticSsrTabs. Got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_deeply_nested_same_component() {
+        // Test depth tracking with same-named nested components
+        let input = r#"1. Item
+
+    <Box>
+    <Box>
+    Inner box
+    </Box>
+    </Box>
+
+2. Next
+"#;
+        let result = normalize_list_jsx_components(input);
+
+        // Inner Box should NOT get blank lines
+        assert!(
+            !result.contains("</Box>\n\n    </Box>"),
+            "Should NOT insert blank line between nested closing Box tags. Got:\n{}",
+            result
+        );
     }
 }

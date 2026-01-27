@@ -45,6 +45,279 @@ pub fn escape_js_string_value(value: &str) -> String {
     json[1..json.len() - 1].to_string()
 }
 
+/// Checks if a string contains a PascalCase JSX tag (e.g., `<Card`, `<Aside`).
+///
+/// This is used to detect nested JSX components in slot content. When components
+/// are present, the slot content must be embedded directly (not via `set:html`)
+/// so that Astro processes them as components rather than raw HTML.
+///
+/// # Examples
+///
+/// ```
+/// use markflow_core::codegen::has_pascal_case_tag;
+///
+/// assert!(has_pascal_case_tag("<Card>content</Card>"));
+/// assert!(has_pascal_case_tag("<p><Aside>nested</Aside></p>"));
+/// assert!(!has_pascal_case_tag("<p>plain html</p>"));
+/// assert!(!has_pascal_case_tag("<div class=\"card\">no component</div>"));
+/// ```
+pub fn has_pascal_case_tag(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    for i in 0..bytes.len().saturating_sub(1) {
+        if bytes[i] == b'<' && bytes[i + 1].is_ascii_uppercase() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Converts HTML entities and literal ampersands to JSX expressions for safe embedding.
+///
+/// Converts HTML entities for safe JSX embedding with context-awareness.
+///
+/// When slot content with nested components is embedded directly in JSX,
+/// HTML entities must be handled appropriately based on context:
+///
+/// 1. Text content: entities → JSX expressions (e.g., `&amp;` → `{"&"}`)
+/// 2. Attribute values: entities stay as-is (browser interprets them)
+/// 3. JSX expression attributes: curly braces decoded (e.g., `=&#123;` → `={`)
+///
+/// This context-aware approach prevents creating invalid JSX like:
+///   `<a href="...?a=1{"&"}b=2">` (INVALID)
+/// Instead keeping attribute values intact:
+///   `<a href="...?a=1&amp;b=2">` (VALID)
+///
+/// # Examples
+///
+/// ```
+/// use markflow_core::codegen::html_entities_to_jsx;
+///
+/// // Text content - entities are converted
+/// assert_eq!(html_entities_to_jsx("&amp;"), "{\"&\"}");
+/// assert_eq!(html_entities_to_jsx("&lt;button&gt;"), "{\"<\"}button{\">\"}");
+/// assert_eq!(html_entities_to_jsx("A & B"), "A {\"&\"} B");
+///
+/// // Raw curly braces in text content - converted to JSX expressions
+/// assert_eq!(html_entities_to_jsx("h1 { color: red }"), "h1 {\"{\"} color: red {\"}\"}" );
+///
+/// // Context-aware: entities in attribute values stay as-is
+/// assert_eq!(
+///     html_entities_to_jsx("<a href=\"?a=1&amp;b=2\">link</a>"),
+///     "<a href=\"?a=1&amp;b=2\">link</a>"
+/// );
+/// ```
+pub fn html_entities_to_jsx(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() * 2);
+    let mut i = 0;
+
+    // First pass: Handle curly braces in JSX expression attribute contexts
+    // =&#123; → ={ and &#125;> → }> etc.
+    let preprocessed = preprocess_jsx_expression_braces(s);
+    let bytes = preprocessed.as_bytes();
+    let len = bytes.len();
+
+    // Second pass: Context-aware entity conversion
+    while i < len {
+        // Check if we're entering a tag
+        if bytes[i] == b'<' {
+            // Find the end of the tag
+            if let Some(tag_end) = find_tag_end(&bytes[i..]) {
+                // Copy tag as-is (don't convert entities in attributes)
+                let tag_slice = &preprocessed[i..i + tag_end + 1];
+                result.push_str(tag_slice);
+                i += tag_end + 1;
+                continue;
+            } else {
+                // No closing >, append rest and break
+                result.push_str(&preprocessed[i..]);
+                break;
+            }
+        }
+
+        // We're in text content - convert entities and special chars
+        // Find the next tag start
+        let text_end = bytes[i..]
+            .iter()
+            .position(|&b| b == b'<')
+            .unwrap_or(len - i);
+        let text_slice = &preprocessed[i..i + text_end];
+        result.push_str(&convert_entities_in_text(text_slice));
+        i += text_end;
+    }
+
+    result
+}
+
+/// Preprocesses JSX expression curly braces in attribute contexts.
+/// Converts `=&#123;` → `={` and `&#125;>` → `}>` etc.
+fn preprocess_jsx_expression_braces(s: &str) -> String {
+    s.replace("=&#123;", "={")
+        .replace("&#125;>", "}>")
+        .replace("&#125;/>", "}/>")
+        .replace("&#125; ", "} ")
+}
+
+/// Finds the position of `>` that closes a tag, handling quoted attributes.
+fn find_tag_end(bytes: &[u8]) -> Option<usize> {
+    let mut i = 1; // Skip the opening <
+    let mut in_quote = false;
+    let mut quote_char = b'"';
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_quote {
+            if b == quote_char {
+                in_quote = false;
+            }
+        } else if b == b'"' || b == b'\'' {
+            in_quote = true;
+            quote_char = b;
+        } else if b == b'>' {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Converts HTML entities and JSX-special characters in text content.
+fn convert_entities_in_text(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut result = String::with_capacity(text.len() * 2);
+    let mut i = 0;
+
+    while i < len {
+        match bytes[i] {
+            b'&' => {
+                // Try to match known entities first
+                if let Some(entity_match) = try_match_entity_text(&bytes[i..]) {
+                    result.push_str(entity_match.replacement);
+                    i += entity_match.len;
+                    continue;
+                }
+                // Check if this looks like an unknown HTML entity
+                if is_unknown_entity(&bytes[i..]) {
+                    // Unknown entity like &nbsp; - leave as-is
+                    result.push('&');
+                    i += 1;
+                } else {
+                    // Literal & not part of entity - convert to JSX expression
+                    result.push_str("{\"&\"}");
+                    i += 1;
+                }
+            }
+            b'{' => {
+                // Raw { in text content - convert to JSX expression
+                result.push_str("{\"{\"}");
+                i += 1;
+            }
+            b'}' => {
+                // Raw } in text content - convert to JSX expression
+                result.push_str("{\"}\"}");
+                i += 1;
+            }
+            _ => {
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+        }
+    }
+
+    result
+}
+
+/// Entity matching for text content context.
+/// Converts curly brace entities to JSX expressions (not raw braces).
+fn try_match_entity_text(bytes: &[u8]) -> Option<EntityMatch> {
+    if bytes.is_empty() || bytes[0] != b'&' {
+        return None;
+    }
+
+    // Named entities
+    let named_entities: &[(&[u8], &str)] = &[
+        (b"&amp;", "{\"&\"}"),
+        (b"&AMP;", "{\"&\"}"),
+        (b"&lt;", "{\"<\"}"),
+        (b"&LT;", "{\"<\"}"),
+        (b"&gt;", "{\">\"}"),
+        (b"&GT;", "{\">\"}"),
+        (b"&quot;", "{\"\\\"\"}"),
+        (b"&QUOT;", "{\"\\\"\"}"),
+        (b"&#39;", "{\"'\"}"),
+        (b"&apos;", "{\"'\"}"),
+        (b"&APOS;", "{\"'\"}"),
+    ];
+
+    for (pattern, replacement) in named_entities {
+        if bytes.len() >= pattern.len() && bytes[..pattern.len()].eq_ignore_ascii_case(pattern) {
+            return Some(EntityMatch {
+                replacement,
+                len: pattern.len(),
+            });
+        }
+    }
+
+    // Numeric entities - curly braces become JSX expressions in text content
+    let numeric_entities: &[(&[u8], &str)] = &[
+        (b"&#123;", "{\"{\"}"),   // { - JSX expression for text content
+        (b"&#125;", "{\"}\"}"),   // } - JSX expression for text content
+        (b"&#60;", "{\"<\"}"),    // <
+        (b"&#62;", "{\">\"}"),    // >
+        (b"&#38;", "{\"&\"}"),    // &
+        (b"&#34;", "{\"\\\"\"}"), // "
+        (b"&#10;", "\n"),         // newline
+        (b"&#13;", ""),           // carriage return - remove
+    ];
+
+    for (pattern, replacement) in numeric_entities {
+        if bytes.len() >= pattern.len() && bytes[..pattern.len()] == **pattern {
+            return Some(EntityMatch {
+                replacement,
+                len: pattern.len(),
+            });
+        }
+    }
+
+    None
+}
+
+/// Checks if bytes starting at position 0 look like an unknown HTML entity.
+/// Pattern: &[a-zA-Z#][a-zA-Z0-9]*;
+fn is_unknown_entity(bytes: &[u8]) -> bool {
+    if bytes.is_empty() || bytes[0] != b'&' {
+        return false;
+    }
+    if bytes.len() < 3 {
+        return false; // Need at least &x;
+    }
+
+    let mut i = 1;
+    // First char after & must be letter or #
+    if !bytes[i].is_ascii_alphabetic() && bytes[i] != b'#' {
+        return false;
+    }
+    i += 1;
+
+    // Continue with alphanumeric chars until we hit ;
+    while i < bytes.len() {
+        if bytes[i] == b';' {
+            return true; // Found valid entity pattern
+        }
+        if !bytes[i].is_ascii_alphanumeric() {
+            return false; // Invalid char in entity name
+        }
+        i += 1;
+    }
+
+    false // No semicolon found
+}
+
+struct EntityMatch {
+    replacement: &'static str,
+    len: usize,
+}
+
 /// Result of directive mapping.
 pub struct DirectiveMappingResult {
     /// The component tag name to use (e.g., "Aside" instead of "note").
@@ -73,7 +346,7 @@ pub struct DirectiveMappingResult {
 ///
 /// // Without directive mapping - HTML blocks use Fragment with set:html
 /// let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
-/// assert_eq!(jsx, "<Fragment set:html={\"<p>Hello</p>\"} />");
+/// assert_eq!(jsx, "<_Fragment set:html={\"<p>Hello</p>\"} />");
 /// ```
 pub fn blocks_to_jsx_string<F>(blocks: &[RenderBlock], directive_mapper: Option<F>) -> String
 where
@@ -107,7 +380,7 @@ where
             RenderBlock::Html { content } => {
                 // Use set:html to avoid HTML entity parsing issues with esbuild
                 // JSON.stringify handles all escaping; Astro parses the HTML at runtime
-                result.push_str("<Fragment set:html={");
+                result.push_str("<_Fragment set:html={");
                 result.push_str(&js_string_literal(content));
                 result.push_str("} />");
             }
@@ -171,13 +444,30 @@ where
                     result.push_str("}}");
                 }
 
-                // Use set:html for slot content to avoid HTML entity parsing issues
+                // Handle slot content
+                // We can't use set:html directly on components because Astro components
+                // receive children via <slot />, not innerHTML
                 if slot_html.is_empty() {
                     result.push_str(" />");
                 } else {
-                    result.push_str(" set:html={");
-                    result.push_str(&js_string_literal(&slot_html));
-                    result.push_str("} />");
+                    result.push('>');
+
+                    // Check if slot contains JSX components (PascalCase tags like <Card, <Aside)
+                    // These need to be embedded directly so Astro processes them as components
+                    if has_pascal_case_tag(&slot_html) {
+                        // Slot contains components - embed JSX directly
+                        // Convert HTML entities to JSX expressions so they render as text, not markup
+                        result.push_str(&html_entities_to_jsx(&slot_html));
+                    } else {
+                        // Pure HTML content - use set:html to avoid entity parsing issues
+                        result.push_str("<_Fragment set:html={");
+                        result.push_str(&js_string_literal(&slot_html));
+                        result.push_str("} />");
+                    }
+
+                    result.push_str("</");
+                    result.push_str(&tag_name);
+                    result.push('>');
                 }
             }
         }
@@ -445,6 +735,22 @@ mod tests {
     }
 
     #[test]
+    fn test_has_pascal_case_tag() {
+        // Should detect PascalCase tags
+        assert!(has_pascal_case_tag("<Card>content</Card>"));
+        assert!(has_pascal_case_tag("<Aside type=\"note\">text</Aside>"));
+        assert!(has_pascal_case_tag("<p><NestedComponent /></p>"));
+        assert!(has_pascal_case_tag("text <MyComponent> more"));
+
+        // Should NOT detect lowercase HTML tags
+        assert!(!has_pascal_case_tag("<p>paragraph</p>"));
+        assert!(!has_pascal_case_tag("<div class=\"card\">content</div>"));
+        assert!(!has_pascal_case_tag("<span>inline</span>"));
+        assert!(!has_pascal_case_tag("no tags at all"));
+        assert!(!has_pascal_case_tag("")); // empty string
+    }
+
+    #[test]
     fn test_escape_js_string_value() {
         // Basic escaping
         assert_eq!(escape_js_string_value("hello"), "hello");
@@ -477,10 +783,10 @@ mod tests {
             slot_html: "<p>Content</p>".to_string(),
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
-        // Component slot content uses set:html
+        // Component slot content uses Fragment with set:html for proper <slot /> support
         assert_eq!(
             jsx,
-            "<Card {...{\"title\": \"中文\\\"引用\\\"标题\"}} set:html={\"<p>Content</p>\"} />"
+            "<Card {...{\"title\": \"中文\\\"引用\\\"标题\"}}><_Fragment set:html={\"<p>Content</p>\"} /></Card>"
         );
     }
 
@@ -490,8 +796,8 @@ mod tests {
             content: "<p>Hello</p>".to_string(),
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
-        // HTML blocks are now wrapped in Fragment with set:html
-        assert_eq!(jsx, "<Fragment set:html={\"<p>Hello</p>\"} />");
+        // HTML blocks are now wrapped in _Fragment with set:html
+        assert_eq!(jsx, "<_Fragment set:html={\"<p>Hello</p>\"} />");
     }
 
     #[test]
@@ -509,10 +815,10 @@ mod tests {
             slot_html: "<p>Content</p>".to_string(),
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
-        // Component slot content uses set:html
+        // Component slot content uses _Fragment with set:html for proper <slot /> support
         assert_eq!(
             jsx,
-            "<Card {...{\"title\": \"Hello\"}} set:html={\"<p>Content</p>\"} />"
+            "<Card {...{\"title\": \"Hello\"}}><_Fragment set:html={\"<p>Content</p>\"} /></Card>"
         );
     }
 
@@ -542,10 +848,142 @@ mod tests {
         };
 
         let jsx = blocks_to_jsx_string(&blocks, Some(mapper));
-        // Component slot content uses set:html
+        // Component slot content uses _Fragment with set:html for proper <slot /> support
         assert_eq!(
             jsx,
-            "<Aside type=\"note\" {...{\"title\": \"Important\"}} set:html={\"<p>Content</p>\"} />"
+            "<Aside type=\"note\" {...{\"title\": \"Important\"}}><_Fragment set:html={\"<p>Content</p>\"} /></Aside>"
+        );
+    }
+
+    #[test]
+    fn test_blocks_to_jsx_string_nested_components() {
+        // When slot contains nested JSX components (PascalCase tags),
+        // they should be embedded directly, not wrapped in set:html
+        let blocks = vec![RenderBlock::Component {
+            name: "CardGrid".to_string(),
+            props: HashMap::new(),
+            slot_html: "<Card title=\"First\"><p>Content 1</p></Card><Card title=\"Second\"><p>Content 2</p></Card>".to_string(),
+        }];
+        let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
+        // Nested components should be embedded directly (no set:html)
+        assert_eq!(
+            jsx,
+            "<CardGrid><Card title=\"First\"><p>Content 1</p></Card><Card title=\"Second\"><p>Content 2</p></Card></CardGrid>"
+        );
+    }
+
+    #[test]
+    fn test_blocks_to_jsx_string_mixed_html_and_components() {
+        // When slot contains a mix of HTML and components, embed directly
+        let blocks = vec![RenderBlock::Component {
+            name: "Wrapper".to_string(),
+            props: HashMap::new(),
+            slot_html: "<p>Before</p><NestedComponent /><p>After</p>".to_string(),
+        }];
+        let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
+        // Should embed directly because there's a PascalCase component
+        assert_eq!(
+            jsx,
+            "<Wrapper><p>Before</p><NestedComponent /><p>After</p></Wrapper>"
+        );
+    }
+
+    #[test]
+    fn test_html_entities_to_jsx() {
+        // Basic entity conversion to JSX expressions (text content)
+        assert_eq!(html_entities_to_jsx("&amp;"), "{\"&\"}");
+        assert_eq!(
+            html_entities_to_jsx("&lt;button&gt;"),
+            "{\"<\"}button{\">\"}"
+        );
+        assert_eq!(html_entities_to_jsx("a &amp;&amp; b"), "a {\"&\"}{\"&\"} b");
+        assert_eq!(html_entities_to_jsx("no entities"), "no entities");
+        assert_eq!(html_entities_to_jsx(""), "");
+
+        // Quote entities
+        assert_eq!(
+            html_entities_to_jsx("&quot;hello&quot;"),
+            "{\"\\\"\"}hello{\"\\\"\"}"
+        );
+        assert_eq!(
+            html_entities_to_jsx("&#39;single&#39;"),
+            "{\"'\"}single{\"'\"}"
+        );
+        assert_eq!(
+            html_entities_to_jsx("&apos;apos&apos;"),
+            "{\"'\"}apos{\"'\"}"
+        );
+
+        // Mixed entities - results in JSX expressions
+        assert_eq!(
+            html_entities_to_jsx("a &lt; b &amp;&amp; c &gt; d"),
+            "a {\"<\"} b {\"&\"}{\"&\"} c {\">\"} d"
+        );
+
+        // Code with HTML tag entities - entities converted in text content
+        assert_eq!(
+            html_entities_to_jsx("<code>&lt;button&gt;</code>"),
+            "<code>{\"<\"}button{\">\"}</code>"
+        );
+
+        // Literal & characters (not part of entities) should also be converted
+        assert_eq!(html_entities_to_jsx("A & B"), "A {\"&\"} B");
+        assert_eq!(html_entities_to_jsx("foo&bar"), "foo{\"&\"}bar");
+        assert_eq!(html_entities_to_jsx("&"), "{\"&\"}");
+        assert_eq!(html_entities_to_jsx("a & b & c"), "a {\"&\"} b {\"&\"} c");
+
+        // Unknown entities should be left as-is
+        assert_eq!(html_entities_to_jsx("&unknown;"), "&unknown;");
+        assert_eq!(html_entities_to_jsx("&nbsp;"), "&nbsp;");
+
+        // Context-aware: entities in attribute values should NOT be converted
+        assert_eq!(
+            html_entities_to_jsx("<a href=\"https://example.com?a=1&amp;b=2\">link</a>"),
+            "<a href=\"https://example.com?a=1&amp;b=2\">link</a>"
+        );
+
+        // Raw curly braces in text content should be converted to JSX expressions
+        assert_eq!(
+            html_entities_to_jsx("h1 { color: red }"),
+            "h1 {\"{\"} color: red {\"}\"}"
+        );
+
+        // Curly brace entities in text content should become JSX expressions
+        assert_eq!(html_entities_to_jsx("&#123;&#125;"), "{\"{\"}{\"}\"}");
+    }
+
+    #[test]
+    fn test_blocks_to_jsx_string_nested_components_with_entities() {
+        // When slot contains nested components AND HTML entities,
+        // entities become JSX expressions so they render as text, not markup
+        let blocks = vec![RenderBlock::Component {
+            name: "Card".to_string(),
+            props: HashMap::new(),
+            slot_html: "<Badge>a &lt; b &amp;&amp; c</Badge>".to_string(),
+        }];
+        let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
+        // Entities should become JSX expressions: &lt; becomes {"<"}, &amp; becomes {"&"}
+        assert_eq!(
+            jsx,
+            "<Card><Badge>a {\"<\"} b {\"&\"}{\"&\"} c</Badge></Card>"
+        );
+    }
+
+    #[test]
+    fn test_blocks_to_jsx_string_preserves_jsx_expressions() {
+        // JSX expressions like {title} or {items.map(...)} should be preserved
+        let blocks = vec![RenderBlock::Component {
+            name: "CardGrid".to_string(),
+            props: HashMap::new(),
+            slot_html: "<Card title={title}>Content</Card>".to_string(),
+        }];
+        let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
+        // JSX expressions should NOT be escaped
+        assert!(jsx.contains("title={title}"));
+        assert!(!jsx.contains("{'{'}"));
+        assert_eq!(
+            jsx,
+            "<CardGrid><Card title={title}>Content</Card></CardGrid>"
         );
     }
 
