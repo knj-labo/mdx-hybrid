@@ -434,7 +434,11 @@ function stripTags(text) {
     return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
   });
 
-  // 2. Normal tag stripping
+  // 2. Remove style/script tags entirely (non-semantic content)
+  processed = processed.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
+  processed = processed.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+
+  // 3. Strip remaining tags
   const blockTagRe =
     /<\/?(?:p|div|section|article|header|footer|main|aside|nav|h[1-6]|ol|ul|li|table|thead|tbody|tfoot|tr|td|th|pre|blockquote|figure|figcaption|hr|br)(?:\s[^>]*)?>/gi;
   processed = decodeHtmlEntities(
@@ -448,7 +452,7 @@ function stripTags(text) {
     .trim()
     .replace(/\s+/g, ' ');
 
-  // 3. Restore code blocks with preserved whitespace (only normalize CRLF → LF)
+  // 4. Restore code blocks with preserved whitespace (only normalize CRLF → LF)
   codeBlocks.forEach((code, i) => {
     processed = processed.replace(`__CODE_BLOCK_${i}__`, code.replace(/\r\n?/g, '\n'));
   });
