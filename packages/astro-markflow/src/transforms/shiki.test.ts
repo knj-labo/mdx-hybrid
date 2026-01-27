@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test';
 import {
   highlightHtmlBlocks,
+  highlightJsxCodeBlocks,
   rewriteAstroSetHtml,
 } from './shiki.js';
 
@@ -172,5 +173,93 @@ describe('rewriteAstroSetHtml', () => {
     // Both should be highlighted now
     expect(result).toContain('FIRST');
     expect(result).toContain('SECOND');
+  });
+});
+
+describe('highlightJsxCodeBlocks', () => {
+  test('returns unchanged when no pre tags', async () => {
+    const code = `<div>Hello world</div>`;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    expect(result).toBe(code);
+  });
+
+  test('returns unchanged for empty code', async () => {
+    const result = await highlightJsxCodeBlocks('', mockHighlight);
+    expect(result).toBe('');
+  });
+
+  test('highlights JSX code block without language', async () => {
+    const code = `<pre><code>const x = 1;</code></pre>`;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    expect(result).toContain('CONST X = 1;');
+  });
+
+  test('highlights JSX code block with language', async () => {
+    const code = `<pre><code class="language-js">let a = 1;</code></pre>`;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    expect(result).toContain('LET A = 1;');
+    expect(result).toContain('class="language-js"');
+  });
+
+  test('decodes JSX string expressions', async () => {
+    // After html_entities_to_jsx(), code becomes {"string"} expressions
+    const code = `<pre><code class="language-js">{"const x = 1;"}</code></pre>`;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    expect(result).toContain('CONST X = 1;');
+  });
+
+  test('decodes JSX expressions with newlines', async () => {
+    const code = `<pre><code class="language-js">{"line1"}{"\\n"}{"line2"}</code></pre>`;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    expect(result).toContain('LINE1\nLINE2');
+  });
+
+  test('decodes HTML entities', async () => {
+    const code = `<pre><code>&lt;div&gt;&amp;amp;&lt;/div&gt;</code></pre>`;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    expect(result).toContain('<DIV>&AMP;</DIV>');
+  });
+
+  test('skips already highlighted code blocks', async () => {
+    const code = `<pre class="shiki"><code>already highlighted</code></pre>`;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    expect(result).toBe(code);
+  });
+
+  test('skips code blocks with data-language', async () => {
+    const code = `<pre data-language="js"><code>already highlighted</code></pre>`;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    expect(result).toBe(code);
+  });
+
+  test('highlights multiple code blocks', async () => {
+    const code = `
+      <pre><code class="language-js">first</code></pre>
+      <p>text</p>
+      <pre><code class="language-ts">second</code></pre>
+    `;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    expect(result).toContain('FIRST');
+    expect(result).toContain('SECOND');
+    expect(result).toContain('<p>text</p>');
+  });
+
+  test('preserves surrounding JSX', async () => {
+    const code = `
+      <TabItem>
+        <pre><code class="language-js">code here</code></pre>
+      </TabItem>
+    `;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    expect(result).toContain('<TabItem>');
+    expect(result).toContain('CODE HERE');
+    expect(result).toContain('</TabItem>');
+  });
+
+  test('handles empty code blocks', async () => {
+    const code = `<pre><code class="language-js"></code></pre>`;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    // Should not crash, should preserve the structure
+    expect(result).toContain('<pre>');
   });
 });

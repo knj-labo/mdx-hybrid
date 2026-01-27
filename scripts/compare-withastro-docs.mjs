@@ -453,8 +453,12 @@ function stripTags(text) {
     .replace(/\s+/g, ' ');
 
   // 4. Restore code blocks with preserved whitespace (only normalize CRLF → LF)
+  // Also decode HTML entities so both sides compare consistently
   codeBlocks.forEach((code, i) => {
-    processed = processed.replace(`__CODE_BLOCK_${i}__`, code.replace(/\r\n?/g, '\n'));
+    processed = processed.replace(
+      `__CODE_BLOCK_${i}__`,
+      decodeHtmlEntities(code.replace(/\r\n?/g, '\n'))
+    );
   });
 
   return processed;

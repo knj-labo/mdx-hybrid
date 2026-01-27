@@ -60,12 +60,23 @@ pub fn escape_js_string_value(value: &str) -> String {
 /// assert!(has_pascal_case_tag("<p><Aside>nested</Aside></p>"));
 /// assert!(!has_pascal_case_tag("<p>plain html</p>"));
 /// assert!(!has_pascal_case_tag("<div class=\"card\">no component</div>"));
+/// // Uppercase HTML tags are NOT PascalCase components
+/// assert!(!has_pascal_case_tag("<DIV>content</DIV>"));
+/// assert!(!has_pascal_case_tag("<SVG viewBox=\"0 0 100 100\"></SVG>"));
 /// ```
 pub fn has_pascal_case_tag(s: &str) -> bool {
     let bytes = s.as_bytes();
-    for i in 0..bytes.len().saturating_sub(1) {
+    let len = bytes.len();
+    for i in 0..len.saturating_sub(2) {
+        // Look for < followed by uppercase letter
         if bytes[i] == b'<' && bytes[i + 1].is_ascii_uppercase() {
-            return true;
+            // True PascalCase: uppercase followed by lowercase (e.g., <Card, <Aside)
+            // All-uppercase HTML tags: <DIV>, <SVG>, <A> should return false
+            if bytes[i + 2].is_ascii_lowercase() {
+                return true;
+            }
+            // Check for single-letter component followed by non-letter (rare but valid: <X>)
+            // Skip if it's all uppercase like <A> or <B> which are HTML tags
         }
     }
     false
@@ -756,6 +767,13 @@ mod tests {
         assert!(!has_pascal_case_tag("<span>inline</span>"));
         assert!(!has_pascal_case_tag("no tags at all"));
         assert!(!has_pascal_case_tag("")); // empty string
+
+        // Should NOT detect uppercase HTML tags (not PascalCase)
+        assert!(!has_pascal_case_tag("<DIV>content</DIV>"));
+        assert!(!has_pascal_case_tag("<SVG viewBox=\"0 0 100 100\"></SVG>"));
+        assert!(!has_pascal_case_tag("<A href=\"#\">link</A>"));
+        assert!(!has_pascal_case_tag("<BR />"));
+        assert!(!has_pascal_case_tag("<HTML><BODY></BODY></HTML>"));
     }
 
     #[test]

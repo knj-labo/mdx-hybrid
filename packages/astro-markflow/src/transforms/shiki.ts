@@ -113,6 +113,94 @@ export async function highlightHtmlBlocks(
 }
 
 /**
+ * Highlights code blocks that appear directly in JSX (not in set:html).
+ * Handles cases where slot content with components is embedded directly,
+ * causing code blocks to bypass the set:html path.
+ *
+ * JSX code blocks appear as: <pre><code class="language-js">{"code"}</code></pre>
+ * After html_entities_to_jsx(), content may be: {"line1"}{"\n"}{"line2"}
+ */
+export async function highlightJsxCodeBlocks(
+  code: string,
+  highlight: ShikiHighlighter
+): Promise<string> {
+  if (!code || typeof code !== 'string') {
+    return code;
+  }
+
+  // Early skip if no <pre> tags in JSX context
+  if (!/<pre>/.test(code)) {
+    return code;
+  }
+
+  // Match <pre><code class="language-xxx">content</code></pre> patterns
+  // Content may contain JSX expressions like {"text"} or HTML entities
+  const preCodeRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g;
+
+  const replacements: { match: string; replacement: string }[] = [];
+
+  let match;
+  while ((match = preCodeRegex.exec(code)) !== null) {
+    const [fullMatch, lang, rawContent = ''] = match;
+
+    // Skip if already processed by Shiki (has shiki class or data-language)
+    if (fullMatch.includes('class="shiki') || fullMatch.includes('data-language')) {
+      continue;
+    }
+
+    // Skip empty code blocks
+    if (!rawContent) {
+      continue;
+    }
+
+    // Decode JSX expressions back to plain text
+    // Pattern: {"string"} or {"\n"} etc.
+    let codeText = rawContent
+      // Decode JSX string expressions: {"text"} -> text
+      .replace(/\{"([^"]*)"\}/g, (_, str) => {
+        // Handle escape sequences
+        return str
+          .replace(/\\n/g, '\n')
+          .replace(/\\t/g, '\t')
+          .replace(/\\r/g, '\r')
+          .replace(/\\\\/g, '\\')
+          .replace(/\\"/g, '"');
+      })
+      // Decode HTML entities that might remain
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) =>
+        String.fromCharCode(parseInt(hex, 16))
+      )
+      .replace(/&#(\d+);/g, (_, num) =>
+        String.fromCharCode(parseInt(num, 10))
+      );
+
+    // Trim trailing whitespace but preserve internal structure
+    codeText = codeText.trimEnd();
+
+    if (!codeText) {
+      continue;
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    const highlighted = await highlight(codeText, lang || undefined);
+    replacements.push({ match: fullMatch, replacement: highlighted });
+  }
+
+  // Apply replacements
+  let result = code;
+  for (const { match, replacement } of replacements) {
+    result = result.replace(match, replacement);
+  }
+
+  return result;
+}
+
+/**
  * Rewrites Astro set:html fragments with Shiki-highlighted code.
  * Searches for <_Fragment set:html={...} /> patterns and applies syntax highlighting.
  * Processes ALL occurrences in the code, not just the first one.
