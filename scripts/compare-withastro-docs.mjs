@@ -229,7 +229,7 @@ async function compareSemantic(dirA, dirB, routes) {
     compared,
     skipped,
     differences: diffs.length,
-    samples: diffs.slice(0, 1),
+    samples: diffs.slice(0, 5),
   };
 }
 
@@ -267,7 +267,7 @@ function compareFiles(filesA, filesB) {
   return {
     compared: all.size,
     differences: diffs.length,
-    samples: diffs.slice(0, 1),
+    samples: diffs.slice(0, 5),
   };
 }
 
@@ -538,16 +538,31 @@ function normalizeTag(tag) {
 }
 
 function summarizeDiff(a, b) {
-  const maxPreview = 80;
+  const maxPreview = 120;
   const min = Math.min(a.length, b.length);
   let idx = 0;
   while (idx < min && a[idx] === b[idx]) idx++;
   const start = Math.max(0, idx - 30);
   const endA = Math.min(a.length, idx + maxPreview);
   const endB = Math.min(b.length, idx + maxPreview);
+
+  // Get hex codes of the differing characters and surrounding context
+  const hexContextA = [];
+  const hexContextB = [];
+  for (let i = idx; i < Math.min(idx + 20, a.length); i++) {
+    hexContextA.push(`${a[i]}(0x${a.charCodeAt(i).toString(16)})`);
+  }
+  for (let i = idx; i < Math.min(idx + 20, b.length); i++) {
+    hexContextB.push(`${b[i]}(0x${b.charCodeAt(i).toString(16)})`);
+  }
+
   return {
     diffIndex: idx,
     previewA: a.slice(start, endA),
     previewB: b.slice(start, endB),
+    hexAtDiffA: hexContextA.join(' '),
+    hexAtDiffB: hexContextB.join(' '),
+    lengthA: a.length,
+    lengthB: b.length,
   };
 }
