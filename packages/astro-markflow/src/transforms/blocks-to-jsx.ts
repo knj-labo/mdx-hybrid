@@ -35,6 +35,148 @@ function escapeJsString(value: string): string {
 }
 
 /**
+ * Finds the end of an HTML tag, accounting for > inside quoted attributes.
+ * Returns the index of the closing > or -1 if not found.
+ */
+function findTagEnd(str: string, start: number): number {
+  let i = start + 1; // Skip opening <
+  let inQuote = false;
+  let quoteChar = '';
+
+  while (i < str.length) {
+    const c = str[i];
+    if (inQuote) {
+      if (c === quoteChar) inQuote = false;
+    } else {
+      if (c === '"' || c === "'") {
+        inQuote = true;
+        quoteChar = c;
+      } else if (c === '>') {
+        return i;
+      }
+    }
+    i++;
+  }
+  return -1;
+}
+
+/**
+ * Converts HTML entities for safe JSX embedding.
+ *
+ * When slot content with nested components is embedded directly in JSX,
+ * HTML entities must be handled appropriately based on context:
+ *
+ * 1. Text content: entities → JSX expressions (e.g., `&amp;` → `{"&"}`)
+ * 2. Attribute values: entities stay as-is (browser interprets them)
+ * 3. JSX expression attributes: curly braces decoded (e.g., `=&#123;` → `={`)
+ *
+ * This context-aware approach prevents creating invalid JSX like:
+ *   `<a href="...?a=1{"&"}b=2">` (INVALID)
+ * Instead keeping attribute values intact:
+ *   `<a href="...?a=1&amp;b=2">` (VALID)
+ */
+function htmlEntitiesToJsx(s: string): string {
+  // First pass: Handle curly braces in JSX expression attribute contexts
+  // =&#123; → ={ and &#125;> → }> etc.
+  let result = s
+    .replace(/=&#123;/g, '={')
+    .replace(/&#125;>/g, '}>')
+    .replace(/&#125;\/>/g, '}/>')
+    .replace(/&#125; /g, '} ')
+    .replace(/&#125;$/g, '}');
+
+  // Second pass: Context-aware entity conversion
+  // Only convert entities in text content, NOT inside attribute values
+  const output: string[] = [];
+  let i = 0;
+  const len = result.length;
+
+  while (i < len) {
+    // Check if we're entering a tag
+    if (result[i] === '<') {
+      // Find the end of the tag (quote-aware to handle > inside attributes)
+      const tagEnd = findTagEnd(result, i);
+      if (tagEnd === -1) {
+        // No closing >, append rest and break
+        output.push(result.slice(i));
+        break;
+      }
+
+      // Extract the tag (including < and >)
+      const tag = result.slice(i, tagEnd + 1);
+      output.push(tag); // Keep tag as-is (don't convert entities in attributes)
+      i = tagEnd + 1;
+      continue;
+    }
+
+    // We're in text content - find the next tag
+    const nextTag = result.indexOf('<', i);
+    const textEnd = nextTag === -1 ? len : nextTag;
+    const textContent = result.slice(i, textEnd);
+
+    // Convert entities in text content only
+    const convertedText = convertEntitiesInText(textContent);
+    output.push(convertedText);
+    i = textEnd;
+  }
+
+  return output.join('');
+}
+
+/**
+ * Converts HTML entities and raw JSX-special characters to JSX expressions in text content.
+ * Raw `{` and `}` must also be escaped since they're JSX expression delimiters.
+ */
+function convertEntitiesInText(text: string): string {
+  // First pass: Convert HTML entities
+  const entityRegex = /&(amp|lt|gt|quot|apos|#39|#123|#125|#60|#62|#38|#34|#10|#13);|&(?![a-zA-Z#])/gi;
+
+  let result = text.replace(entityRegex, (match) => {
+    const lower = match.toLowerCase();
+    switch (lower) {
+      case '&amp;':
+      case '&#38;':
+      case '&':
+        return '{"&"}';
+      case '&lt;':
+      case '&#60;':
+        return '{"<"}';
+      case '&gt;':
+      case '&#62;':
+        return '{">"}';
+      case '&quot;':
+      case '&#34;':
+        return '{"\\\""}';
+      case '&#39;':
+      case '&apos;':
+        return `{"'"}`;
+      case '&#123;':
+        return '{"{"}';
+      case '&#125;':
+        return '{"}"}';
+      case '&#10;':
+        return '\n';       // newline
+      case '&#13;':
+        return '';         // carriage return - remove
+      default:
+        return match;
+    }
+  });
+
+  // Second pass: Convert raw { and } that weren't part of entities
+  // Skip { that's already part of a JSX expression pattern like {" or {"
+  // Also skip } that closes these expressions
+  result = result.replace(/\{(?!["'])/g, '{"{"}');
+  result = result.replace(/([^"])\}(?!")/g, '$1{"}"}');
+  // Handle } at the start of the result
+  if (result.startsWith('}')) {
+    result = '{"}"}' + result.slice(1);
+  }
+
+  return result;
+}
+
+/**
  * Normalizes slot content based on a slot normalization strategy.
  * Ensures content is wrapped in the appropriate list structure.
  *
@@ -66,12 +208,52 @@ function normalizeSlotByStrategy(slot: string, strategy: 'wrap_in_ol' | 'wrap_in
 }
 
 /**
+ * Extract imported names from a list of import statements.
+ * Handles default imports, namespace imports, and named imports.
+ */
+function extractNamesFromImports(imports: string[]): Set<string> {
+  const names = new Set<string>();
+  for (const imp of imports) {
+    // Default import: import Foo from 'module'
+    const defaultMatch = imp.match(/^import\s+([A-Za-z$_][\w$]*)\s*(?:,|\s+from\s)/);
+    if (defaultMatch?.[1]) {
+      names.add(defaultMatch[1]);
+    }
+
+    // Namespace import: import * as Foo from 'module'
+    const namespaceMatch = imp.match(/^import\s+\*\s+as\s+([A-Za-z$_][\w$]*)\s+from/);
+    if (namespaceMatch?.[1]) {
+      names.add(namespaceMatch[1]);
+    }
+
+    // Named imports: import { Foo, Bar as Baz } from 'module'
+    // Also handles: import Default, { Foo, Bar } from 'module'
+    const namedMatch = imp.match(/import\s+(?:[A-Za-z$_][\w$]*\s*,\s*)?{([^}]+)}\s+from/);
+    if (namedMatch?.[1]) {
+      const parts = namedMatch[1].split(',');
+      for (const part of parts) {
+        const item = part.trim();
+        if (!item) continue;
+        const segments = item.split(/\s+as\s+/);
+        const name = segments[1] ?? segments[0];
+        if (name) {
+          names.add(name.trim());
+        }
+      }
+    }
+  }
+  return names;
+}
+
+/**
  * Converts blocks array from Rust compiler into JSX code with component imports and exports.
  *
  * @param blocks - Array of blocks from compiler
  * @param frontmatter - Frontmatter object to export
  * @param headings - Headings array to export
  * @param registry - Component registry for import resolution
+ * @param filename - Optional filename for module ID
+ * @param userImports - User import statements to preserve (these take precedence over registry)
  * @returns Complete JSX module code with imports, exports, and default component
  */
 export function blocksToJsx(
@@ -79,10 +261,14 @@ export function blocksToJsx(
   frontmatter: Record<string, unknown> = {},
   headings: HeadingEntry[] = [],
   registry: Registry | null = null,
-  filename?: string
+  filename?: string,
+  userImports: string[] = []
 ): string {
   const fragments: string[] = [];
   const componentImports = new Map<string, { modulePath: string; exportType: string }>();
+
+  // Extract names from user imports to avoid generating duplicate imports
+  const userImportedNames = extractNamesFromImports(userImports);
 
   // Get supported directives from registry if available
   const supportedDirectives = registry?.getSupportedDirectives() ?? [];
@@ -124,8 +310,8 @@ export function blocksToJsx(
         effectiveSlot = normalizeSlotByStrategy(effectiveSlot, slotNorm.strategy);
       }
 
-      // Skip Fragment - it's a built-in Astro component
-      if (componentName !== 'Fragment') {
+      // Skip Fragment (built-in) and user-imported components
+      if (componentName !== 'Fragment' && !userImportedNames.has(componentName)) {
         const componentDef = registry?.getComponent(componentName);
         const modulePath = componentDef?.modulePath ?? '@astrojs/starlight/components';
         const exportType = componentDef?.exportType ?? 'default';
@@ -152,13 +338,22 @@ export function blocksToJsx(
             .join(' ')
         : '';
 
-      // Use set:html for slot content to avoid HTML entity parsing issues with esbuild
-      // JSON.stringify handles all escaping; Astro parses the HTML at runtime
+      // Handle slot content: use set:html for pure HTML, but embed JSX directly for nested components
       if (effectiveSlot) {
-        const allProps = propsStr
-          ? `${propsStr} set:html={${JSON.stringify(effectiveSlot)}}`
-          : `set:html={${JSON.stringify(effectiveSlot)}}`;
-        fragments.push(`<${componentName} ${allProps} />`);
+        const propsAttr = propsStr ? ` ${propsStr}` : '';
+
+        // Check if slot contains JSX components (PascalCase tags like <Card, <Aside, etc.)
+        // These need to be embedded directly so Astro processes them as components
+        const hasNestedComponents = /<[A-Z][a-zA-Z0-9]*[\s>\/]/.test(effectiveSlot);
+
+        if (hasNestedComponents) {
+          // Slot contains components - embed JSX directly so Astro processes them
+          // Convert HTML entities to JSX expressions so they render as text, not markup
+          fragments.push(`<${componentName}${propsAttr}>${htmlEntitiesToJsx(effectiveSlot)}</${componentName}>`);
+        } else {
+          // Pure HTML content - use set:html to avoid HTML entity parsing issues
+          fragments.push(`<${componentName}${propsAttr}><_Fragment set:html={${JSON.stringify(effectiveSlot)}} /></${componentName}>`);
+        }
       } else {
         fragments.push(propsStr ? `<${componentName} ${propsStr} />` : `<${componentName} />`);
       }
@@ -200,10 +395,17 @@ export function blocksToJsx(
   const runtimeImports = `import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
 import { Fragment as _Fragment, jsx as _jsx } from 'astro/jsx-runtime';`;
 
+  // User imports (from the original MDX file)
+  const userImportLines = userImports.length > 0 ? userImports.join('\n') : '';
+
   const moduleId = filename ? JSON.stringify(filename) : 'undefined';
 
-  return `${runtimeImports}
-${componentImportLines}
+  // Include user imports after runtime imports, before registry imports
+  const allImports = [runtimeImports, userImportLines, componentImportLines]
+    .filter(Boolean)
+    .join('\n');
+
+  return `${allImports}
 export const frontmatter = ${frontmatterJson};
 export function getHeadings() { return ${headingsJson}; }
 function _Content() {
