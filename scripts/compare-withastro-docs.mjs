@@ -444,7 +444,14 @@ function stripTags(text) {
   processed = processed.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
   processed = processed.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
 
-  // 3. Strip remaining tags
+  // 3. Remove sr-only content (screen-reader accessibility text, not semantic content)
+  // This includes Starlight's "Section titled X" anchor text
+  processed = processed.replace(/<span\b[^>]*class="[^"]*\bsr-only\b[^"]*"[^>]*>[\s\S]*?<\/span>/gi, '');
+
+  // 4. Remove figcaption content (ExpressiveCode file titles - metadata, not content)
+  processed = processed.replace(/<figcaption\b[^>]*>[\s\S]*?<\/figcaption>/gi, '');
+
+  // 5. Strip remaining tags
   const blockTagRe =
     /<\/?(?:p|div|section|article|header|footer|main|aside|nav|h[1-6]|ol|ul|li|table|thead|tbody|tfoot|tr|td|th|pre|blockquote|figure|figcaption|hr|br)(?:\s[^>]*)?>/gi;
   processed = decodeHtmlEntities(
@@ -458,12 +465,32 @@ function stripTags(text) {
     .trim()
     .replace(/\s+/g, ' ');
 
-  // 4. Restore code blocks with preserved whitespace (only normalize CRLF → LF)
+  // 6. Normalize typography: curly quotes to straight quotes (smartypants differences)
+  // Also normalize ellipsis character (…) to three dots
+  // Strip (EN) locale markers that appear in Japanese pages
+  processed = processed
+    .replace(/[\u2018\u2019]/g, "'")  // ' ' → '
+    .replace(/[\u201C\u201D]/g, '"')  // " " → "
+    .replace(/\u2026/g, '...')        // … → ...
+    .replace(/ \(EN\)/g, '');         // Strip locale markers
+
+  // 7. Restore code blocks with preserved whitespace (only normalize CRLF → LF)
   // Also decode HTML entities so both sides compare consistently
+  // Strip inner HTML tags from code blocks (e.g., ExpressiveCode's <span>, <div>)
   codeBlocks.forEach((code, i) => {
+    const strippedCode = decodeHtmlEntities(
+      code
+        // Convert ExpressiveCode line divs to newlines before stripping
+        .replace(/<\/div>\s*<div class="ec-line">/gi, '\n')
+        .replace(/<div class="ec-line"[^>]*>/gi, '')
+        .replace(/<\/div>/gi, '')
+        .replace(/<[^>]+>/g, '')  // Strip remaining HTML tags
+        .replace(/\r\n?/g, '\n')
+        .replace(/\n{2,}/g, '\n')  // Normalize multiple newlines to single
+    );
     processed = processed.replace(
       `__CODE_BLOCK_${i}__`,
-      decodeHtmlEntities(code.replace(/\r\n?/g, '\n'))
+      strippedCode
     );
   });
 
