@@ -1024,4 +1024,45 @@ export const authClient = createAuthClient();
             other => panic!("Expected Component block, got: {:?}", other),
         }
     }
+
+    #[test]
+    fn test_islands_mdx_fragment_slots_pattern() {
+        // Regression test for: "Unexpected closing slash `/` in tag"
+        // This pattern from islands.mdx was causing parse errors when
+        // normalize_list_jsx_components incorrectly handled inline Fragment tags.
+        let input = r#"<IslandsDiagram>
+  <Fragment slot="headerApp">Header (interactive island)</Fragment>
+  <Fragment slot="sidebarApp">Sidebar (static HTML)</Fragment>
+  <Fragment slot="main">
+    Static content like text, images, etc.
+  </Fragment>
+  <Fragment slot="carouselApp">Image carousel (interactive island)</Fragment>
+  <Fragment slot="footer">Footer (static HTML)</Fragment>
+</IslandsDiagram>"#;
+
+        let options = Options {
+            enable_directives: true,
+            allow_raw_html: false,
+            ..Default::default()
+        };
+
+        // This should NOT fail with "Unexpected closing slash `/` in tag"
+        let result = to_blocks(input, &options);
+        assert!(
+            result.is_ok(),
+            "Should parse without error. Got: {:?}",
+            result.err()
+        );
+
+        // Verify we get the component
+        let blocks = result.unwrap();
+        let islands_diagram = blocks
+            .blocks
+            .iter()
+            .find(|b| matches!(b, RenderBlock::Component { name, .. } if name == "IslandsDiagram"));
+        assert!(
+            islands_diagram.is_some(),
+            "Should have IslandsDiagram component"
+        );
+    }
 }

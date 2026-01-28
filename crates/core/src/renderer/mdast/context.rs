@@ -7,6 +7,22 @@ use crate::registry::defaults::default_starlight_registry;
 use markdown::mdast::Node;
 use std::collections::HashMap;
 
+/// Escapes a string for use in an HTML attribute value.
+fn escape_html_attr(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '<' => result.push_str("&lt;"),
+            '>' => result.push_str("&gt;"),
+            '&' => result.push_str("&amp;"),
+            '"' => result.push_str("&quot;"),
+            '\'' => result.push_str("&#39;"),
+            _ => result.push(c),
+        }
+    }
+    result
+}
+
 /// Manages the current rendering state with block-based architecture.
 ///
 /// This struct tracks the rendering context as we traverse the markdown AST,
@@ -212,6 +228,19 @@ impl<'a> Context<'a> {
         for (key, prop_value) in props {
             self.current_html.push(' ');
             self.current_html.push_str(key);
+
+            // For 'slot' attribute on Fragment, use HTML attribute syntax not JSX expression
+            // Astro's slot system expects slot="name" not slot={"name"}
+            if name == "Fragment" && key == "slot" {
+                if let PropValue::Literal { value } = prop_value {
+                    self.current_html.push_str("=\"");
+                    self.push_attr_value(value);
+                    self.current_html.push('"');
+                    continue;
+                }
+            }
+
+            // Default JSX expression syntax for other props
             self.current_html.push_str("={");
             match prop_value {
                 PropValue::Literal { value } => {
@@ -285,6 +314,19 @@ impl<'a> Context<'a> {
                     for (key, prop_value) in &props {
                         result.push(' ');
                         result.push_str(key);
+
+                        // For 'slot' attribute on Fragment, use HTML attribute syntax not JSX expression
+                        // Astro's slot system expects slot="name" not slot={"name"}
+                        if name == "Fragment" && key == "slot" {
+                            if let PropValue::Literal { value } = prop_value {
+                                result.push_str("=\"");
+                                result.push_str(&escape_html_attr(value));
+                                result.push('"');
+                                continue;
+                            }
+                        }
+
+                        // Default JSX expression syntax for other props
                         result.push_str("={");
                         match prop_value {
                             PropValue::Literal { value } => {

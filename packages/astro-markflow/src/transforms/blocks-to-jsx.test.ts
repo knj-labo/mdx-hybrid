@@ -141,7 +141,7 @@ describe('blocksToJsx', () => {
       const result = blocksToJsx(blocks);
 
       expect(result).toContain("import { createComponent, renderJSX } from 'astro/runtime/server/index.js';");
-      expect(result).toContain("import { Fragment as _Fragment, jsx as _jsx } from 'astro/jsx-runtime';");
+      expect(result).toContain("import { Fragment, Fragment as _Fragment, jsx as _jsx } from 'astro/jsx-runtime';");
     });
   });
 
@@ -379,6 +379,77 @@ describe('blocksToJsx', () => {
       expect(result).toContain('title={title}');
       expect(result).not.toContain("{'{'}");
       expect(result).toContain('<CardGrid><Card title={title}>Content</Card></CardGrid>');
+    });
+  });
+
+  describe('Fragment slot stripping', () => {
+    it('should strip <p> wrapper from Fragment with slot attribute', () => {
+      const blocks: Block[] = [
+        {
+          type: 'component',
+          name: 'IslandsDiagram',
+          props: {},
+          slotHtml: '<p><Fragment slot="headerApp">Header text</Fragment></p>',
+        },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      // Should NOT contain the <p> wrapper
+      expect(result).not.toContain('<p><Fragment slot=');
+      // Should contain the Fragment with slot directly
+      expect(result).toContain('<Fragment slot="headerApp">');
+    });
+
+    it('should strip multiple <p> wrappers from Fragment slots', () => {
+      const blocks: Block[] = [
+        {
+          type: 'component',
+          name: 'Container',
+          props: {},
+          slotHtml: '<p><Fragment slot="header">Header</Fragment></p><p><Fragment slot="footer">Footer</Fragment></p>',
+        },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      // Should NOT contain any <p><Fragment patterns
+      expect(result).not.toContain('<p><Fragment slot=');
+      // Should contain both Fragment slots
+      expect(result).toContain('<Fragment slot="header">Header</Fragment>');
+      expect(result).toContain('<Fragment slot="footer">Footer</Fragment>');
+    });
+
+    it('should preserve regular paragraphs', () => {
+      const blocks: Block[] = [
+        {
+          type: 'component',
+          name: 'Card',
+          props: {},
+          slotHtml: '<p>Regular paragraph content</p>',
+        },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      // Regular paragraphs should be preserved
+      expect(result).toContain('<p>Regular paragraph content</p>');
+    });
+
+    it('should preserve Fragment without slot attribute', () => {
+      const blocks: Block[] = [
+        {
+          type: 'component',
+          name: 'Wrapper',
+          props: {},
+          slotHtml: '<p><Fragment>Content without slot</Fragment></p>',
+        },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      // Fragment without slot= should NOT be stripped
+      expect(result).toContain('<p><Fragment>Content without slot</Fragment></p>');
     });
   });
 });

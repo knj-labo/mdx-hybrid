@@ -232,9 +232,20 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
                 continue;
             }
 
-            // For non-self-closing tags, find matching closing tag with depth tracking
-            // and output all inner content as-is (no blank line insertion for nested components)
+            // Check if the component is inline (opens and closes on the same line)
+            // e.g., <Fragment slot="foo">content</Fragment>
             let close_tag = format!("</{}>", tag_info.name);
+            if line.contains(&close_tag) {
+                // Inline component - already output the line, just continue
+                if i + 1 < lines.len() && needs_blank_line_after(&lines, i) {
+                    output.push('\n');
+                }
+                i += 1;
+                continue;
+            }
+
+            // For non-self-closing, non-inline tags, find matching closing tag with depth tracking
+            // and output all inner content as-is (no blank line insertion for nested components)
             let open_prefix = format!("<{}", tag_info.name);
             let mut j = i + 1;
             let mut depth = 1;
@@ -346,6 +357,15 @@ fn needs_blank_line_before(lines: &[&str], i: usize) -> bool {
     // If previous line is a closing tag like </Fragment>, </TabItem>, etc., don't add blank
     if prev_trimmed.starts_with("</") {
         return false;
+    }
+
+    // If previous line is an inline component (contains both opening and closing tag),
+    // don't add blank line - they should flow together
+    if let Some(prev_tag) = parse_jsx_tag(prev_trimmed).filter(|t| !t.self_closing) {
+        let close_tag = format!("</{}>", prev_tag.name);
+        if prev_trimmed.contains(&close_tag) {
+            return false;
+        }
     }
 
     true
@@ -536,5 +556,41 @@ mod tests {
             "Should NOT insert blank line between nested closing Box tags. Got:\n{}",
             result
         );
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_single_line_fragment_slots() {
+        // This pattern from islands.mdx was causing "Unexpected closing slash `/` in tag" errors
+        // The issue: <Fragment slot="...">content</Fragment> on a single line
+        // should NOT trigger depth tracking across lines
+        let input = r#"<IslandsDiagram>
+  <Fragment slot="headerApp">Header (interactive island)</Fragment>
+  <Fragment slot="sidebarApp">Sidebar (static HTML)</Fragment>
+  <Fragment slot="main">
+    Static content like text, images, etc.
+  </Fragment>
+  <Fragment slot="carouselApp">Image carousel (interactive island)</Fragment>
+  <Fragment slot="footer">Footer (static HTML)</Fragment>
+</IslandsDiagram>
+"#;
+        let result = normalize_list_jsx_components(input);
+
+        // The output should be essentially unchanged - the single-line Fragment tags
+        // should NOT cause blank line insertions that break the structure
+        assert!(
+            result.contains("<Fragment slot=\"headerApp\">"),
+            "Fragment tags should be preserved. Got:\n{}",
+            result
+        );
+
+        // Make sure we don't break the closing tag
+        assert!(
+            result.contains("</IslandsDiagram>"),
+            "IslandsDiagram closing tag should be preserved. Got:\n{}",
+            result
+        );
+
+        // Most importantly: the output should parse correctly
+        // (we'll verify this via integration test)
     }
 }

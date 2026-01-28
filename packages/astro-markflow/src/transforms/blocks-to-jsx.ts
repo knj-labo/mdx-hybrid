@@ -36,6 +36,56 @@ function escapeJsString(value: string): string {
 }
 
 /**
+ * Strips `<p>` wrappers from Fragment elements with slot attributes.
+ *
+ * markdown-rs sometimes wraps `<Fragment slot="...">` in paragraph tags,
+ * which breaks Astro's slot system because the slot attribute is on Fragment,
+ * not on the wrapping `<p>`.
+ *
+ * Before: `<p><Fragment slot="foo">content</Fragment></p>`
+ * After:  `<Fragment slot="foo">content</Fragment>`
+ */
+function stripParagraphFragmentWrappers(input: string): string {
+  // Pattern: <p><Fragment slot="...">...</Fragment></p>
+  // We need to handle nested content, so we can't use a simple regex
+  let result = '';
+  let cursor = 0;
+
+  while (cursor < input.length) {
+    const matchStart = input.indexOf('<p><Fragment slot=', cursor);
+    if (matchStart === -1) {
+      result += input.slice(cursor);
+      break;
+    }
+
+    // Push everything before this match
+    result += input.slice(cursor, matchStart);
+
+    // Find the matching </Fragment></p>
+    const fragmentStart = matchStart + 3; // Skip "<p>"
+    const fragmentEndTag = input.indexOf('</Fragment>', fragmentStart);
+
+    if (fragmentEndTag !== -1) {
+      const fragmentEnd = fragmentEndTag + '</Fragment>'.length;
+      const afterFragment = input.slice(fragmentEnd);
+
+      if (afterFragment.startsWith('</p>')) {
+        // Extract just the Fragment element (without <p> wrapper)
+        result += input.slice(fragmentStart, fragmentEnd);
+        cursor = fragmentEnd + 4; // Skip "</p>"
+        continue;
+      }
+    }
+
+    // No match found, just push the "<p>" and continue
+    result += '<p>';
+    cursor = matchStart + 3;
+  }
+
+  return result;
+}
+
+/**
  * Normalizes slot content based on a slot normalization strategy.
  * Ensures content is wrapped in the appropriate list structure.
  *
@@ -142,7 +192,8 @@ export function blocksToJsx(
       const isDirective = block.name ? supportedDirectives.includes(block.name) : false;
       let componentName = block.name ?? '';
       let effectiveProps = block.props;
-      let effectiveSlot = block.slotHtml ?? '';
+      // Strip <p> wrappers from Fragment slots - markdown-rs wraps them incorrectly
+      let effectiveSlot = stripParagraphFragmentWrappers(block.slotHtml ?? '');
 
       if (isDirective && registry && block.name) {
         const mapping = registry.getDirectiveMapping(block.name);
@@ -206,12 +257,14 @@ export function blocksToJsx(
         // Uses Rust implementation for consistency with codegen
         const hasNestedComponents = hasPascalCaseTag(effectiveSlot);
 
-        if (hasNestedComponents) {
-          // Slot contains components - embed JSX directly so Astro processes them
+        // Fragment components should NEVER use set:html wrapper
+        // The Fragment itself is the slot container, content should be direct children
+        if (componentName === 'Fragment' || hasNestedComponents) {
+          // Embed JSX directly so Astro processes slot content correctly
           // Convert HTML entities to JSX expressions so they render as text, not markup
           fragments.push(`<${componentName}${propsAttr}>${htmlEntitiesToJsx(effectiveSlot)}</${componentName}>`);
         } else {
-          // Pure HTML content - use set:html to avoid HTML entity parsing issues
+          // Pure HTML content - use set:html for non-Fragment components
           fragments.push(`<${componentName}${propsAttr}><_Fragment set:html={${JSON.stringify(effectiveSlot)}} /></${componentName}>`);
         }
       } else {
@@ -253,7 +306,7 @@ export function blocksToJsx(
   const jsxContent = fragments.join('\n');
 
   const runtimeImports = `import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
-import { Fragment as _Fragment, jsx as _jsx } from 'astro/jsx-runtime';`;
+import { Fragment, Fragment as _Fragment, jsx as _jsx } from 'astro/jsx-runtime';`;
 
   // User imports (from the original MDX file)
   const userImportLines = userImports.length > 0 ? userImports.join('\n') : '';
