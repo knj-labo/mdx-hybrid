@@ -182,8 +182,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
   let shikiReady: Promise<(code: string, lang?: string) => Promise<string>> | undefined;
 
+  // Enable Shiki when:
+  // 1. MARKFLOW_SHIKI=1 env var is set, OR
+  // 2. ExpressiveCode is explicitly disabled (fallback highlighting)
+  const shouldEnableShiki = ENABLE_SHIKI || !expressiveCode;
+
   const getShiki = (): Promise<(code: string, lang?: string) => Promise<string>> | null => {
-    if (!ENABLE_SHIKI || !IS_MDAST) return null;
+    if (!shouldEnableShiki) return null;
     if (!shikiReady) {
       shikiReady = createShikiHighlighter();
     }
