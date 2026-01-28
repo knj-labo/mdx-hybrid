@@ -67,17 +67,27 @@ pub fn escape_js_string_value(value: &str) -> String {
 pub fn has_pascal_case_tag(s: &str) -> bool {
     let bytes = s.as_bytes();
     let len = bytes.len();
-    for i in 0..len.saturating_sub(2) {
+    let mut i = 0;
+    while i < len.saturating_sub(1) {
         // Look for < followed by uppercase letter
         if bytes[i] == b'<' && bytes[i + 1].is_ascii_uppercase() {
-            // True PascalCase: uppercase followed by lowercase (e.g., <Card, <Aside)
-            // All-uppercase HTML tags: <DIV>, <SVG>, <A> should return false
-            if bytes[i + 2].is_ascii_lowercase() {
-                return true;
+            // Scan the tag name to check if it contains any lowercase letter
+            // PascalCase: has mixed case (e.g., <Card>, <MDXProvider>)
+            // All-uppercase HTML: no lowercase (e.g., <DIV>, <SVG>)
+            let mut j = i + 2;
+            while j < len {
+                let b = bytes[j];
+                if b.is_ascii_lowercase() {
+                    return true; // Found lowercase → PascalCase component
+                }
+                if !b.is_ascii_alphanumeric() && b != b'_' && b != b'-' {
+                    break; // End of tag name (space, >, /, etc.)
+                }
+                j += 1;
             }
-            // Check for single-letter component followed by non-letter (rare but valid: <X>)
-            // Skip if it's all uppercase like <A> or <B> which are HTML tags
+            // No lowercase found in this tag, continue searching
         }
+        i += 1;
     }
     false
 }
@@ -760,6 +770,14 @@ mod tests {
         assert!(has_pascal_case_tag("<Aside type=\"note\">text</Aside>"));
         assert!(has_pascal_case_tag("<p><NestedComponent /></p>"));
         assert!(has_pascal_case_tag("text <MyComponent> more"));
+
+        // Should detect initialism/acronym-prefixed PascalCase components
+        assert!(has_pascal_case_tag("<MDXProvider>content</MDXProvider>"));
+        assert!(has_pascal_case_tag("<URLTable />"));
+        assert!(has_pascal_case_tag("<APIClient>nested</APIClient>"));
+        assert!(has_pascal_case_tag("<XMLParser>data</XMLParser>"));
+        assert!(has_pascal_case_tag("<HTMLRenderer />"));
+        assert!(has_pascal_case_tag("<JSONViewer>content</JSONViewer>"));
 
         // Should NOT detect lowercase HTML tags
         assert!(!has_pascal_case_tag("<p>paragraph</p>"));
