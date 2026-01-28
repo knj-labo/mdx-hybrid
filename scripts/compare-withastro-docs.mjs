@@ -478,22 +478,22 @@ function stripTags(text) {
   // Also decode HTML entities so both sides compare consistently
   // Strip inner HTML tags from code blocks (e.g., ExpressiveCode's <span>, <div>)
   codeBlocks.forEach((code, i) => {
-    const strippedCode = decodeHtmlEntities(
-      code
-        // Convert ExpressiveCode line divs to newlines before stripping
-        // Each <div class="ec-line"> represents a line of code
-        .replace(/<div class="ec-line"[^>]*>/gi, '\n')
-        .replace(/<\/?div[^>]*>/gi, '')  // Remove remaining divs
-        .replace(/<[^>]+>/g, '')  // Strip remaining HTML tags
-        .replace(/\r\n?/g, '\n')
-        .replace(/^\n+/, '')      // Remove leading newlines
-        .replace(/\n+$/, '')      // Remove trailing newlines
-        .replace(/\n{2,}/g, '\n') // Normalize multiple newlines to single
-    );
-    processed = processed.replace(
-      `__CODE_BLOCK_${i}__`,
-      strippedCode
-    );
+    // First: strip HTML tags and normalize line endings
+    let strippedCode = code
+      // Convert ExpressiveCode line divs to newlines before stripping
+      // Each <div class="ec-line"> represents a line of code
+      .replace(/<div class="ec-line"[^>]*>/gi, '\n')
+      .replace(/<\/?div[^>]*>/gi, '') // Remove remaining divs
+      .replace(/<[^>]+>/g, '') // Strip remaining HTML tags
+      .replace(/\r\n?/g, '\n')
+      .replace(/^\n+/, '') // Remove leading newlines
+      .replace(/\n+$/, ''); // Remove trailing newlines
+    // Second: decode HTML entities (e.g., &#10; → \n)
+    strippedCode = decodeHtmlEntities(strippedCode);
+    // Third: normalize multiple newlines AFTER entity decoding
+    // This ensures &#10; entities are already converted to \n before collapsing
+    strippedCode = strippedCode.replace(/\n{2,}/g, '\n');
+    processed = processed.replace(`__CODE_BLOCK_${i}__`, strippedCode);
   });
 
   return processed;
