@@ -162,9 +162,11 @@ export function extractImportStatements(code: string): string[] {
       // Start of new import statement
       if (trimmed.startsWith('import ') && !trimmed.startsWith('import(')) {
         // Check if import is complete on this line
+        // Side-effect import: import './file.js' or import "styles.css" (no 'from' keyword)
+        const isSideEffectImport = /^import\s+['"][^'"]+['"]/.test(trimmed);
         // Complete import has: import ... from '...' or import ... from "..."
         const hasFromClause = /from\s+['"][^'"]+['"]/.test(trimmed);
-        if (hasFromClause || trimmed.includes(';')) {
+        if (isSideEffectImport || hasFromClause || trimmed.includes(';')) {
           // Complete single-line import (with or without semicolon)
           imports.push(trimmed);
         } else {

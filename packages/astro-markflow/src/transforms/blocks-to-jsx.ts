@@ -351,9 +351,10 @@ export function blocksToJsx(
 
         // Check if slot contains JSX components (true PascalCase tags like <Card, <Aside, etc.)
         // These need to be embedded directly so Astro processes them as components
-        // True PascalCase: first char uppercase, second char lowercase (e.g., <Card>, <TabItem>)
-        // All-uppercase HTML tags like <SVG>, <DIV> should use set:html path
-        const hasNestedComponents = /<[A-Z][a-z][a-zA-Z0-9]*[\s>\/]/.test(effectiveSlot);
+        // True PascalCase: starts with uppercase AND contains at least one lowercase letter
+        // Matches: <Card>, <MDXProvider>, <URLTable>, <APIClient>
+        // Excludes: <DIV>, <SVG>, <HTML> (all uppercase - these are treated as HTML)
+        const hasNestedComponents = /<[A-Z](?=[A-Za-z0-9]*[a-z])[A-Za-z0-9]*[\s>\/]/.test(effectiveSlot);
 
         if (hasNestedComponents) {
           // Slot contains components - embed JSX directly so Astro processes them

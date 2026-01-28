@@ -200,6 +200,58 @@ describe('blocksToJsx', () => {
       expect(result).toContain('<Container><_Fragment set:html=');
     });
 
+    it('should detect acronym-prefixed PascalCase components like MDXProvider', () => {
+      // Components that start with acronyms like MDX, URL, API should be detected
+      const blocks: Block[] = [
+        {
+          type: 'component',
+          name: 'Container',
+          props: {},
+          slotHtml: '<MDXProvider>content</MDXProvider>',
+        },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      // Should embed JSX directly, not use set:html
+      expect(result).toContain('<Container><MDXProvider>content</MDXProvider></Container>');
+      expect(result).not.toContain('set:html={');
+    });
+
+    it('should detect URLTable and other acronym-prefixed components', () => {
+      const blocks: Block[] = [
+        {
+          type: 'component',
+          name: 'Section',
+          props: {},
+          slotHtml: '<URLTable /><APIClient>data</APIClient>',
+        },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      // Should embed JSX directly because these are PascalCase components
+      expect(result).toContain('<Section><URLTable /><APIClient>data</APIClient></Section>');
+      expect(result).not.toContain('set:html={');
+    });
+
+    it('should still use set:html for all-uppercase tags like HTML, DIV', () => {
+      const blocks: Block[] = [
+        {
+          type: 'component',
+          name: 'Container',
+          props: {},
+          slotHtml: '<DIV>content</DIV><HTML><BODY></BODY></HTML>',
+        },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      // All-uppercase should use set:html path
+      expect(result).toContain('set:html=');
+      expect(result).toContain('<Container><_Fragment set:html=');
+    });
+
     it('should handle multiple nested components', () => {
       const blocks: Block[] = [
         {

@@ -449,4 +449,46 @@ import { Simple } from 'simple';`;
     expect(result[1]).toContain('Bar');
     expect(result[2]).toBe("import { Simple } from 'simple';");
   });
+
+  it('should extract side-effect imports without semicolons', () => {
+    const code = `import './styles.css'
+import Card from './Card.astro'
+
+# Content`;
+
+    const result = extractImportStatements(code);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBe("import './styles.css'");
+    expect(result[1]).toBe("import Card from './Card.astro'");
+  });
+
+  it('should extract side-effect imports with semicolons', () => {
+    const code = `import "./polyfill.js";
+import './styles.css';`;
+
+    const result = extractImportStatements(code);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBe('import "./polyfill.js";');
+    expect(result[1]).toBe("import './styles.css';");
+  });
+
+  it('should not misparsing side-effect import as multi-line', () => {
+    // Regression test: side-effect import followed by regular import
+    // should NOT concatenate them into a single import
+    const code = `import './styles.css'
+import { foo } from 'bar'
+
+# Content`;
+
+    const result = extractImportStatements(code);
+
+    expect(result).toHaveLength(2);
+    // Each import should be separate
+    expect(result[0]).toBe("import './styles.css'");
+    expect(result[1]).toBe("import { foo } from 'bar'");
+    // Should NOT contain both in one string
+    expect(result[0]).not.toContain('foo');
+  });
 });
