@@ -177,7 +177,9 @@ export function extractImportStatements(code: string): string[] {
       }
     } else {
       // Continue accumulating multi-line import
-      currentImport += ' ' + trimmed;
+      // Strip inline // comments to prevent them from consuming the rest of the flattened line
+      const lineWithoutComment = trimmed.replace(/\s*\/\/.*$/, '');
+      currentImport += ' ' + lineWithoutComment;
       const hasFromClause = /from\s+['"][^'"]+['"]/.test(currentImport);
       if (hasFromClause || trimmed.includes(';')) {
         // End of multi-line import

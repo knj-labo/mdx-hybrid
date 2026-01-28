@@ -474,6 +474,23 @@ import './styles.css';`;
     expect(result[1]).toBe("import './styles.css';");
   });
 
+  it('should handle multi-line imports with inline comments', () => {
+    const code = `import {
+  Foo, // note about Foo
+  Bar // another comment
+} from 'x';`;
+
+    const result = extractImportStatements(code);
+
+    expect(result).toHaveLength(1);
+    // Comments should be stripped, producing valid syntax
+    expect(result[0]).toContain('Foo');
+    expect(result[0]).toContain('Bar');
+    expect(result[0]).toContain("from 'x'");
+    // Should NOT contain the comment (which would break syntax)
+    expect(result[0]).not.toContain('//');
+  });
+
   it('should not misparsing side-effect import as multi-line', () => {
     // Regression test: side-effect import followed by regular import
     // should NOT concatenate them into a single import
