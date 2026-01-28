@@ -1,8 +1,69 @@
 {
-  "timestamp": "2026-01-25T07:26:38.164Z",
-  "baselineMs": 141582,
-  "markflowMs": 133174,
-  "mode": "time",
-  "semantic": null,
-  "note": "build-only; no HTML diff"
+  "timestamp": "2026-01-28T03:24:49.386Z",
+  "baselineMs": 128267,
+  "markflowMs": 63833,
+  "mode": "semantic",
+  "semantic": {
+    "compared": 12,
+    "skipped": 0,
+    "differences": 12,
+    "samples": [
+      {
+        "file": "/en/basics/astro-components/",
+        "reason": "content-diff",
+        "diffIndex": 10204,
+        "previewA": "al Astro.props object. ---\n// Usage: <GreetingHeadline greeting=\"Howdy\" name=\"Partner\" />\nconst { greeting, name } = Astro.props;\n---\n<h2>{greeting}, ",
+        "previewB": "al Astro.props object. ---\n// src/components/GreetingHeadline.astro\n// Usage: <GreetingHeadline greeting=\"Howdy\" name=\"Partner\" />\nconst { greeting, n",
+        "hexAtDiffA": "U(0x55) s(0x73) a(0x61) g(0x67) e(0x65) :(0x3a)  (0x20) <(0x3c) G(0x47) r(0x72) e(0x65) e(0x65) t(0x74) i(0x69) n(0x6e) g(0x67) H(0x48) e(0x65) a(0x61) d(0x64)",
+        "hexAtDiffB": "s(0x73) r(0x72) c(0x63) /(0x2f) c(0x63) o(0x6f) m(0x6d) p(0x70) o(0x6f) n(0x6e) e(0x65) n(0x6e) t(0x74) s(0x73) /(0x2f) G(0x47) r(0x72) e(0x65) e(0x65) t(0x74)",
+        "lengthA": 18068,
+        "lengthB": 18431
+      },
+      {
+        "file": "/en/basics/project-structure/",
+        "reason": "structure-diff",
+        "diffIndex": 5792,
+        "previewA": "ss\" rel=\"stylesheet\"> <style>.action:where(.astro-vnzlvqnm){gap:.5em;align-items:center;border-radius:999rem;padding:.5rem 1.125rem;color:var(--sl-col",
+        "previewB": "ss\" rel=\"stylesheet\"> <style>.landing-card:where(.astro-thryqltm){--card-bg: rgba(23, 25, 30, .8);display:contents;color:var(--sl-color-white)}:root[d",
+        "hexAtDiffA": "a(0x61) c(0x63) t(0x74) i(0x69) o(0x6f) n(0x6e) :(0x3a) w(0x77) h(0x68) e(0x65) r(0x72) e(0x65) ((0x28) .(0x2e) a(0x61) s(0x73) t(0x74) r(0x72) o(0x6f) -(0x2d)",
+        "hexAtDiffB": "l(0x6c) a(0x61) n(0x6e) d(0x64) i(0x69) n(0x6e) g(0x67) -(0x2d) c(0x63) a(0x61) r(0x72) d(0x64) :(0x3a) w(0x77) h(0x68) e(0x65) r(0x72) e(0x65) ((0x28) .(0x2e)",
+        "lengthA": 166542,
+        "lengthB": 141353
+      },
+      {
+        "file": "/en/guides/markdown-content/",
+        "reason": "content-diff",
+        "diffIndex": 11895,
+        "previewA": "eConfig } from 'astro/config';import { rehypeHeadingIds } from '@astrojs/markdown-remark';\nimport { otherPluginThatReliesOnHeadingIDs } from 'some/plu",
+        "previewB": "eConfig } from 'astro/config';\nimport { rehypeHeadingIds } from '@astrojs/markdown-remark';\nimport { otherPluginThatReliesOnHeadingIDs } from 'some/pl",
+        "hexAtDiffA": "i(0x69) m(0x6d) p(0x70) o(0x6f) r(0x72) t(0x74)  (0x20) {(0x7b)  (0x20) r(0x72) e(0x65) h(0x68) y(0x79) p(0x70) e(0x65) H(0x48) e(0x65) a(0x61) d(0x64) i(0x69)",
+        "hexAtDiffB": "\n(0xa) i(0x69) m(0x6d) p(0x70) o(0x6f) r(0x72) t(0x74)  (0x20) {(0x7b)  (0x20) r(0x72) e(0x65) h(0x68) y(0x79) p(0x70) e(0x65) H(0x48) e(0x65) a(0x61) d(0x64)",
+        "lengthA": 20630,
+        "lengthB": 20585
+      },
+      {
+        "file": "/en/guides/routing/",
+        "reason": "content-diff",
+        "diffIndex": 4910,
+        "previewA": "/\">reference</a> section!</p> Static routes .astro page components as well as Markdown and MDX Files (.md, .mdx) within the src/pages/ directory autom",
+        "previewB": "/\">reference</a> section!</p>  Static routes .astro page components as well as Markdown and MDX Files (.md, .mdx) within the src/pages/ directory auto",
+        "hexAtDiffA": "S(0x53) t(0x74) a(0x61) t(0x74) i(0x69) c(0x63)  (0x20) r(0x72) o(0x6f) u(0x75) t(0x74) e(0x65) s(0x73)  (0x20) .(0x2e) a(0x61) s(0x73) t(0x74) r(0x72) o(0x6f)",
+        "hexAtDiffB": " (0x20) S(0x53) t(0x74) a(0x61) t(0x74) i(0x69) c(0x63)  (0x20) r(0x72) o(0x6f) u(0x75) t(0x74) e(0x65) s(0x73)  (0x20) .(0x2e) a(0x61) s(0x73) t(0x74) r(0x72)",
+        "lengthA": 24345,
+        "lengthB": 24403
+      },
+      {
+        "file": "/en/guides/content-collections/",
+        "reason": "content-diff",
+        "diffIndex": 6291,
+        "previewA": "ML, TOML, or JSON files: src/ ... newsletter/ the \"newsletter\" collection week-1.md a collection entry week-2.md a collection entry week-3.md a collec",
+        "previewB": "ML, TOML, or JSON files: src/ newsletter/ the \"newsletter\" collection week-1.md a collection entry week-2.md a collection entry week-3.md a collection",
+        "hexAtDiffA": ".(0x2e) .(0x2e) .(0x2e)  (0x20) n(0x6e) e(0x65) w(0x77) s(0x73) l(0x6c) e(0x65) t(0x74) t(0x74) e(0x65) r(0x72) /(0x2f)  (0x20) t(0x74) h(0x68) e(0x65)  (0x20)",
+        "hexAtDiffB": "n(0x6e) e(0x65) w(0x77) s(0x73) l(0x6c) e(0x65) t(0x74) t(0x74) e(0x65) r(0x72) /(0x2f)  (0x20) t(0x74) h(0x68) e(0x65)  (0x20) \"(0x22) n(0x6e) e(0x65) w(0x77)",
+        "lengthA": 31711,
+        "lengthB": 31727
+      }
+    ]
+  },
+  "note": "semantic diff: pass if differences=0"
 }

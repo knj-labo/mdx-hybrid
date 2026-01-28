@@ -370,7 +370,11 @@ async function loadRoutes(filePath) {
 }
 
 export function normalizeHtml(html) {
-  let processed = html;
+  // Strip ExpressiveCode copy button data-code attributes FIRST
+  // These contain unescaped HTML (raw < and >) that breaks regex tag parsing
+  // The data-code attribute may also contain 0x7f (DEL) as line separators
+  let processed = html.replace(/\s+data-code="[^"]*"/gi, '');
+
   const frontmatterRe = /<pre\s+class="frontmatter"[^>]*>[\s\S]*?<\/pre>/gi;
   while (frontmatterRe.test(processed)) {
     processed = processed.replace(frontmatterRe, '');
