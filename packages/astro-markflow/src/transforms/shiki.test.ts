@@ -262,4 +262,12 @@ describe('highlightJsxCodeBlocks', () => {
     // Should not crash, should preserve the structure
     expect(result).toContain('<pre>');
   });
+
+  test('handles pre tag with attributes', async () => {
+    const code = `<pre class="astro-code" tabindex="0"><code class="language-sh"># comment</code></pre>`;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    // Mock uppercases the code content, showing that highlighting was applied
+    expect(result).toContain('# COMMENT');
+    expect(result).toContain('class="language-sh"');
+  });
 });

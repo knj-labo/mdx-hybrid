@@ -109,6 +109,20 @@ describe('rewriteExpressiveCodeBlocks', () => {
     expect(result.code).toBe('<Code code={"const str = \\"hello\\";"} />');
     expect(result.changed).toBe(true);
   });
+
+  test('handles pre tag with attributes', () => {
+    const code = '<pre class="astro-code" tabindex="0"><code class="language-sh"># create a new project\nnpm create astro@latest</code></pre>';
+    const result = rewriteExpressiveCodeBlocks(code, 'Code');
+    expect(result.code).toBe('<Code code={"# create a new project\\nnpm create astro@latest"} lang="sh" />');
+    expect(result.changed).toBe(true);
+  });
+
+  test('handles pre tag with single attribute', () => {
+    const code = '<pre tabindex="0"><code>simple code</code></pre>';
+    const result = rewriteExpressiveCodeBlocks(code, 'Code');
+    expect(result.code).toBe('<Code code={"simple code"} />');
+    expect(result.changed).toBe(true);
+  });
 });
 
 describe('rewriteSetHtmlCodeBlocks', () => {

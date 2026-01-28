@@ -45,8 +45,10 @@ export function rewriteExpressiveCodeBlocks(
   if (!code || typeof code !== 'string') {
     return { code, changed: false };
   }
+  // Pattern matches <pre> with optional attributes (class, tabindex, etc.)
+  // followed by <code> with optional language class
   const pattern =
-    /<pre><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
+    /<pre[^>]*><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
   let changed = false;
   const next = code.replace(pattern, (_match, lang: string | undefined, raw: string) => {
     changed = true;

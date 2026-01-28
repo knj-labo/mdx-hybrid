@@ -129,13 +129,13 @@ export async function highlightJsxCodeBlocks(
   }
 
   // Early skip if no <pre> tags in JSX context
-  if (!/<pre>/.test(code)) {
+  if (!/<pre[\s>]/.test(code)) {
     return code;
   }
 
-  // Match <pre><code class="language-xxx">content</code></pre> patterns
+  // Match <pre> with optional attributes followed by <code class="language-xxx">content</code></pre>
   // Content may contain JSX expressions like {"text"} or HTML entities
-  const preCodeRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g;
+  const preCodeRegex = /<pre[^>]*><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g;
 
   const replacements: { match: string; replacement: string }[] = [];
 
