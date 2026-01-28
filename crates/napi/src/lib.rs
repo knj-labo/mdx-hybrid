@@ -22,6 +22,28 @@ pub use types::*;
 use utils::empty_frontmatter;
 pub(crate) use utils::{build_import_list, dedupe_imports};
 
+/// Converts HTML entities to JSX-safe expressions.
+///
+/// When slot content with nested components is embedded directly in JSX,
+/// HTML entities must be handled appropriately based on context:
+/// - Text content: entities → JSX expressions (e.g., `&amp;` → `{"&"}`)
+/// - Attribute values: entities stay as-is (browser interprets them)
+/// - JSX expression attributes: curly braces decoded (e.g., `=&#123;` → `={`)
+#[napi(js_name = "htmlEntitiesToJsx")]
+pub fn html_entities_to_jsx_napi(s: String) -> String {
+    markflow_core::codegen::html_entities_to_jsx(&s)
+}
+
+/// Checks if string contains PascalCase JSX tags (e.g., `<Card`, `<Aside`).
+///
+/// This is used to detect nested JSX components in slot content. When components
+/// are present, the slot content must be embedded directly (not via `set:html`)
+/// so that Astro processes them as components rather than raw HTML.
+#[napi(js_name = "hasPascalCaseTag")]
+pub fn has_pascal_case_tag_napi(s: String) -> bool {
+    markflow_core::codegen::has_pascal_case_tag(&s)
+}
+
 /// Extracts YAML or TOML frontmatter without compiling the entire Markdown document.
 #[napi]
 pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {

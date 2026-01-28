@@ -5,6 +5,7 @@
 
 import type { Registry } from 'markflow/registry';
 import type { HeadingEntry } from 'markflow';
+import { htmlEntitiesToJsx, hasPascalCaseTag } from 'markflow-napi';
 
 /**
  * Prop value from the Rust compiler.
@@ -32,155 +33,6 @@ export interface Block {
 function escapeJsString(value: string): string {
   // Use JSON.stringify which handles all JS escaping, then remove the outer quotes
   return JSON.stringify(String(value)).slice(1, -1);
-}
-
-/**
- * Finds the end of an HTML tag, accounting for > inside quoted attributes and JSX expressions.
- * Returns the index of the closing > or -1 if not found.
- */
-function findTagEnd(str: string, start: number): number {
-  let i = start + 1; // Skip opening <
-  let inQuote = false;
-  let quoteChar = '';
-  let braceDepth = 0;
-
-  while (i < str.length) {
-    const c = str[i];
-    if (inQuote) {
-      if (c === quoteChar) inQuote = false;
-    } else if (braceDepth > 0) {
-      // Inside JSX expression - track nested braces
-      if (c === '{') braceDepth++;
-      else if (c === '}') braceDepth--;
-    } else {
-      if (c === '"' || c === "'") {
-        inQuote = true;
-        quoteChar = c;
-      } else if (c === '{') {
-        braceDepth = 1;
-      } else if (c === '>') {
-        return i;
-      }
-    }
-    i++;
-  }
-  return -1;
-}
-
-/**
- * Converts HTML entities for safe JSX embedding.
- *
- * When slot content with nested components is embedded directly in JSX,
- * HTML entities must be handled appropriately based on context:
- *
- * 1. Text content: entities → JSX expressions (e.g., `&amp;` → `{"&"}`)
- * 2. Attribute values: entities stay as-is (browser interprets them)
- * 3. JSX expression attributes: curly braces decoded (e.g., `=&#123;` → `={`)
- *
- * This context-aware approach prevents creating invalid JSX like:
- *   `<a href="...?a=1{"&"}b=2">` (INVALID)
- * Instead keeping attribute values intact:
- *   `<a href="...?a=1&amp;b=2">` (VALID)
- */
-function htmlEntitiesToJsx(s: string): string {
-  // First pass: Handle curly braces in JSX expression attribute contexts
-  // =&#123; → ={ and &#125;> → }> etc.
-  let result = s
-    .replace(/=&#123;/g, '={')
-    .replace(/&#125;>/g, '}>')
-    .replace(/&#125;\/>/g, '}/>')
-    .replace(/&#125; /g, '} ')
-    .replace(/&#125;$/g, '}');
-
-  // Second pass: Context-aware entity conversion
-  // Only convert entities in text content, NOT inside attribute values
-  const output: string[] = [];
-  let i = 0;
-  const len = result.length;
-
-  while (i < len) {
-    // Check if we're entering a tag
-    if (result[i] === '<') {
-      // Find the end of the tag (quote-aware to handle > inside attributes)
-      const tagEnd = findTagEnd(result, i);
-      if (tagEnd === -1) {
-        // No closing >, append rest and break
-        output.push(result.slice(i));
-        break;
-      }
-
-      // Extract the tag (including < and >)
-      const tag = result.slice(i, tagEnd + 1);
-      output.push(tag); // Keep tag as-is (don't convert entities in attributes)
-      i = tagEnd + 1;
-      continue;
-    }
-
-    // We're in text content - find the next tag
-    const nextTag = result.indexOf('<', i);
-    const textEnd = nextTag === -1 ? len : nextTag;
-    const textContent = result.slice(i, textEnd);
-
-    // Convert entities in text content only
-    const convertedText = convertEntitiesInText(textContent);
-    output.push(convertedText);
-    i = textEnd;
-  }
-
-  return output.join('');
-}
-
-/**
- * Converts HTML entities and raw JSX-special characters to JSX expressions in text content.
- * Raw `{` and `}` must also be escaped since they're JSX expression delimiters.
- */
-function convertEntitiesInText(text: string): string {
-  // First pass: Convert HTML entities
-  const entityRegex = /&(amp|lt|gt|quot|apos|#39|#123|#125|#60|#62|#38|#34|#10|#13);|&(?![a-zA-Z#])/gi;
-
-  let result = text.replace(entityRegex, (match) => {
-    const lower = match.toLowerCase();
-    switch (lower) {
-      case '&amp;':
-      case '&#38;':
-      case '&':
-        return '{"&"}';
-      case '&lt;':
-      case '&#60;':
-        return '{"<"}';
-      case '&gt;':
-      case '&#62;':
-        return '{">"}';
-      case '&quot;':
-      case '&#34;':
-        return '{"\\\""}';
-      case '&#39;':
-      case '&apos;':
-        return `{"'"}`;
-      case '&#123;':
-        return '{"{"}';
-      case '&#125;':
-        return '{"}"}';
-      case '&#10;':
-        return '\n';       // newline
-      case '&#13;':
-        return '';         // carriage return - remove
-      default:
-        return match;
-    }
-  });
-
-  // Second pass: Convert raw { and } that weren't part of entities
-  // Skip { that's already part of a JSX expression pattern like {" or {"
-  // Also skip } that closes these expressions
-  result = result.replace(/\{(?!["'])/g, '{"{"}');
-  result = result.replace(/([^"])\}(?!")/g, '$1{"}"}');
-  // Handle } at the start of the result
-  if (result.startsWith('}')) {
-    result = '{"}"}' + result.slice(1);
-  }
-
-  return result;
 }
 
 /**
@@ -351,10 +203,8 @@ export function blocksToJsx(
 
         // Check if slot contains JSX components (true PascalCase tags like <Card, <Aside, etc.)
         // These need to be embedded directly so Astro processes them as components
-        // True PascalCase: starts with uppercase AND contains at least one lowercase letter
-        // Matches: <Card>, <MDXProvider>, <URLTable>, <APIClient>
-        // Excludes: <DIV>, <SVG>, <HTML> (all uppercase - these are treated as HTML)
-        const hasNestedComponents = /<[A-Z](?=[A-Za-z0-9]*[a-z])[A-Za-z0-9]*[\s>\/]/.test(effectiveSlot);
+        // Uses Rust implementation for consistency with codegen
+        const hasNestedComponents = hasPascalCaseTag(effectiveSlot);
 
         if (hasNestedComponents) {
           // Slot contains components - embed JSX directly so Astro processes them

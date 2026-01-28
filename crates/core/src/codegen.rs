@@ -173,8 +173,9 @@ pub fn html_entities_to_jsx(s: &str) -> String {
 /// Converts `=&#123;` → `={` and `&#125;>` → `}>` etc.
 fn preprocess_jsx_expression_braces(s: &str) -> String {
     s.replace("=&#123;", "={")
-        .replace("&#125;>", "}>")
+        // Replace longer pattern first to avoid partial matches
         .replace("&#125;/>", "}/>")
+        .replace("&#125;>", "}>")
         .replace("&#125; ", "} ")
 }
 
@@ -1041,6 +1042,31 @@ mod tests {
         assert_eq!(
             jsx,
             "<CardGrid><Card title={title}>Content</Card></CardGrid>"
+        );
+    }
+
+    #[test]
+    fn test_html_entities_to_jsx_self_closing_tag() {
+        // Regression test for: self-closing tags with expression attributes
+        // The fix ensures &#125;/> (}/>) is matched before &#125;> (}>)
+        // to avoid producing invalid JSX like <Card title={foo}>/
+        assert_eq!(
+            html_entities_to_jsx("<Card title=&#123;foo&#125;/>"),
+            "<Card title={foo}/>"
+        );
+        assert_eq!(
+            html_entities_to_jsx("<Button onClick=&#123;handler&#125; />"),
+            "<Button onClick={handler} />"
+        );
+        // Multiple expression attributes on self-closing tag
+        assert_eq!(
+            html_entities_to_jsx("<Input value=&#123;val&#125; onChange=&#123;fn&#125;/>"),
+            "<Input value={val} onChange={fn}/>"
+        );
+        // Non-self-closing tags should still work
+        assert_eq!(
+            html_entities_to_jsx("<Card title=&#123;foo&#125;>content</Card>"),
+            "<Card title={foo}>content</Card>"
         );
     }
 
