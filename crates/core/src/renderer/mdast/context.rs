@@ -7,6 +7,129 @@ use crate::registry::defaults::default_starlight_registry;
 use markdown::mdast::Node;
 use std::collections::HashMap;
 
+/// Escapes a string for use in an HTML attribute value.
+fn escape_html_attr(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '<' => result.push_str("&lt;"),
+            '>' => result.push_str("&gt;"),
+            '&' => result.push_str("&amp;"),
+            '"' => result.push_str("&quot;"),
+            '\'' => result.push_str("&#39;"),
+            _ => result.push(c),
+        }
+    }
+    result
+}
+
+/// Escapes code text for HTML output (including JSX braces and newlines).
+fn escape_code_text(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '<' => result.push_str("&lt;"),
+            '>' => result.push_str("&gt;"),
+            '&' => result.push_str("&amp;"),
+            '`' => result.push_str("&#96;"),
+            '{' => result.push_str("&#123;"),
+            '}' => result.push_str("&#125;"),
+            '\n' => result.push_str("&#10;"),
+            _ => result.push(c),
+        }
+    }
+    result
+}
+
+/// Converts blocks to inline HTML for use in list/table contexts.
+///
+/// This is used when rendering components inside lists or tables where
+/// block-level structure must be avoided.
+fn blocks_to_inline_html(component_name: &str, blocks: &[RenderBlock]) -> String {
+    let mut result = String::new();
+    for block in blocks {
+        match block {
+            RenderBlock::Html { content } => {
+                // Escape braces for Fragment slots so JSX text does not become expressions
+                let escaped = if component_name == "Fragment" {
+                    content.replace('{', "&#123;").replace('}', "&#125;")
+                } else {
+                    content.clone()
+                };
+                result.push_str(&escaped);
+            }
+            RenderBlock::Code { code, lang, .. } => {
+                // Render code block as HTML
+                result.push_str(r#"<pre class="astro-code" tabindex="0">"#);
+                if let Some(l) = lang {
+                    result.push_str(&format!(
+                        r#"<code class="language-{}">"#,
+                        escape_html_attr(l)
+                    ));
+                } else {
+                    result.push_str("<code>");
+                }
+                result.push_str(&escape_code_text(code));
+                result.push_str("</code></pre>");
+            }
+            RenderBlock::Component {
+                name,
+                props,
+                slot_children,
+            } => {
+                let slot_html = if name == "Fragment" {
+                    blocks_to_inline_html("Fragment", slot_children)
+                } else {
+                    blocks_to_inline_html(name, slot_children)
+                };
+
+                // Render nested components as JSX with props preserved
+                result.push('<');
+                result.push_str(name);
+
+                // Render props as JSX: key={"value"} or key={expression}
+                for (key, prop_value) in props {
+                    result.push(' ');
+                    result.push_str(key);
+
+                    // For 'slot' attribute on Fragment, use HTML attribute syntax not JSX expression
+                    // Astro's slot system expects slot="name" not slot={"name"}
+                    if name == "Fragment"
+                        && key == "slot"
+                        && let PropValue::Literal { value } = prop_value
+                    {
+                        result.push_str("=\"");
+                        result.push_str(&escape_html_attr(value));
+                        result.push('"');
+                        continue;
+                    }
+
+                    // Default JSX expression syntax for other props
+                    result.push_str("={");
+                    match prop_value {
+                        PropValue::Literal { value } => {
+                            result.push('"');
+                            result.push_str(&crate::codegen::escape_js_string_value(value));
+                            result.push('"');
+                        }
+                        PropValue::Expression { value } => {
+                            result.push_str(value);
+                        }
+                    }
+                    result.push('}');
+                }
+
+                result.push('>');
+                result.push_str(&slot_html);
+                result.push_str("</");
+                result.push_str(name);
+                result.push('>');
+            }
+        }
+    }
+    result
+}
+
 /// Manages the current rendering state with block-based architecture.
 ///
 /// This struct tracks the rendering context as we traverse the markdown AST,
@@ -178,14 +301,33 @@ impl<'a> Context<'a> {
         &mut self,
         name: &str,
         props: HashMap<String, PropValue>,
-        slot_html: String,
+        slot_children: Vec<RenderBlock>,
     ) {
         self.flush_html();
         self.blocks.push(RenderBlock::Component {
             name: name.to_string(),
             props,
-            slot_html,
+            slot_children,
         });
+    }
+
+    /// Renders a code block inline to the HTML buffer.
+    ///
+    /// Used when inside a list or table to avoid fragmenting the structure
+    /// by flushing HTML and emitting a separate `RenderBlock::Code`.
+    pub fn push_code_inline(&mut self, code: &str, lang: Option<&str>) {
+        self.current_html
+            .push_str(r#"<pre class="astro-code" tabindex="0">"#);
+        if let Some(l) = lang {
+            self.current_html.push_str(&format!(
+                r#"<code class="language-{}">"#,
+                escape_html_attr(l)
+            ));
+        } else {
+            self.current_html.push_str("<code>");
+        }
+        self.current_html.push_str(&escape_code_text(code));
+        self.current_html.push_str("</code></pre>");
     }
 
     /// Renders a component inline to the HTML buffer as JSX.
@@ -197,14 +339,10 @@ impl<'a> Context<'a> {
         &mut self,
         name: &str,
         props: &HashMap<String, PropValue>,
-        slot_html: &str,
+        slot_children: &[RenderBlock],
     ) {
-        // Escape braces for Fragment slots so JSX text does not become expressions.
-        let slot_html = if name == "Fragment" {
-            slot_html.replace('{', "&#123;").replace('}', "&#125;")
-        } else {
-            slot_html.to_string()
-        };
+        // Convert slot_children to inline HTML string
+        let slot_html = blocks_to_inline_html(name, slot_children);
 
         self.current_html.push('<');
         self.current_html.push_str(name);
@@ -212,6 +350,20 @@ impl<'a> Context<'a> {
         for (key, prop_value) in props {
             self.current_html.push(' ');
             self.current_html.push_str(key);
+
+            // For 'slot' attribute on Fragment, use HTML attribute syntax not JSX expression
+            // Astro's slot system expects slot="name" not slot={"name"}
+            if name == "Fragment"
+                && key == "slot"
+                && let PropValue::Literal { value } = prop_value
+            {
+                self.current_html.push_str("=\"");
+                self.push_attr_value(value);
+                self.current_html.push('"');
+                continue;
+            }
+
+            // Default JSX expression syntax for other props
             self.current_html.push_str("={");
             match prop_value {
                 PropValue::Literal { value } => {
@@ -234,14 +386,14 @@ impl<'a> Context<'a> {
         self.current_html.push('>');
     }
 
-    /// Renders child nodes to an HTML string (for component slots).
+    /// Renders child nodes to a Vec of blocks (for component slots).
     ///
-    /// Creates a temporary context to render the children, then combines
-    /// all resulting blocks into a single HTML string.
+    /// Creates a temporary context to render the children, returning all
+    /// resulting blocks as structured data for further processing.
     ///
     /// **Important:** This also bubbles up any headings found in the children
     /// to the parent context, ensuring JSX component content appears in the TOC.
-    pub fn render_children_to_string(&mut self, children: &[Node]) -> String {
+    pub fn render_children_to_blocks(&mut self, children: &[Node]) -> Vec<RenderBlock> {
         // Import render_node here to avoid circular dependency at module level
         use super::render::render_node;
 
@@ -256,58 +408,16 @@ impl<'a> Context<'a> {
         // Bubble up headings from child context to parent (for TOC)
         self.headings.append(&mut child_ctx.headings);
 
-        // Combine all blocks into a single HTML string
-        let mut result = String::new();
-        for block in child_ctx.blocks {
-            match block {
-                RenderBlock::Html { content } => {
-                    // Ensure literal braces don't create JSX expressions when this HTML
-                    // is injected into component slots.
-                    let escaped = content.replace('{', "&#123;").replace('}', "&#125;");
-                    result.push_str(&escaped);
-                }
-                RenderBlock::Component {
-                    name,
-                    props,
-                    slot_html,
-                } => {
-                    let slot_html = if name == "Fragment" {
-                        slot_html.replace('{', "&#123;").replace('}', "&#125;")
-                    } else {
-                        slot_html
-                    };
+        child_ctx.blocks
+    }
 
-                    // Render nested components as JSX with props preserved
-                    result.push('<');
-                    result.push_str(&name);
-
-                    // Render props as JSX: key={"value"} or key={expression}
-                    for (key, prop_value) in &props {
-                        result.push(' ');
-                        result.push_str(key);
-                        result.push_str("={");
-                        match prop_value {
-                            PropValue::Literal { value } => {
-                                result.push('"');
-                                result.push_str(&crate::codegen::escape_js_string_value(value));
-                                result.push('"');
-                            }
-                            PropValue::Expression { value } => {
-                                result.push_str(value);
-                            }
-                        }
-                        result.push('}');
-                    }
-
-                    result.push('>');
-                    result.push_str(&slot_html);
-                    result.push_str("</");
-                    result.push_str(&name);
-                    result.push('>');
-                }
-            }
-        }
-        result
+    /// Renders child nodes to an HTML string for inline embedding.
+    ///
+    /// Used when children need to be embedded directly in the HTML buffer
+    /// (e.g., FileTree slot normalization). Code blocks are converted to HTML.
+    pub fn render_children_to_html(&mut self, children: &[Node]) -> String {
+        let blocks = self.render_children_to_blocks(children);
+        blocks_to_inline_html("", &blocks)
     }
 
     /// Generates a unique slug for a heading.

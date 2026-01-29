@@ -22,6 +22,7 @@ import { blocksToJsx } from './transforms/blocks-to-jsx.js';
 import { resolveExpressiveCodeConfig } from './utils/config.js';
 import { stripFrontmatter } from './utils/frontmatter.js';
 import { hasProblematicMdxPatterns, detectProblematicMdxPatterns } from './utils/mdx-detection.js';
+import { extractImportStatements } from './utils/imports.js';
 import { stripQuery, deriveFileOptions, shouldCompile } from './utils/paths.js';
 import {
   VIRTUAL_MODULE_PREFIX,
@@ -181,8 +182,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
   let shikiReady: Promise<(code: string, lang?: string) => Promise<string>> | undefined;
 
+  // Enable Shiki when:
+  // 1. MARKFLOW_SHIKI=1 env var is set, OR
+  // 2. ExpressiveCode is explicitly disabled (fallback highlighting)
+  const shouldEnableShiki = ENABLE_SHIKI || !expressiveCode;
+
   const getShiki = (): Promise<(code: string, lang?: string) => Promise<string>> | null => {
-    if (!ENABLE_SHIKI || !IS_MDAST) return null;
+    if (!shouldEnableShiki) return null;
     if (!shikiReady) {
       shikiReady = createShikiHighlighter();
     }
@@ -754,6 +760,9 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         if (IS_MDAST) {
           const binding = await loadMarkflowBinding();
 
+          // Extract user imports BEFORE processing (user imports take precedence over registry)
+          const userImports = extractImportStatements(processedSource);
+
           // Strip frontmatter before passing to parseBlocks
           // Otherwise the mdast pipeline renders YAML as regular text
           const contentSource = stripFrontmatter(processedSource);
@@ -768,7 +777,9 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           frontmatter = frontmatterResult.frontmatter || {};
 
           result = {
-            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry, filename),
+            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry, filename, userImports, {
+              expressiveCodeComponent: expressiveCode?.component,
+            }),
             map: null,
             frontmatter_json: JSON.stringify(frontmatter),
             headings,

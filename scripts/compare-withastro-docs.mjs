@@ -89,6 +89,12 @@ async function main() {
   console.log(`Harness summary written to ${summary}`);
   console.log(report);
 
+  // Log full sample details for debugging
+  if (report.semantic?.samples?.length > 0) {
+    console.log('\n=== SEMANTIC DIFF SAMPLES ===');
+    console.log(JSON.stringify(report.semantic.samples, null, 2));
+  }
+
   if (semantic && semantic.differences > 0) {
     process.exitCode = 1;
   }
@@ -223,7 +229,7 @@ async function compareSemantic(dirA, dirB, routes) {
     compared,
     skipped,
     differences: diffs.length,
-    samples: diffs.slice(0, 1),
+    samples: diffs.slice(0, 5),
   };
 }
 
@@ -261,7 +267,7 @@ function compareFiles(filesA, filesB) {
   return {
     compared: all.size,
     differences: diffs.length,
-    samples: diffs.slice(0, 1),
+    samples: diffs.slice(0, 5),
   };
 }
 
@@ -364,7 +370,11 @@ async function loadRoutes(filePath) {
 }
 
 export function normalizeHtml(html) {
-  let processed = html;
+  // Strip ExpressiveCode copy button data-code attributes FIRST
+  // These contain unescaped HTML (raw < and >) that breaks regex tag parsing
+  // The data-code attribute may also contain 0x7f (DEL) as line separators
+  let processed = html.replace(/\s+data-code="[^"]*"/gi, '');
+
   const frontmatterRe = /<pre\s+class="frontmatter"[^>]*>[\s\S]*?<\/pre>/gi;
   while (frontmatterRe.test(processed)) {
     processed = processed.replace(frontmatterRe, '');
@@ -434,7 +444,18 @@ function stripTags(text) {
     return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
   });
 
-  // 2. Normal tag stripping
+  // 2. Remove style/script tags entirely (non-semantic content)
+  processed = processed.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
+  processed = processed.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+
+  // 3. Remove sr-only content (screen-reader accessibility text, not semantic content)
+  // This includes Starlight's "Section titled X" anchor text
+  processed = processed.replace(/<span\b[^>]*class="[^"]*\bsr-only\b[^"]*"[^>]*>[\s\S]*?<\/span>/gi, '');
+
+  // 4. Remove figcaption content (ExpressiveCode file titles - metadata, not content)
+  processed = processed.replace(/<figcaption\b[^>]*>[\s\S]*?<\/figcaption>/gi, '');
+
+  // 5. Strip remaining tags
   const blockTagRe =
     /<\/?(?:p|div|section|article|header|footer|main|aside|nav|h[1-6]|ol|ul|li|table|thead|tbody|tfoot|tr|td|th|pre|blockquote|figure|figcaption|hr|br)(?:\s[^>]*)?>/gi;
   processed = decodeHtmlEntities(
@@ -448,9 +469,35 @@ function stripTags(text) {
     .trim()
     .replace(/\s+/g, ' ');
 
-  // 3. Restore code blocks with preserved whitespace (only normalize CRLF → LF)
+  // 6. Normalize typography: curly quotes to straight quotes (smartypants differences)
+  // Also normalize ellipsis character (…) to three dots
+  // Strip (EN) locale markers that appear in Japanese pages
+  processed = processed
+    .replace(/[\u2018\u2019]/g, "'")  // ' ' → '
+    .replace(/[\u201C\u201D]/g, '"')  // " " → "
+    .replace(/\u2026/g, '...')        // … → ...
+    .replace(/ \(EN\)/g, '');         // Strip locale markers
+
+  // 7. Restore code blocks with preserved whitespace (only normalize CRLF → LF)
+  // Also decode HTML entities so both sides compare consistently
+  // Strip inner HTML tags from code blocks (e.g., ExpressiveCode's <span>, <div>)
   codeBlocks.forEach((code, i) => {
-    processed = processed.replace(`__CODE_BLOCK_${i}__`, code.replace(/\r\n?/g, '\n'));
+    // First: strip HTML tags and normalize line endings
+    let strippedCode = code
+      // Convert ExpressiveCode line divs to newlines before stripping
+      // Each <div class="ec-line"> represents a line of code
+      .replace(/<div class="ec-line"[^>]*>/gi, '\n')
+      .replace(/<\/?div[^>]*>/gi, '') // Remove remaining divs
+      .replace(/<[^>]+>/g, '') // Strip remaining HTML tags
+      .replace(/\r\n?/g, '\n')
+      .replace(/^\n+/, '') // Remove leading newlines
+      .replace(/\n+$/, ''); // Remove trailing newlines
+    // Second: decode HTML entities (e.g., &#10; → \n)
+    strippedCode = decodeHtmlEntities(strippedCode);
+    // Third: normalize multiple newlines AFTER entity decoding
+    // This ensures &#10; entities are already converted to \n before collapsing
+    strippedCode = strippedCode.replace(/\n{2,}/g, '\n');
+    processed = processed.replace(`__CODE_BLOCK_${i}__`, strippedCode);
   });
 
   return processed;
@@ -524,16 +571,31 @@ function normalizeTag(tag) {
 }
 
 function summarizeDiff(a, b) {
-  const maxPreview = 80;
+  const maxPreview = 120;
   const min = Math.min(a.length, b.length);
   let idx = 0;
   while (idx < min && a[idx] === b[idx]) idx++;
   const start = Math.max(0, idx - 30);
   const endA = Math.min(a.length, idx + maxPreview);
   const endB = Math.min(b.length, idx + maxPreview);
+
+  // Get hex codes of the differing characters and surrounding context
+  const hexContextA = [];
+  const hexContextB = [];
+  for (let i = idx; i < Math.min(idx + 20, a.length); i++) {
+    hexContextA.push(`${a[i]}(0x${a.charCodeAt(i).toString(16)})`);
+  }
+  for (let i = idx; i < Math.min(idx + 20, b.length); i++) {
+    hexContextB.push(`${b[i]}(0x${b.charCodeAt(i).toString(16)})`);
+  }
+
   return {
     diffIndex: idx,
     previewA: a.slice(start, endA),
     previewB: b.slice(start, endB),
+    hexAtDiffA: hexContextA.join(' '),
+    hexAtDiffB: hexContextB.join(' '),
+    lengthA: a.length,
+    lengthB: b.length,
   };
 }

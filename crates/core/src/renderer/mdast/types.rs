@@ -43,8 +43,8 @@ impl PropValue {
 
 /// Represents a rendering block to be passed to Astro.
 ///
-/// Each block is either plain HTML content or a component invocation
-/// with props and slot content.
+/// Each block is either plain HTML content, a code block, or a component
+/// invocation with props and slot content.
 #[derive(Debug, Serialize, Clone, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum RenderBlock {
@@ -60,8 +60,18 @@ pub enum RenderBlock {
         name: String,
         /// Component props as key-value pairs (literals or expressions).
         props: HashMap<String, PropValue>,
-        /// HTML content for the component's default slot.
-        slot_html: String,
+        /// Structured children for the component's default slot.
+        slot_children: Vec<RenderBlock>,
+    },
+
+    /// A code block to be processed by ExpressiveCode or Shiki.
+    Code {
+        /// The code content.
+        code: String,
+        /// Optional language identifier.
+        lang: Option<String>,
+        /// Optional meta string (e.g., for line highlighting).
+        meta: Option<String>,
     },
 }
 

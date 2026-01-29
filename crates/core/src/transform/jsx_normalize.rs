@@ -5,8 +5,6 @@
 struct JsxTagInfo {
     /// The tag name (e.g., "MyComponent", "div", "Fragment")
     name: String,
-    /// Whether this is an opening tag (vs closing tag)
-    is_opening: bool,
     /// Whether this is a self-closing tag (ends with `/>`)
     self_closing: bool,
     /// Whether this tag has a `slot=` attribute
@@ -36,7 +34,6 @@ fn parse_jsx_tag(trimmed: &str) -> Option<JsxTagInfo> {
 
     Some(JsxTagInfo {
         name: name.to_string(),
-        is_opening: true,
         self_closing,
         has_slot_attr,
     })
@@ -203,6 +200,10 @@ pub fn collapse_multiline_wrapper_tags(input: &str) -> String {
 /// Target components:
 /// - `PackageManagerTabs`, `StaticSsrTabs`, `UIFrameworkTabs`, `TabItem`
 /// - `Fragment` (when `slot=` attribute is present)
+///
+/// IMPORTANT: This function processes entire components as units using depth-tracking.
+/// Nested components (like `<Fragment slot="...">` inside `<StaticSsrTabs>`) are passed
+/// through as-is without blank line insertion, which would break the parent component.
 pub fn normalize_list_jsx_components(input: &str) -> String {
     let lines: Vec<&str> = input.lines().collect();
     let mut output = String::with_capacity(input.len() + 100);
@@ -211,12 +212,9 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
     while i < lines.len() {
         let line = lines[i];
         let trimmed = line.trim_start();
-        let indent = line.len() - trimmed.len();
 
-        // Only process indented lines (list context)
-        if indent > 0
-            && let Some(tag_info) = parse_jsx_tag(trimmed).filter(is_list_jsx_component)
-        {
+        // Check if this is a list JSX component (opening tag)
+        if let Some(tag_info) = parse_jsx_tag(trimmed).filter(is_list_jsx_component) {
             // Check if we need a blank line before
             if i > 0 && needs_blank_line_before(&lines, i) {
                 output.push('\n');
@@ -225,50 +223,81 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
             output.push_str(line);
             output.push('\n');
 
-            // For self-closing tags or opening tags, check if we need blank line after
-            if tag_info.is_opening && !tag_info.self_closing {
-                // Find the closing tag
-                let close_tag = format!("</{}>", tag_info.name);
-                let mut j = i + 1;
-                let mut depth = 1;
-                while j < lines.len() && depth > 0 {
-                    let inner_trimmed = lines[j].trim();
-                    if inner_trimmed.starts_with(&format!("<{}", tag_info.name))
-                        && !inner_trimmed.ends_with("/>")
-                    {
-                        depth += 1;
-                    }
-                    if inner_trimmed.contains(&close_tag) {
-                        depth -= 1;
-                        if depth == 0 {
-                            // Output lines from i+1 to j (inclusive)
-                            for inner_line in lines.iter().take(j + 1).skip(i + 1) {
-                                output.push_str(inner_line);
-                                output.push('\n');
-                            }
-                            // Check if we need blank line after closing tag
-                            if j + 1 < lines.len() && needs_blank_line_after(&lines, j) {
-                                output.push('\n');
-                            }
-                            i = j + 1;
-                            break;
-                        }
-                    }
-                    j += 1;
-                }
-                if depth > 0 {
-                    // No closing tag found, just continue normally
-                    i += 1;
-                }
-                continue;
-            } else if tag_info.self_closing {
-                // Self-closing tag, check if we need blank line after
+            // For self-closing tags, check if we need blank line after
+            if tag_info.self_closing {
                 if i + 1 < lines.len() && needs_blank_line_after(&lines, i) {
                     output.push('\n');
                 }
                 i += 1;
                 continue;
             }
+
+            // Check if the component is inline (opens and closes on the same line)
+            // e.g., <Fragment slot="foo">content</Fragment>
+            let close_tag = format!("</{}>", tag_info.name);
+            if line.contains(&close_tag) {
+                // Inline component - already output the line, just continue
+                if i + 1 < lines.len() && needs_blank_line_after(&lines, i) {
+                    output.push('\n');
+                }
+                i += 1;
+                continue;
+            }
+
+            // For non-self-closing, non-inline tags, find matching closing tag with depth tracking
+            // and output all inner content as-is (no blank line insertion for nested components)
+            let open_prefix = format!("<{}", tag_info.name);
+            let mut j = i + 1;
+            let mut depth = 1;
+
+            while j < lines.len() && depth > 0 {
+                let inner_trimmed = lines[j].trim_start();
+
+                // Track nested same-name components (opening tags increase depth)
+                if inner_trimmed.starts_with(&open_prefix) {
+                    // Check it's actually an opening tag, not a different component
+                    // e.g., <Tabs vs <TabsItem - we need the char after open_prefix
+                    let after_name = inner_trimmed.get(open_prefix.len()..);
+                    let is_same_component = after_name.is_none_or(|s| {
+                        s.is_empty()
+                            || s.starts_with('>')
+                            || s.starts_with(' ')
+                            || s.starts_with('/')
+                    });
+                    if is_same_component && !inner_trimmed.trim_end().ends_with("/>") {
+                        depth += 1;
+                    }
+                }
+
+                // Track closing tags (decrease depth)
+                if inner_trimmed.starts_with(&close_tag) {
+                    depth -= 1;
+                }
+
+                if depth > 0 {
+                    // Output inner lines as-is (no blank line insertion)
+                    output.push_str(lines[j]);
+                    output.push('\n');
+                }
+                j += 1;
+            }
+
+            // Output closing tag
+            if j > i + 1 && depth == 0 {
+                output.push_str(lines[j - 1]);
+                output.push('\n');
+
+                // Blank line after closing if needed
+                if j < lines.len() && needs_blank_line_after(&lines, j - 1) {
+                    output.push('\n');
+                }
+                i = j;
+                continue;
+            }
+
+            // If we couldn't find matching closing tag, just continue normally
+            i += 1;
+            continue;
         }
 
         output.push_str(line);
@@ -286,20 +315,32 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
 
 /// List of tab component names that need special handling in list context.
 const LIST_JSX_COMPONENTS: &[&str] = &[
+    // Tab components
     "PackageManagerTabs",
     "StaticSsrTabs",
     "UIFrameworkTabs",
+    "Tabs",
     "TabItem",
+    // Tutorial/content components
+    "Steps",
+    "Box",
 ];
 
 /// Checks if a tag is a list-embedded JSX component that needs special handling.
 fn is_list_jsx_component(tag: &JsxTagInfo) -> bool {
     LIST_JSX_COMPONENTS.contains(&tag.name.as_str())
         || (tag.name == "Fragment" && tag.has_slot_attr)
+        // Handle custom elements (lowercase with dash, like mf-directive)
+        || tag.name.contains('-')
 }
 
 /// Checks if a blank line should be inserted before the component at index i.
 fn needs_blank_line_before(lines: &[&str], i: usize) -> bool {
+    // If the line immediately before is blank, don't insert another blank line
+    if i > 0 && lines[i - 1].trim().is_empty() {
+        return false;
+    }
+
     // Look backwards for the previous non-blank line
     let mut prev_idx = i.saturating_sub(1);
     while prev_idx > 0 && lines[prev_idx].trim().is_empty() {
@@ -308,7 +349,7 @@ fn needs_blank_line_before(lines: &[&str], i: usize) -> bool {
 
     let prev_trimmed = lines[prev_idx].trim();
 
-    // Don't insert if already blank or if previous is a closing component tag
+    // Don't insert if the first line is this component (nothing before it)
     if prev_trimmed.is_empty() {
         return false;
     }
@@ -316,6 +357,15 @@ fn needs_blank_line_before(lines: &[&str], i: usize) -> bool {
     // If previous line is a closing tag like </Fragment>, </TabItem>, etc., don't add blank
     if prev_trimmed.starts_with("</") {
         return false;
+    }
+
+    // If previous line is an inline component (contains both opening and closing tag),
+    // don't add blank line - they should flow together
+    if let Some(prev_tag) = parse_jsx_tag(prev_trimmed).filter(|t| !t.self_closing) {
+        let close_tag = format!("</{}>", prev_tag.name);
+        if prev_trimmed.contains(&close_tag) {
+            return false;
+        }
     }
 
     true
@@ -448,5 +498,99 @@ mod tests {
         let result = normalize_list_jsx_components(input);
         // No indentation = not in list context, should not change
         assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_nested_components_preserved() {
+        // Nested Fragment inside StaticSsrTabs should NOT get blank lines inserted
+        // This was the bug that caused "Unexpected closing tag </StaticSsrTabs>, expected </Fragment>"
+        let input = r#"1. Item
+
+    <StaticSsrTabs>
+    <Fragment slot="static">
+    Static content
+    </Fragment>
+    <Fragment slot="ssr">
+    SSR content
+    </Fragment>
+    </StaticSsrTabs>
+
+2. Next item
+"#;
+        let result = normalize_list_jsx_components(input);
+
+        // Should NOT have blank lines around nested Fragment tags
+        assert!(
+            !result.contains("</Fragment>\n\n    <Fragment"),
+            "Should NOT insert blank line between nested Fragment tags. Got:\n{}",
+            result
+        );
+
+        // The overall structure should be preserved - blank line before StaticSsrTabs
+        // and blank line after (which already exists)
+        assert!(
+            result.contains("1. Item\n\n    <StaticSsrTabs>"),
+            "Should preserve blank line before StaticSsrTabs. Got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_deeply_nested_same_component() {
+        // Test depth tracking with same-named nested components
+        let input = r#"1. Item
+
+    <Box>
+    <Box>
+    Inner box
+    </Box>
+    </Box>
+
+2. Next
+"#;
+        let result = normalize_list_jsx_components(input);
+
+        // Inner Box should NOT get blank lines
+        assert!(
+            !result.contains("</Box>\n\n    </Box>"),
+            "Should NOT insert blank line between nested closing Box tags. Got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_single_line_fragment_slots() {
+        // This pattern from islands.mdx was causing "Unexpected closing slash `/` in tag" errors
+        // The issue: <Fragment slot="...">content</Fragment> on a single line
+        // should NOT trigger depth tracking across lines
+        let input = r#"<IslandsDiagram>
+  <Fragment slot="headerApp">Header (interactive island)</Fragment>
+  <Fragment slot="sidebarApp">Sidebar (static HTML)</Fragment>
+  <Fragment slot="main">
+    Static content like text, images, etc.
+  </Fragment>
+  <Fragment slot="carouselApp">Image carousel (interactive island)</Fragment>
+  <Fragment slot="footer">Footer (static HTML)</Fragment>
+</IslandsDiagram>
+"#;
+        let result = normalize_list_jsx_components(input);
+
+        // The output should be essentially unchanged - the single-line Fragment tags
+        // should NOT cause blank line insertions that break the structure
+        assert!(
+            result.contains("<Fragment slot=\"headerApp\">"),
+            "Fragment tags should be preserved. Got:\n{}",
+            result
+        );
+
+        // Make sure we don't break the closing tag
+        assert!(
+            result.contains("</IslandsDiagram>"),
+            "IslandsDiagram closing tag should be preserved. Got:\n{}",
+            result
+        );
+
+        // Most importantly: the output should parse correctly
+        // (we'll verify this via integration test)
     }
 }

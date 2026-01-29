@@ -88,14 +88,20 @@ export interface BatchCompileResult {
 /**
  * Result from parsing blocks.
  */
+/** A render block from the Rust compiler. */
+export interface RenderBlockData {
+  type: 'html' | 'component' | 'code';
+  content?: string;
+  name?: string;
+  props?: Record<string, unknown>;
+  slotChildren?: RenderBlockData[];
+  code?: string;
+  lang?: string;
+  meta?: string;
+}
+
 export interface ParseBlocksResult {
-  blocks: Array<{
-    type: 'html' | 'component';
-    content?: string;
-    name?: string;
-    props?: Record<string, unknown>;
-    slotHtml?: string;
-  }>;
+  blocks: RenderBlockData[];
   headings: Array<{ depth: number; slug: string; text: string }>;
 }
 

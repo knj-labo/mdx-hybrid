@@ -122,6 +122,10 @@ pub fn to_blocks(input: &str, options: &Options) -> Result<BlocksResult, String>
     // 6. Parse markdown to MDAST with enhanced options
     let parse_options = markdown::ParseOptions {
         constructs: markdown::Constructs {
+            // Disable indented code blocks - MDX content inside JSX components
+            // is often indented 4+ spaces for readability, which would otherwise
+            // be parsed as code blocks instead of paragraphs
+            code_indented: false,
             // MDX: JSX support for <Component>...</Component>
             mdx_jsx_flow: true,
             mdx_jsx_text: true,
@@ -177,24 +181,24 @@ fn mask_raw_html_blocks(input: &str) -> (String, Vec<RawHtmlMask>) {
     let mut masks = Vec::new();
     let mut cursor = 0;
 
-    while let Some((fence_start, fence_delim)) = find_fence_start(&input[cursor..]) {
-        // absolute position of fence start
-        let abs_start = cursor + fence_start;
+    while let Some((line_start, after_line, fence_delim)) = find_fence_start(&input[cursor..]) {
+        // absolute positions
+        let abs_line_start = cursor + line_start;
+        let abs_after_line = cursor + after_line;
 
-        // Mask any raw HTML that appears before the fence
-        let plain = &input[cursor..abs_start];
+        // Mask any raw HTML that appears before the fence line
+        let plain = &input[cursor..abs_line_start];
         mask_in_plain_text(plain, &mut output, &mut masks);
 
-        // Find fence end
-        let fence_body_start = abs_start;
-        let after_start = abs_start + fence_delim.len();
-        if let Some(end_rel) = find_fence_end(&input[after_start..], &fence_delim) {
-            let abs_end = after_start + end_rel;
-            output.push_str(&input[fence_body_start..abs_end]);
+        // Find fence end - search starts AFTER the opening fence line
+        if let Some(end_rel) = find_fence_end(&input[abs_after_line..], &fence_delim) {
+            let abs_end = abs_after_line + end_rel;
+            // Copy entire fence including opening line, content, and closing line
+            output.push_str(&input[abs_line_start..abs_end]);
             cursor = abs_end;
         } else {
             // No closing fence; push remainder and finish
-            output.push_str(&input[fence_body_start..]);
+            output.push_str(&input[abs_line_start..]);
             cursor = input.len();
             break;
         }
@@ -224,12 +228,12 @@ fn unmask_raw_html_blocks(blocks: &mut [RenderBlock], masks: &[RawHtmlMask]) {
                     }
                 }
             }
-            RenderBlock::Component { slot_html, .. } => {
-                for mask in masks {
-                    if slot_html.contains(&mask.marker) {
-                        *slot_html = slot_html.replace(&mask.marker, &mask.html);
-                    }
-                }
+            RenderBlock::Component { slot_children, .. } => {
+                // Recursively unmask slot_children
+                unmask_raw_html_blocks(slot_children, masks);
+            }
+            RenderBlock::Code { .. } => {
+                // Code blocks don't contain raw HTML markers, skip
             }
         }
     }
@@ -287,8 +291,9 @@ fn mask_in_plain_text(segment: &str, out: &mut String, masks: &mut Vec<RawHtmlMa
     out.push_str(rest);
 }
 
-/// Locate the next code fence start (``` or ~~~) returning its start offset and delimiter.
-fn find_fence_start(input: &str) -> Option<(usize, String)> {
+/// Locate the next code fence start (``` or ~~~) returning line start offset, after-line offset, and delimiter.
+/// Returns (line_offset, after_line_offset, delimiter) where after_line_offset is the position after the opening fence line.
+fn find_fence_start(input: &str) -> Option<(usize, usize, String)> {
     let mut offset = 0;
     for line in input.split_inclusive('\n') {
         let trimmed = line.trim_start();
@@ -297,7 +302,9 @@ fn find_fence_start(input: &str) -> Option<(usize, String)> {
                 .chars()
                 .take_while(|c| *c == '`' || *c == '~')
                 .collect();
-            return Some((offset, delim));
+            // Calculate the position after this entire line (i.e., start of next line)
+            let after_line = offset + line.len();
+            return Some((offset, after_line, delim));
         }
         offset += line.len();
     }
@@ -391,12 +398,23 @@ mod tests {
             RenderBlock::Component {
                 name,
                 props,
-                slot_html,
+                slot_children,
             } => {
                 assert_eq!(name, "Aside");
                 assert_eq!(props.get("type"), Some(&PropValue::literal("note")));
                 assert_eq!(props.get("title"), Some(&PropValue::literal("My Title")));
-                assert!(slot_html.contains("<p>This is <strong>important</strong> content.</p>"));
+                // Check that slot_children contains the expected HTML
+                let has_content = slot_children.iter().any(|b| match b {
+                    RenderBlock::Html { content } => {
+                        content.contains("<p>This is <strong>important</strong> content.</p>")
+                    }
+                    _ => false,
+                });
+                assert!(
+                    has_content,
+                    "Expected slot_children to contain paragraph, got: {:?}",
+                    slot_children
+                );
             }
             _ => panic!("Expected Component block"),
         }
@@ -417,12 +435,20 @@ mod tests {
             RenderBlock::Component {
                 name,
                 props,
-                slot_html,
+                slot_children,
             } => {
                 assert_eq!(name, "Aside");
                 assert_eq!(props.get("type"), Some(&PropValue::literal("tip")));
                 assert!(props.get("title").is_none());
-                assert!(slot_html.contains("Helpful advice"));
+                let has_content = slot_children.iter().any(|b| match b {
+                    RenderBlock::Html { content } => content.contains("Helpful advice"),
+                    _ => false,
+                });
+                assert!(
+                    has_content,
+                    "Expected slot_children to contain advice, got: {:?}",
+                    slot_children
+                );
             }
             _ => panic!("Expected Component block"),
         }
@@ -468,20 +494,41 @@ fn main() {}
             ..Default::default()
         };
         let blocks = to_blocks(input, &options).unwrap();
-        assert_eq!(blocks.blocks.len(), 1);
+        // With structured code blocks, we expect multiple blocks now:
+        // HTML block (headings, list, blockquote), Code block, HTML block (image, hr)
+        assert!(
+            blocks.blocks.len() >= 2,
+            "Expected multiple blocks, got {}",
+            blocks.blocks.len()
+        );
 
-        if let RenderBlock::Html { content } = &blocks.blocks[0] {
-            assert!(content.contains("<h1 id=") && content.contains(">Heading 1</h1>"));
-            assert!(content.contains("<h2 id=") && content.contains(">Heading 2</h2>"));
-            assert!(content.contains("<ul>"));
-            assert!(content.contains("<li>"));
-            assert!(content.contains("<blockquote>"));
-            assert!(content.contains(r#"<code class="language-rust">"#));
-            assert!(content.contains("fn main() &#123;&#125;"));
-            assert!(content.contains(r#"<img src="image.png""#));
-            assert!(content.contains("<hr />"));
-        } else {
-            panic!("Expected HTML block");
+        // Check HTML content is present somewhere in the blocks
+        let all_html: String = blocks
+            .blocks
+            .iter()
+            .filter_map(|b| match b {
+                RenderBlock::Html { content } => Some(content.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(all_html.contains("<h1 id=") && all_html.contains(">Heading 1</h1>"));
+        assert!(all_html.contains("<h2 id=") && all_html.contains(">Heading 2</h2>"));
+        assert!(all_html.contains("<ul>"));
+        assert!(all_html.contains("<li>"));
+        assert!(all_html.contains("<blockquote>"));
+        assert!(all_html.contains(r#"<img src="image.png""#));
+        assert!(all_html.contains("<hr />"));
+
+        // Code block should be a separate RenderBlock::Code
+        let code_block = blocks
+            .blocks
+            .iter()
+            .find(|b| matches!(b, RenderBlock::Code { .. }));
+        assert!(code_block.is_some(), "Expected Code block");
+        if let Some(RenderBlock::Code { code, lang, .. }) = code_block {
+            assert_eq!(lang.as_deref(), Some("rust"));
+            assert!(code.contains("fn main() {}"));
         }
     }
 
@@ -686,10 +733,11 @@ line3
         let result = to_blocks(input, &options).unwrap();
         assert_eq!(result.blocks.len(), 1);
 
-        if let RenderBlock::Html { content } = &result.blocks[0] {
-            assert!(content.contains("line1&#10;line2&#10;line3"));
+        if let RenderBlock::Code { code, lang, .. } = &result.blocks[0] {
+            assert_eq!(lang.as_deref(), Some("ts"));
+            assert!(code.contains("line1\nline2\nline3"));
         } else {
-            panic!("Expected HTML block");
+            panic!("Expected Code block, got {:?}", result.blocks[0]);
         }
     }
 
@@ -715,8 +763,19 @@ line3
             .find(|b| matches!(b, RenderBlock::Component { name, .. } if name == "Steps"));
         assert!(component.is_some());
 
-        if let RenderBlock::Component { slot_html, .. } = component.unwrap() {
-            assert!(slot_html.contains("line1&#10;line2&#10;line3"));
+        if let RenderBlock::Component { slot_children, .. } = component.unwrap() {
+            // Code block inside component should be a RenderBlock::Code in slot_children
+            let code_block = slot_children
+                .iter()
+                .find(|b| matches!(b, RenderBlock::Code { .. }));
+            assert!(
+                code_block.is_some(),
+                "Expected Code block in slot_children, got: {:?}",
+                slot_children
+            );
+            if let Some(RenderBlock::Code { code, .. }) = code_block {
+                assert!(code.contains("line1\nline2\nline3"));
+            }
         }
     }
 
@@ -752,14 +811,36 @@ line3
             .find(|b| matches!(b, RenderBlock::Component { name, .. } if name == "Steps"));
         assert!(steps_component.is_some());
 
-        if let RenderBlock::Component { slot_html, .. } = steps_component.unwrap() {
-            assert!(!slot_html.contains("<tip>"));
-            assert!(slot_html.contains("<Aside"));
+        if let RenderBlock::Component { slot_children, .. } = steps_component.unwrap() {
+            // Inside a list context, nested components are rendered inline as HTML
+            // So check the HTML content for the Aside component rendered inline
+            let all_html: String = slot_children
+                .iter()
+                .filter_map(|b| match b {
+                    RenderBlock::Html { content } => Some(content.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("");
+
             assert!(
-                slot_html.contains("type={\"tip\"}")
-                    || slot_html.contains("type=&#123;\"tip\"&#125;")
+                !all_html.contains("<tip>"),
+                "Should not contain raw <tip> tag"
             );
-            assert!(slot_html.contains("Some tip content"));
+            assert!(
+                all_html.contains("<Aside"),
+                "Should contain <Aside component tag"
+            );
+            assert!(
+                all_html.contains("type={\"tip\"}"),
+                "Should contain type prop: {}",
+                all_html
+            );
+            assert!(
+                all_html.contains("Some tip content"),
+                "Should contain tip content: {}",
+                all_html
+            );
         }
     }
 
@@ -922,5 +1003,228 @@ export const authClient = createAuthClient();
         // that the raw component tag is not interpreted as JSX
         assert!(jsx.contains("set:html="));
         assert!(jsx.contains("PreactBanner"));
+    }
+
+    #[test]
+    fn test_card_indented_content_not_code_block() {
+        // Regression test: Indented content inside JSX components should be
+        // parsed as markdown paragraphs, not code blocks.
+        // See: https://github.com/anthropics/markflow/issues/XXX
+        let input = r#"<Card title="Test" icon="laptop">
+    Explore [Astro starter themes](https://astro.build/themes/) for blogs.
+</Card>"#;
+        let options = Options {
+            enable_directives: true,
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+
+        // Find the Card component block
+        let card = result
+            .blocks
+            .iter()
+            .find(|b| matches!(b, RenderBlock::Component { name, .. } if name == "Card"));
+
+        assert!(card.is_some(), "Expected Card component block");
+
+        if let RenderBlock::Component { slot_children, .. } = card.unwrap() {
+            // Should contain paragraph with link, NOT code block
+            let has_code_block = slot_children
+                .iter()
+                .any(|b| matches!(b, RenderBlock::Code { .. }));
+            assert!(
+                !has_code_block,
+                "slot_children should NOT contain Code block: {:?}",
+                slot_children
+            );
+
+            let has_link = slot_children.iter().any(|b| match b {
+                RenderBlock::Html { content } => content.contains("<a href="),
+                _ => false,
+            });
+            assert!(
+                has_link,
+                "slot_children SHOULD contain rendered link: {:?}",
+                slot_children
+            );
+        }
+    }
+
+    #[test]
+    fn test_card_mdast_structure_via_to_blocks() {
+        // Test that to_blocks correctly processes Card component
+        // This verifies the full preprocessing + parsing pipeline
+        let input = r#"<Card title="Test">
+    Indented content with [link](url).
+</Card>"#;
+
+        let options = Options {
+            enable_directives: true,
+            allow_raw_html: false, // Use MDX JSX mode
+            ..Default::default()
+        };
+
+        let result = to_blocks(input, &options).unwrap();
+
+        // Verify we get a Component block (not HTML)
+        assert_eq!(result.blocks.len(), 1);
+
+        match &result.blocks[0] {
+            RenderBlock::Component {
+                name,
+                slot_children,
+                ..
+            } => {
+                assert_eq!(name, "Card", "Should be a Card component");
+                // Should contain paragraph with a link, not code blocks
+                let has_paragraph = slot_children.iter().any(|b| match b {
+                    RenderBlock::Html { content } => content.contains("<p>"),
+                    _ => false,
+                });
+                assert!(has_paragraph, "Should have paragraph: {:?}", slot_children);
+
+                let has_link = slot_children.iter().any(|b| match b {
+                    RenderBlock::Html { content } => content.contains("<a href="),
+                    _ => false,
+                });
+                assert!(has_link, "Should have link: {:?}", slot_children);
+
+                let has_code_block = slot_children
+                    .iter()
+                    .any(|b| matches!(b, RenderBlock::Code { .. }));
+                assert!(
+                    !has_code_block,
+                    "Should NOT have Code block: {:?}",
+                    slot_children
+                );
+            }
+            other => panic!("Expected Component block, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_islands_mdx_fragment_slots_pattern() {
+        // Regression test for: "Unexpected closing slash `/` in tag"
+        // This pattern from islands.mdx was causing parse errors when
+        // normalize_list_jsx_components incorrectly handled inline Fragment tags.
+        let input = r#"<IslandsDiagram>
+  <Fragment slot="headerApp">Header (interactive island)</Fragment>
+  <Fragment slot="sidebarApp">Sidebar (static HTML)</Fragment>
+  <Fragment slot="main">
+    Static content like text, images, etc.
+  </Fragment>
+  <Fragment slot="carouselApp">Image carousel (interactive island)</Fragment>
+  <Fragment slot="footer">Footer (static HTML)</Fragment>
+</IslandsDiagram>"#;
+
+        let options = Options {
+            enable_directives: true,
+            allow_raw_html: false,
+            ..Default::default()
+        };
+
+        // This should NOT fail with "Unexpected closing slash `/` in tag"
+        let result = to_blocks(input, &options);
+        assert!(
+            result.is_ok(),
+            "Should parse without error. Got: {:?}",
+            result.err()
+        );
+
+        // Verify we get the component
+        let blocks = result.unwrap();
+        let islands_diagram = blocks
+            .blocks
+            .iter()
+            .find(|b| matches!(b, RenderBlock::Component { name, .. } if name == "IslandsDiagram"));
+        assert!(
+            islands_diagram.is_some(),
+            "Should have IslandsDiagram component"
+        );
+    }
+
+    #[test]
+    fn test_code_block_inside_list_renders_inline() {
+        let input = "- item\n\n  ```js\n  let x = 1;\n  ```\n\n- next";
+        let options = Options {
+            enable_directives: true,
+            ..Default::default()
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+        // Should be a single Html block containing the full list
+        assert_eq!(
+            blocks.blocks.len(),
+            1,
+            "Expected 1 block, got: {:?}",
+            blocks.blocks
+        );
+        match &blocks.blocks[0] {
+            RenderBlock::Html { content } => {
+                assert!(content.contains("<ul>"), "Should contain <ul>");
+                assert!(content.contains("</ul>"), "Should contain </ul>");
+                assert!(
+                    content.contains(r#"<pre class="astro-code" tabindex="0">"#),
+                    "Should contain inline pre"
+                );
+                assert!(
+                    content.contains(r#"<code class="language-js">"#),
+                    "Should contain code with lang"
+                );
+                assert!(content.contains("let x = 1;"), "Should contain code text");
+            }
+            _ => panic!("Expected HTML block, got: {:?}", blocks.blocks[0]),
+        }
+    }
+
+    #[test]
+    fn test_code_block_no_lang_inside_list() {
+        let input = "- item\n\n  ```\n  plain code\n  ```\n";
+        let options = Options {
+            enable_directives: true,
+            ..Default::default()
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+        assert_eq!(
+            blocks.blocks.len(),
+            1,
+            "Expected 1 block, got: {:?}",
+            blocks.blocks
+        );
+        match &blocks.blocks[0] {
+            RenderBlock::Html { content } => {
+                assert!(content.contains("<ul>"), "Should contain <ul>");
+                assert!(
+                    content.contains(r#"<pre class="astro-code" tabindex="0"><code>"#),
+                    "Should have code without lang class"
+                );
+                assert!(content.contains("plain code"), "Should contain code text");
+            }
+            _ => panic!("Expected HTML block"),
+        }
+    }
+
+    #[test]
+    fn test_top_level_code_block_emits_render_block_code() {
+        let input = "```js\nlet z = 3;\n```";
+        let options = Options {
+            enable_directives: true,
+            ..Default::default()
+        };
+
+        let blocks = to_blocks(input, &options).unwrap();
+        assert_eq!(blocks.blocks.len(), 1);
+        match &blocks.blocks[0] {
+            RenderBlock::Code { code, lang, .. } => {
+                assert_eq!(code, "let z = 3;");
+                assert_eq!(lang.as_deref(), Some("js"));
+            }
+            _ => panic!(
+                "Expected Code block for top-level code, got: {:?}",
+                blocks.blocks[0]
+            ),
+        }
     }
 }

@@ -22,6 +22,28 @@ pub use types::*;
 use utils::empty_frontmatter;
 pub(crate) use utils::{build_import_list, dedupe_imports};
 
+/// Converts HTML entities to JSX-safe expressions.
+///
+/// When slot content with nested components is embedded directly in JSX,
+/// HTML entities must be handled appropriately based on context:
+/// - Text content: entities → JSX expressions (e.g., `&amp;` → `{"&"}`)
+/// - Attribute values: entities stay as-is (browser interprets them)
+/// - JSX expression attributes: curly braces decoded (e.g., `=&#123;` → `={`)
+#[napi(js_name = "htmlEntitiesToJsx")]
+pub fn html_entities_to_jsx_napi(s: String) -> String {
+    markflow_core::codegen::html_entities_to_jsx(&s)
+}
+
+/// Checks if string contains PascalCase JSX tags (e.g., `<Card`, `<Aside`).
+///
+/// This is used to detect nested JSX components in slot content. When components
+/// are present, the slot content must be embedded directly (not via `set:html`)
+/// so that Astro processes them as components rather than raw HTML.
+#[napi(js_name = "hasPascalCaseTag")]
+pub fn has_pascal_case_tag_napi(s: String) -> bool {
+    markflow_core::codegen::has_pascal_case_tag(&s)
+}
+
 /// Extracts YAML or TOML frontmatter without compiling the entire Markdown document.
 #[napi]
 pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
@@ -34,6 +56,56 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
             frontmatter: empty_frontmatter(),
             errors: vec![err.to_string()],
         }),
+    }
+}
+
+/// Converts a core RenderBlock to an NAPI RenderBlock.
+fn convert_render_block(block: markflow_core::renderer::mdast::RenderBlock) -> RenderBlock {
+    use markflow_core::renderer::mdast;
+    match block {
+        mdast::RenderBlock::Html { content } => RenderBlock {
+            r#type: "html".to_string(),
+            content: Some(content),
+            name: None,
+            props: None,
+            slot_children: None,
+            code: None,
+            lang: None,
+            meta: None,
+        },
+        mdast::RenderBlock::Component {
+            name,
+            props,
+            slot_children,
+        } => {
+            let props_json = serde_json::to_value(&props)
+                .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+            let napi_children: Vec<RenderBlock> = slot_children
+                .into_iter()
+                .map(convert_render_block)
+                .collect();
+
+            RenderBlock {
+                r#type: "component".to_string(),
+                content: None,
+                name: Some(name),
+                props: Some(props_json),
+                slot_children: Some(napi_children),
+                code: None,
+                lang: None,
+                meta: None,
+            }
+        }
+        mdast::RenderBlock::Code { code, lang, meta } => RenderBlock {
+            r#type: "code".to_string(),
+            content: None,
+            name: None,
+            props: None,
+            slot_children: None,
+            code: Some(code),
+            lang,
+            meta,
+        },
     }
 }
 
@@ -53,7 +125,8 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
 ///
 /// Returns an array of RenderBlock objects. Each block is either:
 /// - `{type: "html", content: "<p>...</p>"}` - Plain HTML content
-/// - `{type: "component", name: "note", props: {title: "..."}, slotHtml: "..."}` - Component block
+/// - `{type: "component", name: "note", props: {title: "..."}, slotChildren: [...]}` - Component block
+/// - `{type: "code", code: "...", lang: "ts", meta: null}` - Code block
 ///
 /// # Example (JavaScript)
 ///
@@ -70,7 +143,7 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
 /// //     type: "component",
 /// //     name: "note",
 /// //     props: { title: "Important" },
-/// //     slotHtml: "<p>This is <strong>bold</strong> text.</p>"
+/// //     slotChildren: [{ type: "html", content: "<p>This is <strong>bold</strong> text.</p>" }]
 /// //   }
 /// // ]
 /// ```
@@ -102,32 +175,7 @@ pub fn parse_blocks(input: String, opts: Option<BlockOptions>) -> napi::Result<P
     let blocks: Vec<RenderBlock> = result
         .blocks
         .into_iter()
-        .map(|block| match block {
-            mdast::RenderBlock::Html { content } => RenderBlock {
-                r#type: "html".to_string(),
-                content: Some(content),
-                name: None,
-                props: None,
-                slot_html: None,
-            },
-            mdast::RenderBlock::Component {
-                name,
-                props,
-                slot_html,
-            } => {
-                // Convert HashMap<String, String> to JsonValue
-                let props_json = serde_json::to_value(&props)
-                    .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
-
-                RenderBlock {
-                    r#type: "component".to_string(),
-                    content: None,
-                    name: Some(name),
-                    props: Some(props_json),
-                    slot_html: Some(slot_html),
-                }
-            }
-        })
+        .map(convert_render_block)
         .collect();
 
     // Convert headings

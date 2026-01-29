@@ -28,8 +28,8 @@ use std::fmt::Write;
 pub fn preprocess_directives(input: &str) -> String {
     let mut fence_state = FenceState::default();
     let mut output = String::with_capacity(input.len());
-    // Track directive names and their leading whitespace for proper closing
-    let mut directive_stack: Vec<(String, String)> = Vec::new();
+    // Track directive names, leading whitespace, and whether we've seen content
+    let mut directive_stack: Vec<(String, String, bool)> = Vec::new();
 
     for line in input.lines() {
         let fence_outcome = advance_fence_state(line, fence_state);
@@ -41,12 +41,53 @@ pub fn preprocess_directives(input: &str) -> String {
             continue;
         }
 
+        let trimmed = line.trim();
+        let line_indent = line.len() - line.trim_start().len();
+
+        // Auto-close indented directives when indentation decreases or a new list item starts
+        // This handles directives inside list items that don't have explicit closing :::
+        if !directive_stack.is_empty() && !is_directive_closer(line) && !trimmed.is_empty() {
+            let mut should_auto_close = {
+                let (_, opener_ws, _) = directive_stack.last().unwrap();
+                let opener_indent = opener_ws.len();
+
+                // Only auto-close INDENTED directives (opener_indent > 0) when:
+                // 1. We encounter a line with less indentation than the directive
+                // 2. We encounter a numbered list item at same or less indentation
+                if opener_indent > 0 {
+                    (line_indent < opener_indent)
+                        || (is_numbered_list_item(trimmed) && line_indent <= opener_indent)
+                } else {
+                    false
+                }
+            };
+
+            // Close ALL directives whose indentation exceeds the current line's indent
+            while should_auto_close {
+                let (_, leading_ws, _) = directive_stack.pop().unwrap();
+                writeln!(output, "{}</mf-directive>", leading_ws).ok();
+
+                // Re-evaluate for remaining directives
+                should_auto_close = if let Some((_, opener_ws, _)) = directive_stack.last() {
+                    let opener_indent = opener_ws.len();
+                    if opener_indent > 0 {
+                        (line_indent < opener_indent)
+                            || (is_numbered_list_item(trimmed) && line_indent <= opener_indent)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+            }
+        }
+
         // Check for directive opening
         if let Some(opening) = parse_opening_directive(line) {
             // Preserve leading whitespace from original line
             let leading_ws: String = line.chars().take_while(|c| c.is_whitespace()).collect();
 
-            directive_stack.push((opening.name.clone(), leading_ws.clone()));
+            directive_stack.push((opening.name.clone(), leading_ws.clone(), false));
 
             // Convert to JSX container tag (NOT self-closing)
             write!(
@@ -77,10 +118,17 @@ pub fn preprocess_directives(input: &str) -> String {
 
         // Check for directive closer
         if is_directive_closer(line) && !directive_stack.is_empty() {
-            let (_, leading_ws) = directive_stack.pop().unwrap();
+            let (_, leading_ws, _) = directive_stack.pop().unwrap();
             // Close the container tag with same indentation as opener
             writeln!(output, "{}</mf-directive>", leading_ws).ok();
             continue;
+        }
+
+        // Mark that we've seen content in the current directive
+        if let Some((_, _, has_content)) = directive_stack.last_mut()
+            && !trimmed.is_empty()
+        {
+            *has_content = true;
         }
 
         // Regular line - passthrough
@@ -88,9 +136,20 @@ pub fn preprocess_directives(input: &str) -> String {
     }
 
     // Close any unclosed directives
-    while let Some((_, leading_ws)) = directive_stack.pop() {
+    while let Some((_, leading_ws, _)) = directive_stack.pop() {
         writeln!(output, "{}</mf-directive>", leading_ws).ok();
     }
 
     output
+}
+
+/// Checks if a line is a numbered list item (e.g., "3. Text")
+fn is_numbered_list_item(trimmed: &str) -> bool {
+    let mut chars = trimmed.chars().peekable();
+    // Skip digits
+    while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+        chars.next();
+    }
+    // Check for ". " after digits
+    matches!((chars.next(), chars.next()), (Some('.'), Some(' ')))
 }

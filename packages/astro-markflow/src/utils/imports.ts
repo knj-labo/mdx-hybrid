@@ -123,3 +123,79 @@ export function insertAfterImports(code: string, importLine: string): string {
   }
   return lines.join('\n');
 }
+
+/**
+ * Extract import statements from MDX/JSX code.
+ * Returns the full import statement strings, preserving their original form.
+ *
+ * Import statements end when:
+ * 1. A semicolon is found
+ * 2. The import completes (has 'from' + module path)
+ * 3. The next line starts with a different statement type
+ *
+ * @example
+ * const code = `
+ * import Card from '~/components/Landing/Card.astro'
+ * import { useState } from 'react';
+ *
+ * # Hello World
+ * `;
+ * const imports = extractImportStatements(code);
+ * // ["import Card from '~/components/Landing/Card.astro'", "import { useState } from 'react';"]
+ */
+export function extractImportStatements(code: string): string[] {
+  const imports: string[] = [];
+  if (!code || typeof code !== 'string') {
+    return imports;
+  }
+  // Strip code fences to avoid false positives from code examples
+  const codeWithoutFences = stripCodeFences(code);
+  const lines = codeWithoutFences.split(/\r?\n/);
+
+  let currentImport = '';
+  let inImport = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (!inImport) {
+      // Start of new import statement
+      if (trimmed.startsWith('import ') && !trimmed.startsWith('import(')) {
+        // Check if import is complete on this line
+        // Side-effect import: import './file.js' or import "styles.css" (no 'from' keyword)
+        const isSideEffectImport = /^import\s+['"][^'"]+['"]/.test(trimmed);
+        // Complete import has: import ... from '...' or import ... from "..."
+        const hasFromClause = /from\s+['"][^'"]+['"]/.test(trimmed);
+        if (isSideEffectImport || hasFromClause || trimmed.includes(';')) {
+          // Complete single-line import (with or without semicolon)
+          imports.push(trimmed);
+        } else {
+          // Start of multi-line import (e.g., multi-line named imports)
+          inImport = true;
+          currentImport = trimmed;
+        }
+      }
+    } else {
+      // Continue accumulating multi-line import
+      // Strip inline // comments, but only outside of quoted strings
+      const lineWithoutComment = trimmed.replace(/\s*\/\/.*$/, (match, offset) => {
+        const before = trimmed.slice(0, offset);
+        const singleQuotes = (before.match(/'/g) || []).length;
+        const doubleQuotes = (before.match(/"/g) || []).length;
+        // If inside a string (odd number of unescaped quotes), keep the match
+        if (singleQuotes % 2 !== 0 || doubleQuotes % 2 !== 0) return match;
+        return '';
+      });
+      currentImport += ' ' + lineWithoutComment;
+      const hasFromClause = /from\s+['"][^'"]+['"]/.test(currentImport);
+      if (hasFromClause || trimmed.includes(';')) {
+        // End of multi-line import
+        imports.push(currentImport);
+        currentImport = '';
+        inImport = false;
+      }
+    }
+  }
+
+  return imports;
+}

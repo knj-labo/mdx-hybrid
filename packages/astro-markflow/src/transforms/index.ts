@@ -3,29 +3,41 @@
  * @module transforms
  */
 
-import { rewriteExpressiveCodeBlocks, injectExpressiveCodeComponent } from './expressive-code.js';
+import {
+  rewriteExpressiveCodeBlocks,
+  rewriteSetHtmlCodeBlocks,
+  injectExpressiveCodeComponent,
+} from './expressive-code.js';
 import {
   injectAstroComponents,
   injectStarlightComponents,
   injectComponentImportsFromRegistry,
 } from './inject-components.js';
-import { rewriteAstroSetHtml } from './shiki.js';
+import { rewriteAstroSetHtml, highlightJsxCodeBlocks } from './shiki.js';
 import type { TransformContext } from '../types.js';
 import { normalizeSteps } from './normalize-steps.js';
 import { normalizeFileTree } from './normalize-filetree.js';
 
 /**
  * Transform that rewrites <pre><code> blocks to ExpressiveCode components.
+ * Also handles code blocks inside set:html JSON strings (component slots).
  * Only runs if expressiveCode is configured.
  */
 export function transformExpressiveCode(ctx: TransformContext): TransformContext {
   if (!ctx.config.expressiveCode || !ctx.code) {
     return ctx;
   }
-  const { code, changed } = rewriteExpressiveCodeBlocks(
-    ctx.code,
-    ctx.config.expressiveCode.component
-  );
+
+  const componentName = ctx.config.expressiveCode.component;
+
+  // First, rewrite loose <pre><code> blocks
+  let { code, changed } = rewriteExpressiveCodeBlocks(ctx.code, componentName);
+
+  // Then, rewrite code blocks inside set:html JSON strings
+  const setHtmlResult = rewriteSetHtmlCodeBlocks(code, componentName);
+  code = setHtmlResult.code;
+  changed = changed || setHtmlResult.changed;
+
   if (changed) {
     return {
       ...ctx,
@@ -38,6 +50,11 @@ export function transformExpressiveCode(ctx: TransformContext): TransformContext
 /**
  * Transform that applies Shiki syntax highlighting.
  * Only runs if shiki highlighter is available.
+ *
+ * Processes code blocks in two passes:
+ * 1. rewriteAstroSetHtml: Handles code in <_Fragment set:html={...} /> patterns
+ * 2. highlightJsxCodeBlocks: Handles code in direct JSX <pre><code> elements
+ *    (when slot content with components bypasses set:html)
  */
 export async function transformShikiHighlight(
   ctx: TransformContext
@@ -45,7 +62,10 @@ export async function transformShikiHighlight(
   if (!ctx.config.shiki || !ctx.code) {
     return ctx;
   }
-  const code = await rewriteAstroSetHtml(ctx.code, ctx.config.shiki);
+  // First pass: highlight code blocks in set:html fragments
+  let code = await rewriteAstroSetHtml(ctx.code, ctx.config.shiki);
+  // Second pass: highlight code blocks in direct JSX (mixed slots with components)
+  code = await highlightJsxCodeBlocks(code, ctx.config.shiki);
   return { ...ctx, code };
 }
 
@@ -65,14 +85,18 @@ export function transformInjectComponentsFromRegistry(ctx: TransformContext): Tr
 }
 
 // Re-export from sub-modules
-export { rewriteExpressiveCodeBlocks, injectExpressiveCodeComponent } from './expressive-code.js';
+export {
+  rewriteExpressiveCodeBlocks,
+  rewriteSetHtmlCodeBlocks,
+  injectExpressiveCodeComponent,
+} from './expressive-code.js';
 export {
   injectAstroComponents,
   injectStarlightComponents,
   injectComponentImports,
   injectComponentImportsFromRegistry,
 } from './inject-components.js';
-export { rewriteAstroSetHtml, highlightHtmlBlocks } from './shiki.js';
+export { rewriteAstroSetHtml, highlightHtmlBlocks, highlightJsxCodeBlocks } from './shiki.js';
 export { blocksToJsx } from './blocks-to-jsx.js';
 export { normalizeSteps } from './normalize-steps.js';
 export { normalizeFileTree } from './normalize-filetree.js';

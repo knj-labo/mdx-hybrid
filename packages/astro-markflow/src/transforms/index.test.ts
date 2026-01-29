@@ -83,10 +83,10 @@ describe('transformExpressiveCode', () => {
 describe('transformShikiHighlight', () => {
   test('returns context unchanged when shiki is null', async () => {
     const ctx = createContext({
-      code: '<Fragment set:html={"<pre><code>test</code></pre>"} />',
+      code: '<_Fragment set:html={"<pre><code>test</code></pre>"} />',
     });
     const result = await transformShikiHighlight(ctx);
-    expect(result.code).toBe('<Fragment set:html={"<pre><code>test</code></pre>"} />');
+    expect(result.code).toBe('<_Fragment set:html={"<pre><code>test</code></pre>"} />');
   });
 
   test('applies shiki highlighting when enabled', async () => {
@@ -94,7 +94,7 @@ describe('transformShikiHighlight', () => {
       return `<pre class="shiki"><code>${_code}</code></pre>`;
     };
     const ctx = createContext({
-      code: '<Fragment set:html={"<pre><code>const x = 1;</code></pre>"} />',
+      code: '<_Fragment set:html={"<pre><code>const x = 1;</code></pre>"} />',
       config: {
         expressiveCode: null,
         starlightComponents: false,

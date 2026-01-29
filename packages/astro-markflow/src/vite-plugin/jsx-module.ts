@@ -56,7 +56,7 @@ export function wrapHtmlInJsxModule(
     .join('\n');
 
   return `import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
-import { Fragment, jsx as _jsx } from 'astro/jsx-runtime';
+import { Fragment as _Fragment, jsx as _jsx } from 'astro/jsx-runtime';
 
 ${nonDefaultExports}
 
@@ -64,7 +64,7 @@ export const frontmatter = ${frontmatterJson};
 export function getHeadings() { return ${headingsJson}; }
 function _Content() {
   return (
-    <Fragment set:html={${JSON.stringify(html)}} />
+    <_Fragment set:html={${JSON.stringify(html)}} />
   );
 }
 const MarkflowContent = createComponent(
