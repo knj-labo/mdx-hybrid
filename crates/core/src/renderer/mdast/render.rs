@@ -1,7 +1,7 @@
 //! Rendering functions for the mdast renderer.
 
 use super::context::Context;
-use super::types::{HeadingEntry, PropValue, Scope};
+use super::types::{HeadingEntry, PropValue, RenderBlock, Scope};
 use markdown::mdast::Node;
 use std::collections::HashMap;
 
@@ -180,7 +180,7 @@ fn render_jsx(
             .unwrap_or("Aside")
             .to_string();
 
-        let slot_html = ctx.render_children_to_string(children);
+        let slot_children = ctx.render_children_to_blocks(children);
 
         let mut props = HashMap::new();
         props.insert("type".to_string(), PropValue::literal(directive_type));
@@ -189,9 +189,9 @@ fn render_jsx(
         }
 
         if ctx.is_in_list() {
-            ctx.push_component_inline(&component_name, &props, &slot_html);
+            ctx.push_component_inline(&component_name, &props, &slot_children);
         } else {
-            ctx.push_component(&component_name, props, slot_html);
+            ctx.push_component(&component_name, props, slot_children);
         }
         return;
     }
@@ -205,7 +205,7 @@ fn render_jsx(
         .map(|n| n.wrapper_class.clone());
 
     if let Some(wrapper_class) = ul_normalization {
-        let slot_html = ctx.render_children_to_string(children);
+        let slot_html = ctx.render_children_to_html(children);
         let class_attr = wrapper_class
             .as_ref()
             .map(|c| format!(" class=\"{}\"", c))
@@ -238,24 +238,24 @@ fn render_jsx(
         }
     }
 
-    // 5. Render children to HTML string
+    // 5. Render children to structured blocks
     // Note: Slot normalization (Steps → <ol>, FileTree → <ul>) is handled in codegen.rs
     // based on registry configuration, not here.
-    let slot_html = ctx.render_children_to_string(children);
+    let slot_children = ctx.render_children_to_blocks(children);
 
     // 6. Special handling for Fragment with slot attribute
     if tag_name == "Fragment" && props.contains_key("slot") {
         // Keep slot fragments as standalone component blocks so downstream
         // codegen can safely escape braces inside the slot HTML.
-        ctx.push_component(tag_name, props, slot_html);
+        ctx.push_component(tag_name, props, slot_children);
         return;
     }
 
     // 7. Push as component block
     if ctx.is_in_list() || ctx.is_in_table() {
-        ctx.push_component_inline(tag_name, &props, &slot_html);
+        ctx.push_component_inline(tag_name, &props, &slot_children);
     } else {
-        ctx.push_component(tag_name, props, slot_html);
+        ctx.push_component(tag_name, props, slot_children);
     }
 }
 
@@ -349,18 +349,18 @@ pub fn render_node(node: &Node, ctx: &mut Context) {
         Node::ListItem(item) => render_list_item(item, ctx),
 
         Node::Code(code) => {
-            ctx.push_raw(r#"<pre class="astro-code" tabindex="0">"#);
-
-            if let Some(lang) = &code.lang {
-                ctx.push_raw(r#"<code class="language-"#);
-                ctx.push_attr_value(lang);
-                ctx.push_raw(r#"">"#);
+            if ctx.is_in_list() || ctx.is_in_table() {
+                // Render inline to avoid fragmenting list/table HTML structure
+                ctx.push_code_inline(&code.value, code.lang.as_deref());
             } else {
-                ctx.push_raw("<code>");
+                // Emit structured Code block for TypeScript processing (ExpressiveCode/Shiki)
+                ctx.flush_html();
+                ctx.blocks.push(RenderBlock::Code {
+                    code: code.value.clone(),
+                    lang: code.lang.clone(),
+                    meta: code.meta.clone(),
+                });
             }
-
-            ctx.push_code_text(&code.value);
-            ctx.push_raw("</code></pre>");
         }
 
         Node::Blockquote(quote) => {

@@ -777,7 +777,9 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           frontmatter = frontmatterResult.frontmatter || {};
 
           result = {
-            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry, filename, userImports),
+            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry, filename, userImports, {
+              expressiveCodeComponent: expressiveCode?.component,
+            }),
             map: null,
             frontmatter_json: JSON.stringify(frontmatter),
             headings,

@@ -356,6 +356,104 @@ pub struct DirectiveMappingResult {
     pub type_prop: Option<String>,
 }
 
+/// Escapes code text for HTML output (including JSX braces and newlines).
+fn escape_code_text_for_html(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '<' => result.push_str("&lt;"),
+            '>' => result.push_str("&gt;"),
+            '&' => result.push_str("&amp;"),
+            '`' => result.push_str("&#96;"),
+            '{' => result.push_str("&#123;"),
+            '}' => result.push_str("&#125;"),
+            '\n' => result.push_str("&#10;"),
+            _ => result.push(c),
+        }
+    }
+    result
+}
+
+/// Converts slot children (Vec<RenderBlock>) to an HTML string.
+///
+/// This recursively converts structured blocks back to HTML for use
+/// in slot content where HTML string is expected.
+fn slot_children_to_html(blocks: &[RenderBlock]) -> String {
+    let mut result = String::new();
+    for block in blocks {
+        match block {
+            RenderBlock::Html { content } => {
+                // Escape braces so JSX text does not become expressions
+                let escaped = content.replace('{', "&#123;").replace('}', "&#125;");
+                result.push_str(&escaped);
+            }
+            RenderBlock::Code { code, lang, .. } => {
+                // Render code block as HTML
+                result.push_str(r#"<pre class="astro-code" tabindex="0">"#);
+                if let Some(l) = lang {
+                    result.push_str(&format!(r#"<code class="language-{}">"#, l));
+                } else {
+                    result.push_str("<code>");
+                }
+                result.push_str(&escape_code_text_for_html(code));
+                result.push_str("</code></pre>");
+            }
+            RenderBlock::Component {
+                name,
+                props,
+                slot_children,
+            } => {
+                let slot_html = slot_children_to_html(slot_children);
+                let slot_html = if name == "Fragment" {
+                    slot_html.replace('{', "&#123;").replace('}', "&#125;")
+                } else {
+                    slot_html
+                };
+
+                // Render nested components as JSX with props preserved
+                result.push('<');
+                result.push_str(name);
+
+                for (key, prop_value) in props {
+                    result.push(' ');
+                    result.push_str(key);
+
+                    // For 'slot' attribute on Fragment, use HTML attribute syntax
+                    if name == "Fragment"
+                        && key == "slot"
+                        && let PropValue::Literal { value } = prop_value
+                    {
+                        result.push_str("=\"");
+                        result.push_str(value);
+                        result.push('"');
+                        continue;
+                    }
+
+                    result.push_str("={");
+                    match prop_value {
+                        PropValue::Literal { value } => {
+                            result.push('"');
+                            result.push_str(&escape_js_string_value(value));
+                            result.push('"');
+                        }
+                        PropValue::Expression { value } => {
+                            result.push_str(value);
+                        }
+                    }
+                    result.push('}');
+                }
+
+                result.push('>');
+                result.push_str(&slot_html);
+                result.push_str("</");
+                result.push_str(name);
+                result.push('>');
+            }
+        }
+    }
+    result
+}
+
 /// Converts RenderBlocks to a JSX string.
 ///
 /// # Arguments
@@ -414,13 +512,30 @@ where
                 result.push_str(&js_string_literal(content));
                 result.push_str("} />");
             }
+            RenderBlock::Code { code, lang, .. } => {
+                // Render code block as HTML using set:html
+                let mut html = String::new();
+                html.push_str(r#"<pre class="astro-code" tabindex="0">"#);
+                if let Some(l) = lang {
+                    html.push_str(&format!(r#"<code class="language-{}">"#, l));
+                } else {
+                    html.push_str("<code>");
+                }
+                html.push_str(&escape_code_text_for_html(code));
+                html.push_str("</code></pre>");
+                result.push_str("<_Fragment set:html={");
+                result.push_str(&js_string_literal(&html));
+                result.push_str("} />");
+            }
             RenderBlock::Component {
                 name,
                 props,
-                slot_html,
+                slot_children,
             } => {
+                // Convert slot_children to HTML string first
+                let slot_html = slot_children_to_html(slot_children);
                 // Apply slot normalization based on registry configuration
-                let slot_html = normalize_slot_by_registry(name, slot_html, registry);
+                let slot_html = normalize_slot_by_registry(name, &slot_html, registry);
 
                 // Apply directive mapping if provided
                 let (tag_name, type_prop) = if let Some(ref mapper) = directive_mapper {
@@ -825,10 +940,13 @@ mod tests {
         let blocks = vec![RenderBlock::Component {
             name: "Card".to_string(),
             props,
-            slot_html: "<p>Content</p>".to_string(),
+            slot_children: vec![RenderBlock::Html {
+                content: "<p>Content</p>".to_string(),
+            }],
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
         // Component slot content uses Fragment with set:html for proper <slot /> support
+        // Note: slot_children_to_html escapes braces in Html blocks
         assert_eq!(
             jsx,
             "<Card {...{\"title\": \"中文\\\"引用\\\"标题\"}}><_Fragment set:html={\"<p>Content</p>\"} /></Card>"
@@ -857,7 +975,9 @@ mod tests {
         let blocks = vec![RenderBlock::Component {
             name: "Card".to_string(),
             props,
-            slot_html: "<p>Content</p>".to_string(),
+            slot_children: vec![RenderBlock::Html {
+                content: "<p>Content</p>".to_string(),
+            }],
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
         // Component slot content uses _Fragment with set:html for proper <slot /> support
@@ -879,7 +999,9 @@ mod tests {
         let blocks = vec![RenderBlock::Component {
             name: "note".to_string(),
             props,
-            slot_html: "<p>Content</p>".to_string(),
+            slot_children: vec![RenderBlock::Html {
+                content: "<p>Content</p>".to_string(),
+            }],
         }];
 
         let mapper = |name: &str| -> Option<DirectiveMappingResult> {
@@ -907,7 +1029,9 @@ mod tests {
         let blocks = vec![RenderBlock::Component {
             name: "CardGrid".to_string(),
             props: HashMap::new(),
-            slot_html: "<Card title=\"First\"><p>Content 1</p></Card><Card title=\"Second\"><p>Content 2</p></Card>".to_string(),
+            slot_children: vec![RenderBlock::Html {
+                content: "<Card title=\"First\"><p>Content 1</p></Card><Card title=\"Second\"><p>Content 2</p></Card>".to_string(),
+            }],
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
         // Nested components should be embedded directly (no set:html)
@@ -923,7 +1047,9 @@ mod tests {
         let blocks = vec![RenderBlock::Component {
             name: "Wrapper".to_string(),
             props: HashMap::new(),
-            slot_html: "<p>Before</p><NestedComponent /><p>After</p>".to_string(),
+            slot_children: vec![RenderBlock::Html {
+                content: "<p>Before</p><NestedComponent /><p>After</p>".to_string(),
+            }],
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
         // Should embed directly because there's a PascalCase component
@@ -1017,7 +1143,9 @@ mod tests {
         let blocks = vec![RenderBlock::Component {
             name: "Card".to_string(),
             props: HashMap::new(),
-            slot_html: "<Badge>a &lt; b &amp;&amp; c</Badge>".to_string(),
+            slot_children: vec![RenderBlock::Html {
+                content: "<Badge>a &lt; b &amp;&amp; c</Badge>".to_string(),
+            }],
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
         // Entities should become JSX expressions: &lt; becomes {"<"}, &amp; becomes {"&"}
@@ -1033,7 +1161,22 @@ mod tests {
         let blocks = vec![RenderBlock::Component {
             name: "CardGrid".to_string(),
             props: HashMap::new(),
-            slot_html: "<Card title={title}>Content</Card>".to_string(),
+            slot_children: vec![RenderBlock::Component {
+                name: "Card".to_string(),
+                props: {
+                    let mut p = HashMap::new();
+                    p.insert(
+                        "title".to_string(),
+                        PropValue::Expression {
+                            value: "title".to_string(),
+                        },
+                    );
+                    p
+                },
+                slot_children: vec![RenderBlock::Html {
+                    content: "Content".to_string(),
+                }],
+            }],
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
         // JSX expressions should NOT be escaped

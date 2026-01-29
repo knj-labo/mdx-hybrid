@@ -59,6 +59,56 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
     }
 }
 
+/// Converts a core RenderBlock to an NAPI RenderBlock.
+fn convert_render_block(block: markflow_core::renderer::mdast::RenderBlock) -> RenderBlock {
+    use markflow_core::renderer::mdast;
+    match block {
+        mdast::RenderBlock::Html { content } => RenderBlock {
+            r#type: "html".to_string(),
+            content: Some(content),
+            name: None,
+            props: None,
+            slot_children: None,
+            code: None,
+            lang: None,
+            meta: None,
+        },
+        mdast::RenderBlock::Component {
+            name,
+            props,
+            slot_children,
+        } => {
+            let props_json = serde_json::to_value(&props)
+                .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+            let napi_children: Vec<RenderBlock> = slot_children
+                .into_iter()
+                .map(convert_render_block)
+                .collect();
+
+            RenderBlock {
+                r#type: "component".to_string(),
+                content: None,
+                name: Some(name),
+                props: Some(props_json),
+                slot_children: Some(napi_children),
+                code: None,
+                lang: None,
+                meta: None,
+            }
+        }
+        mdast::RenderBlock::Code { code, lang, meta } => RenderBlock {
+            r#type: "code".to_string(),
+            content: None,
+            name: None,
+            props: None,
+            slot_children: None,
+            code: Some(code),
+            lang,
+            meta,
+        },
+    }
+}
+
 /// Parses markdown into structured RenderBlock objects using the mdast v2 renderer.
 ///
 /// This function uses the Block Architecture to return a structured representation
@@ -75,7 +125,8 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
 ///
 /// Returns an array of RenderBlock objects. Each block is either:
 /// - `{type: "html", content: "<p>...</p>"}` - Plain HTML content
-/// - `{type: "component", name: "note", props: {title: "..."}, slotHtml: "..."}` - Component block
+/// - `{type: "component", name: "note", props: {title: "..."}, slotChildren: [...]}` - Component block
+/// - `{type: "code", code: "...", lang: "ts", meta: null}` - Code block
 ///
 /// # Example (JavaScript)
 ///
@@ -92,7 +143,7 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
 /// //     type: "component",
 /// //     name: "note",
 /// //     props: { title: "Important" },
-/// //     slotHtml: "<p>This is <strong>bold</strong> text.</p>"
+/// //     slotChildren: [{ type: "html", content: "<p>This is <strong>bold</strong> text.</p>" }]
 /// //   }
 /// // ]
 /// ```
@@ -124,32 +175,7 @@ pub fn parse_blocks(input: String, opts: Option<BlockOptions>) -> napi::Result<P
     let blocks: Vec<RenderBlock> = result
         .blocks
         .into_iter()
-        .map(|block| match block {
-            mdast::RenderBlock::Html { content } => RenderBlock {
-                r#type: "html".to_string(),
-                content: Some(content),
-                name: None,
-                props: None,
-                slot_html: None,
-            },
-            mdast::RenderBlock::Component {
-                name,
-                props,
-                slot_html,
-            } => {
-                // Convert HashMap<String, String> to JsonValue
-                let props_json = serde_json::to_value(&props)
-                    .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
-
-                RenderBlock {
-                    r#type: "component".to_string(),
-                    content: None,
-                    name: Some(name),
-                    props: Some(props_json),
-                    slot_html: Some(slot_html),
-                }
-            }
-        })
+        .map(convert_render_block)
         .collect();
 
     // Convert headings

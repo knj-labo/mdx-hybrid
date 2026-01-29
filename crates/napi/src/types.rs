@@ -190,12 +190,13 @@ pub struct BlockOptions {
 /// ```ts
 /// type RenderBlock =
 ///   | { type: "html", content: string }
-///   | { type: "component", name: string, props: Record<string, string>, slotHtml: string }
+///   | { type: "component", name: string, props: Record<string, string>, slotChildren: RenderBlock[] }
+///   | { type: "code", code: string, lang?: string, meta?: string }
 /// ```
 #[napi(object)]
 #[derive(Debug, Clone)]
 pub struct RenderBlock {
-    /// Block type: "html" or "component"
+    /// Block type: "html", "component", or "code"
     pub r#type: String,
     /// HTML content (for type="html")
     pub content: Option<String>,
@@ -203,8 +204,14 @@ pub struct RenderBlock {
     pub name: Option<String>,
     /// Component props (for type="component")
     pub props: Option<JsonValue>,
-    /// Slot HTML content (for type="component")
-    pub slot_html: Option<String>,
+    /// Structured slot children (for type="component")
+    pub slot_children: Option<Vec<RenderBlock>>,
+    /// Code content (for type="code")
+    pub code: Option<String>,
+    /// Code language (for type="code")
+    pub lang: Option<String>,
+    /// Code meta string (for type="code")
+    pub meta: Option<String>,
 }
 
 /// Result of parseBlocks() with blocks and extracted headings.

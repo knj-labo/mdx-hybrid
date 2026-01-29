@@ -19,11 +19,86 @@ export interface PropValue {
  * Block from the Rust compiler.
  */
 export interface Block {
-  type: 'html' | 'component';
+  type: 'html' | 'component' | 'code';
   content?: string;
   name?: string;
   props?: Record<string, PropValue | string | unknown>;
-  slotHtml?: string;
+  slotChildren?: Block[];
+  /** Code content (for type="code") */
+  code?: string;
+  /** Code language (for type="code") */
+  lang?: string;
+  /** Code meta string (for type="code") */
+  meta?: string;
+}
+
+/**
+ * Escapes HTML special characters for safe embedding in HTML content.
+ */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/`/g, '&#96;')
+    .replace(/\{/g, '&#123;')
+    .replace(/\}/g, '&#125;')
+    .replace(/\n/g, '&#10;');
+}
+
+/**
+ * Converts structured slot children blocks to an HTML string.
+ * Used to process slot content that needs to be embedded as HTML.
+ */
+function slotChildrenToHtml(
+  blocks: Block[],
+  ecComponent?: string,
+  componentImports?: Map<string, { modulePath: string; exportType: string }>,
+  registry?: Registry,
+  userImportedNames?: Set<string>,
+): string {
+  let result = '';
+  for (const block of blocks) {
+    if (block.type === 'html') {
+      // Escape braces so JSX text does not become expressions
+      result += (block.content ?? '').replace(/\{/g, '&#123;').replace(/\}/g, '&#125;');
+    } else if (block.type === 'code') {
+      if (ecComponent) {
+        // Direct ExpressiveCode component rendering
+        const langProp = block.lang ? ` lang="${escapeJsString(block.lang)}"` : '';
+        const metaProp = block.meta ? ` meta="${escapeJsString(block.meta)}"` : '';
+        result += `<${ecComponent} code={${JSON.stringify(block.code ?? '')}}${langProp}${metaProp} />`;
+        // Register EC import for slot children
+        if (componentImports && !userImportedNames?.has(ecComponent)) {
+          const componentDef = registry?.getComponent(ecComponent);
+          const modulePath = componentDef?.modulePath ?? 'astro-expressive-code/components';
+          const exportType = componentDef?.exportType ?? 'default';
+          componentImports.set(ecComponent, { modulePath, exportType });
+        }
+      } else {
+        // Render code block as HTML
+        const langAttr = block.lang ? ` class="language-${escapeHtml(block.lang)}"` : '';
+        result += `<pre class="astro-code" tabindex="0"><code${langAttr}>${escapeHtml(block.code ?? '')}</code></pre>`;
+      }
+    } else if (block.type === 'component') {
+      const innerHtml = slotChildrenToHtml(block.slotChildren ?? [], ecComponent, componentImports, registry, userImportedNames);
+      result += `<${block.name}`;
+      if (block.props) {
+        for (const [key, value] of Object.entries(block.props)) {
+          if (typeof value === 'object' && value !== null && 'type' in value && 'value' in value) {
+            const pv = value as PropValue;
+            if (pv.type === 'literal') {
+              result += ` ${key}="${escapeJsString(pv.value)}"`;
+            } else {
+              result += ` ${key}={${pv.value}}`;
+            }
+          }
+        }
+      }
+      result += `>${innerHtml}</${block.name}>`;
+    }
+  }
+  return result;
 }
 
 /**
@@ -165,13 +240,18 @@ function extractNamesFromImports(imports: string[]): Set<string> {
  * @param userImports - User import statements to preserve (these take precedence over registry)
  * @returns Complete JSX module code with imports, exports, and default component
  */
+export interface BlocksToJsxOptions {
+  expressiveCodeComponent?: string;
+}
+
 export function blocksToJsx(
   blocks: Block[],
   frontmatter: Record<string, unknown> = {},
   headings: HeadingEntry[] = [],
   registry: Registry | null = null,
   filename?: string,
-  userImports: string[] = []
+  userImports: string[] = [],
+  options: BlocksToJsxOptions = {}
 ): string {
   const fragments: string[] = [];
   const componentImports = new Map<string, { modulePath: string; exportType: string }>();
@@ -187,13 +267,35 @@ export function blocksToJsx(
       // Use set:html to avoid HTML entity parsing issues with esbuild
       // JSON.stringify handles all escaping; Astro parses the HTML at runtime
       fragments.push(`<_Fragment set:html={${JSON.stringify(block.content ?? '')}} />`);
+    } else if (block.type === 'code') {
+      if (options.expressiveCodeComponent) {
+        // Direct ExpressiveCode rendering - avoids HTML→regex→component roundtrip
+        const comp = options.expressiveCodeComponent;
+        const langProp = block.lang ? ` lang="${escapeJsString(block.lang)}"` : '';
+        const metaProp = block.meta ? ` meta="${escapeJsString(block.meta)}"` : '';
+        fragments.push(`<${comp} code={${JSON.stringify(block.code ?? '')}}${langProp}${metaProp} />`);
+        if (!userImportedNames.has(comp)) {
+          const componentDef = registry?.getComponent(comp);
+          const modulePath = componentDef?.modulePath ?? 'astro-expressive-code/components';
+          const exportType = componentDef?.exportType ?? 'default';
+          componentImports.set(comp, { modulePath, exportType });
+        }
+      } else {
+        // Render as HTML <pre><code> for pipeline processing
+        const langAttr = block.lang ? ` class="language-${escapeHtml(block.lang)}"` : '';
+        const html = `<pre class="astro-code" tabindex="0"><code${langAttr}>${escapeHtml(block.code ?? '')}</code></pre>`;
+        fragments.push(`<_Fragment set:html={${JSON.stringify(html)}} />`);
+      }
     } else if (block.type === 'component') {
       // Handle directive components using registry
       const isDirective = block.name ? supportedDirectives.includes(block.name) : false;
       let componentName = block.name ?? '';
       let effectiveProps = block.props;
-      // Strip <p> wrappers from Fragment slots - markdown-rs wraps them incorrectly
-      let effectiveSlot = stripParagraphFragmentWrappers(block.slotHtml ?? '');
+
+      // Convert slotChildren to HTML string for slot processing
+      let effectiveSlot = stripParagraphFragmentWrappers(
+        slotChildrenToHtml(block.slotChildren ?? [], options.expressiveCodeComponent, componentImports, registry, userImportedNames)
+      );
 
       if (isDirective && registry && block.name) {
         const mapping = registry.getDirectiveMapping(block.name);

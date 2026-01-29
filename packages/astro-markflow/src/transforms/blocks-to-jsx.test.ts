@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { blocksToJsx, type Block } from './blocks-to-jsx.js';
+import { blocksToJsx, type Block, type BlocksToJsxOptions } from './blocks-to-jsx.js';
 import { createRegistry, starlightLibrary } from 'markflow/registry';
 
 describe('blocksToJsx', () => {
@@ -19,7 +19,7 @@ describe('blocksToJsx', () => {
       const registry = createRegistry([starlightLibrary]);
 
       const blocks: Block[] = [
-        { type: 'component', name: 'Card', props: {}, slotHtml: '<p>Content</p>' },
+        { type: 'component', name: 'Card', props: {}, slotChildren: [{ type: 'html', content: '<p>Content</p>' }] },
       ];
       const userImports = ["import Card from '~/components/Landing/Card.astro';"];
 
@@ -35,8 +35,8 @@ describe('blocksToJsx', () => {
       const registry = createRegistry([starlightLibrary]);
 
       const blocks: Block[] = [
-        { type: 'component', name: 'Card', props: {}, slotHtml: '<p>Card Content</p>' },
-        { type: 'component', name: 'Aside', props: {}, slotHtml: '<p>Aside Content</p>' },
+        { type: 'component', name: 'Card', props: {}, slotChildren: [{ type: 'html', content: '<p>Card Content</p>' }] },
+        { type: 'component', name: 'Aside', props: {}, slotChildren: [{ type: 'html', content: '<p>Aside Content</p>' }] },
       ];
       // Only Card is user-imported
       const userImports = ["import Card from '~/components/Card.astro';"];
@@ -153,7 +153,7 @@ describe('blocksToJsx', () => {
           name: 'CardGrid',
           props: {},
           // Use HTML-style attributes (what the Rust renderer produces)
-          slotHtml: '<Card title="Getting Started">Content here</Card>',
+          slotChildren: [{ type: 'html', content: '<Card title="Getting Started">Content here</Card>' }],
         },
       ];
 
@@ -170,7 +170,7 @@ describe('blocksToJsx', () => {
           type: 'component',
           name: 'Card',
           props: {},
-          slotHtml: '<p>Hello <strong>world</strong></p>',
+          slotChildren: [{ type: 'html', content: '<p>Hello <strong>world</strong></p>' }],
         },
       ];
 
@@ -189,7 +189,7 @@ describe('blocksToJsx', () => {
           type: 'component',
           name: 'Container',
           props: {},
-          slotHtml: '<SVG><path d="M0 0h24v24H0z"/></SVG>',
+          slotChildren: [{ type: 'html', content: '<SVG><path d="M0 0h24v24H0z"/></SVG>' }],
         },
       ];
 
@@ -207,7 +207,7 @@ describe('blocksToJsx', () => {
           type: 'component',
           name: 'Container',
           props: {},
-          slotHtml: '<MDXProvider>content</MDXProvider>',
+          slotChildren: [{ type: 'html', content: '<MDXProvider>content</MDXProvider>' }],
         },
       ];
 
@@ -224,7 +224,7 @@ describe('blocksToJsx', () => {
           type: 'component',
           name: 'Section',
           props: {},
-          slotHtml: '<URLTable /><APIClient>data</APIClient>',
+          slotChildren: [{ type: 'html', content: '<URLTable /><APIClient>data</APIClient>' }],
         },
       ];
 
@@ -241,7 +241,7 @@ describe('blocksToJsx', () => {
           type: 'component',
           name: 'Container',
           props: {},
-          slotHtml: '<DIV>content</DIV><HTML><BODY></BODY></HTML>',
+          slotChildren: [{ type: 'html', content: '<DIV>content</DIV><HTML><BODY></BODY></HTML>' }],
         },
       ];
 
@@ -259,7 +259,7 @@ describe('blocksToJsx', () => {
           name: 'CardGrid',
           props: {},
           // Use HTML-style attributes (what the Rust renderer produces)
-          slotHtml: '<Card title="First">First card</Card><Card title="Second">Second card</Card>',
+          slotChildren: [{ type: 'html', content: '<Card title="First">First card</Card><Card title="Second">Second card</Card>' }],
         },
       ];
 
@@ -276,7 +276,7 @@ describe('blocksToJsx', () => {
           type: 'component',
           name: 'Container',
           props: {},
-          slotHtml: '<Icon name="star" />',
+          slotChildren: [{ type: 'html', content: '<Icon name="star" />' }],
         },
       ];
 
@@ -293,7 +293,7 @@ describe('blocksToJsx', () => {
           type: 'component',
           name: 'Section',
           props: {},
-          slotHtml: '<p>Intro text</p><Card>Content</Card><p>More text</p>',
+          slotChildren: [{ type: 'html', content: '<p>Intro text</p><Card>Content</Card><p>More text</p>' }],
         },
       ];
 
@@ -311,7 +311,7 @@ describe('blocksToJsx', () => {
           name: 'Card',
           props: {},
           // HTML entities that would appear literally in JSX
-          slotHtml: '<Badge>a &lt; b &amp;&amp; c</Badge>',
+          slotChildren: [{ type: 'html', content: '<Badge>a &lt; b &amp;&amp; c</Badge>' }],
         },
       ];
 
@@ -333,7 +333,7 @@ describe('blocksToJsx', () => {
           name: 'Card',
           props: {},
           // Literal & character (not encoded as entity)
-          slotHtml: '<Badge>Languages & Frameworks</Badge>',
+          slotChildren: [{ type: 'html', content: '<Badge>Languages & Frameworks</Badge>' }],
         },
       ];
 
@@ -352,7 +352,7 @@ describe('blocksToJsx', () => {
           name: 'Card',
           props: {},
           // Unknown entity like &nbsp; should be preserved
-          slotHtml: '<Badge>Hello&nbsp;World</Badge>',
+          slotChildren: [{ type: 'html', content: '<Badge>Hello&nbsp;World</Badge>' }],
         },
       ];
 
@@ -369,7 +369,12 @@ describe('blocksToJsx', () => {
           name: 'CardGrid',
           props: {},
           // Valid JSX expression that should NOT be escaped
-          slotHtml: '<Card title={title}>Content</Card>',
+          slotChildren: [{
+            type: 'component',
+            name: 'Card',
+            props: { title: { type: 'expression', value: 'title' } },
+            slotChildren: [{ type: 'html', content: 'Content' }],
+          }],
         },
       ];
 
@@ -382,6 +387,123 @@ describe('blocksToJsx', () => {
     });
   });
 
+  describe('code blocks', () => {
+    it('should render standalone code block as <pre><code> in set:html Fragment', () => {
+      const blocks: Block[] = [
+        { type: 'code', code: 'console.log("hello")' },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      expect(result).toContain('<_Fragment set:html=');
+      expect(result).toContain('astro-code');
+      expect(result).toContain('console.log');
+    });
+
+    it('should include language class when lang is set', () => {
+      const blocks: Block[] = [
+        { type: 'code', code: 'const x = 1;', lang: 'js' },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      expect(result).toContain('language-js');
+    });
+
+    it('should escape special characters in code content', () => {
+      const blocks: Block[] = [
+        { type: 'code', code: 'if (a < b && c > d) { run(); }', lang: 'js' },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      expect(result).toContain('&lt;');
+      expect(result).toContain('&amp;');
+      expect(result).toContain('&#123;');
+      expect(result).toContain('&#125;');
+      // Raw chars should not appear unescaped in the HTML
+      expect(result).not.toContain('"if (a < b');
+    });
+
+    it('should render code block in component slot via slotChildrenToHtml', () => {
+      const blocks: Block[] = [
+        {
+          type: 'component',
+          name: 'Card',
+          props: {},
+          slotChildren: [
+            { type: 'html', content: '<p>Intro</p>' },
+            { type: 'code', code: 'let x = 1;', lang: 'ts' },
+          ],
+        },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      expect(result).toContain('astro-code');
+      expect(result).toContain('language-ts');
+      expect(result).toContain('let x = 1;');
+    });
+
+    it('should render as ExpressiveCode component when expressiveCodeComponent is set', () => {
+      const blocks: Block[] = [
+        { type: 'code', code: 'const x = 1;', lang: 'js', meta: 'title="example"' },
+      ];
+
+      const result = blocksToJsx(blocks, {}, [], null, undefined, [], {
+        expressiveCodeComponent: 'Code',
+      });
+
+      expect(result).toContain('<Code code=');
+      expect(result).toContain('lang="js"');
+      expect(result).toContain('meta="title=\\"example\\""');
+      expect(result).not.toContain('<pre');
+    });
+
+    it('should render ExpressiveCode in slots when expressiveCodeComponent is set', () => {
+      const blocks: Block[] = [
+        {
+          type: 'component',
+          name: 'Card',
+          props: {},
+          slotChildren: [
+            { type: 'code', code: 'hello()', lang: 'py' },
+          ],
+        },
+      ];
+
+      const result = blocksToJsx(blocks, {}, [], null, undefined, [], {
+        expressiveCodeComponent: 'Code',
+      });
+
+      expect(result).toContain('<Code code=');
+      expect(result).toContain('lang="py"');
+      expect(result).not.toContain('<pre');
+    });
+
+    it('should handle mixed code and HTML in slot', () => {
+      const blocks: Block[] = [
+        {
+          type: 'component',
+          name: 'Section',
+          props: {},
+          slotChildren: [
+            { type: 'html', content: '<p>Before code</p>' },
+            { type: 'code', code: 'fn main() {}', lang: 'rust' },
+            { type: 'html', content: '<p>After code</p>' },
+          ],
+        },
+      ];
+
+      const result = blocksToJsx(blocks);
+
+      expect(result).toContain('<p>Before code</p>');
+      expect(result).toContain('astro-code');
+      expect(result).toContain('language-rust');
+      expect(result).toContain('After code');
+    });
+  });
+
   describe('Fragment slot stripping', () => {
     it('should strip <p> wrapper from Fragment with slot attribute', () => {
       const blocks: Block[] = [
@@ -389,7 +511,7 @@ describe('blocksToJsx', () => {
           type: 'component',
           name: 'IslandsDiagram',
           props: {},
-          slotHtml: '<p><Fragment slot="headerApp">Header text</Fragment></p>',
+          slotChildren: [{ type: 'html', content: '<p><Fragment slot="headerApp">Header text</Fragment></p>' }],
         },
       ];
 
@@ -407,7 +529,7 @@ describe('blocksToJsx', () => {
           type: 'component',
           name: 'Container',
           props: {},
-          slotHtml: '<p><Fragment slot="header">Header</Fragment></p><p><Fragment slot="footer">Footer</Fragment></p>',
+          slotChildren: [{ type: 'html', content: '<p><Fragment slot="header">Header</Fragment></p><p><Fragment slot="footer">Footer</Fragment></p>' }],
         },
       ];
 
@@ -426,7 +548,7 @@ describe('blocksToJsx', () => {
           type: 'component',
           name: 'Card',
           props: {},
-          slotHtml: '<p>Regular paragraph content</p>',
+          slotChildren: [{ type: 'html', content: '<p>Regular paragraph content</p>' }],
         },
       ];
 
@@ -442,7 +564,7 @@ describe('blocksToJsx', () => {
           type: 'component',
           name: 'Wrapper',
           props: {},
-          slotHtml: '<p><Fragment>Content without slot</Fragment></p>',
+          slotChildren: [{ type: 'html', content: '<p><Fragment>Content without slot</Fragment></p>' }],
         },
       ];
 

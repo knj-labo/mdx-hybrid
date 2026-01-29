@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-01-28T03:24:49.386Z",
-  "baselineMs": 128267,
-  "markflowMs": 63833,
+  "timestamp": "2026-01-28T14:56:11.101Z",
+  "baselineMs": 124550,
+  "markflowMs": 62129,
   "mode": "semantic",
   "semantic": {
     "compared": 12,
@@ -24,9 +24,9 @@
         "reason": "structure-diff",
         "diffIndex": 5792,
         "previewA": "ss\" rel=\"stylesheet\"> <style>.action:where(.astro-vnzlvqnm){gap:.5em;align-items:center;border-radius:999rem;padding:.5rem 1.125rem;color:var(--sl-col",
-        "previewB": "ss\" rel=\"stylesheet\"> <style>.landing-card:where(.astro-thryqltm){--card-bg: rgba(23, 25, 30, .8);display:contents;color:var(--sl-color-white)}:root[d",
+        "previewB": "ss\" rel=\"stylesheet\"> <style>.neutral-badge{border-color:var(--sl-color-gray-5);background-color:var(--sl-color-gray-6);color:var(--sl-color-text)}\n.a",
         "hexAtDiffA": "a(0x61) c(0x63) t(0x74) i(0x69) o(0x6f) n(0x6e) :(0x3a) w(0x77) h(0x68) e(0x65) r(0x72) e(0x65) ((0x28) .(0x2e) a(0x61) s(0x73) t(0x74) r(0x72) o(0x6f) -(0x2d)",
-        "hexAtDiffB": "l(0x6c) a(0x61) n(0x6e) d(0x64) i(0x69) n(0x6e) g(0x67) -(0x2d) c(0x63) a(0x61) r(0x72) d(0x64) :(0x3a) w(0x77) h(0x68) e(0x65) r(0x72) e(0x65) ((0x28) .(0x2e)",
+        "hexAtDiffB": "n(0x6e) e(0x65) u(0x75) t(0x74) r(0x72) a(0x61) l(0x6c) -(0x2d) b(0x62) a(0x61) d(0x64) g(0x67) e(0x65) {(0x7b) b(0x62) o(0x6f) r(0x72) d(0x64) e(0x65) r(0x72)",
         "lengthA": 166542,
         "lengthB": 141353
       },
