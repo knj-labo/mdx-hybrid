@@ -197,8 +197,10 @@ describe('highlightJsxCodeBlocks', () => {
   test('highlights JSX code block with language', async () => {
     const code = `<pre><code class="language-js">let a = 1;</code></pre>`;
     const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    // Result is wrapped in set:html with JSON encoding
+    expect(result).toContain('set:html=');
     expect(result).toContain('LET A = 1;');
-    expect(result).toContain('class="language-js"');
+    expect(result).toContain('language-js');
   });
 
   test('decodes JSX string expressions', async () => {
@@ -211,7 +213,10 @@ describe('highlightJsxCodeBlocks', () => {
   test('decodes JSX expressions with newlines', async () => {
     const code = `<pre><code class="language-js">{"line1"}{"\\n"}{"line2"}</code></pre>`;
     const result = await highlightJsxCodeBlocks(code, mockHighlight);
-    expect(result).toContain('LINE1\nLINE2');
+    // Result is wrapped in set:html to avoid raw { } in JSX context
+    expect(result).toContain('set:html=');
+    expect(result).toContain('LINE1');
+    expect(result).toContain('LINE2');
   });
 
   test('decodes HTML entities', async () => {
@@ -263,11 +268,22 @@ describe('highlightJsxCodeBlocks', () => {
     expect(result).toContain('<pre>');
   });
 
+  test('skips pre blocks inside set:html JSON strings', async () => {
+    // Simulate a set:html containing a <pre><code> block (already handled by rewriteAstroSetHtml)
+    const innerHtml = `<pre class="astro-code"><code class="language-js">const x = 1;</code></pre>`;
+    const code = `<_Fragment set:html={${JSON.stringify(innerHtml)}} />`;
+    const result = await highlightJsxCodeBlocks(code, mockHighlight);
+    // Should NOT be modified — the pre block is inside a JSON string
+    expect(result).toBe(code);
+  });
+
   test('handles pre tag with attributes', async () => {
     const code = `<pre class="astro-code" tabindex="0"><code class="language-sh"># comment</code></pre>`;
     const result = await highlightJsxCodeBlocks(code, mockHighlight);
     // Mock uppercases the code content, showing that highlighting was applied
+    // Result is wrapped in set:html with JSON encoding
+    expect(result).toContain('set:html=');
     expect(result).toContain('# COMMENT');
-    expect(result).toContain('class="language-sh"');
+    expect(result).toContain('language-sh');
   });
 });

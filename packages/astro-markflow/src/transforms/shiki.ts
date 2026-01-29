@@ -113,12 +113,53 @@ export async function highlightHtmlBlocks(
 }
 
 /**
+ * Checks if a position in the source code is inside a set:html={"..."} JSON string.
+ * This prevents double-highlighting of code blocks that were already processed
+ * by rewriteAstroSetHtml.
+ */
+function isInsideSetHtml(code: string, pos: number): boolean {
+  // Search backwards from pos for the nearest set:html={
+  const marker = 'set:html={';
+  let searchFrom = pos;
+  while (searchFrom > 0) {
+    const idx = code.lastIndexOf(marker, searchFrom - 1);
+    if (idx === -1) return false;
+
+    // Found a set:html={, now check if pos is before its closing } />
+    const jsonStart = idx + marker.length;
+    // The JSON string starts with " — find its end by tracking quotes
+    if (code[jsonStart] === '"') {
+      // Scan for the closing " that ends the JSON string, respecting escapes
+      let i = jsonStart + 1;
+      while (i < code.length) {
+        if (code[i] === '\\') {
+          i += 2; // Skip escaped character
+          continue;
+        }
+        if (code[i] === '"') {
+          // Found end of JSON string
+          const jsonEnd = i + 1; // Position after closing "
+          if (pos >= jsonStart && pos < jsonEnd) {
+            return true; // pos is inside this JSON string
+          }
+          break;
+        }
+        i++;
+      }
+    }
+    // Try searching further back
+    searchFrom = idx;
+  }
+  return false;
+}
+
+/**
  * Highlights code blocks that appear directly in JSX (not in set:html).
  * Handles cases where slot content with components is embedded directly,
  * causing code blocks to bypass the set:html path.
  *
  * JSX code blocks appear as: <pre><code class="language-js">{"code"}</code></pre>
- * After html_entities_to_jsx(), content may be: {"line1"}{"\n"}{"line2"}
+ * After html_entities_to_jsx() content may be: {"line1"}{"\n"}{"line2"}
  */
 export async function highlightJsxCodeBlocks(
   code: string,
@@ -145,6 +186,11 @@ export async function highlightJsxCodeBlocks(
 
     // Skip if already processed by Shiki (has shiki class or data-language)
     if (fullMatch.includes('class="shiki') || fullMatch.includes('data-language')) {
+      continue;
+    }
+
+    // Skip if this <pre> is inside a set:html JSON string (already handled by rewriteAstroSetHtml)
+    if (isInsideSetHtml(code, match.index)) {
       continue;
     }
 
@@ -188,7 +234,9 @@ export async function highlightJsxCodeBlocks(
 
     // eslint-disable-next-line no-await-in-loop
     const highlighted = await highlight(codeText, lang || undefined);
-    replacements.push({ match: fullMatch, replacement: highlighted });
+    // Wrap in set:html to avoid raw { } in JSX context being parsed as expressions
+    const safeReplacement = `<_Fragment set:html={${JSON.stringify(highlighted)}} />`;
+    replacements.push({ match: fullMatch, replacement: safeReplacement });
   }
 
   // Apply replacements
