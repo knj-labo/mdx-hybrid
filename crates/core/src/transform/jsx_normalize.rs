@@ -51,6 +51,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
     let mut in_fence = false;
     let mut fence_marker: Option<char> = None;
+    let mut fence_len: usize = 0;
 
     // Simple bracket counting to skip logic inside nested structures if needed,
     // but for now strictly generic line-based processing.
@@ -68,17 +69,23 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
         let trimmed = line_body.trim_start();
 
         // 1. Code Fence Tracking
-        let fence = trimmed.starts_with("```") || trimmed.starts_with("~~~");
+        let leading_spaces = line_body.len() - trimmed.len();
+        let fence = leading_spaces <= 3
+            && !line_body.starts_with('\t')
+            && (trimmed.starts_with("```") || trimmed.starts_with("~~~"));
         if fence {
-            let marker = trimmed.chars().next();
+            let marker = trimmed.chars().next().unwrap();
+            let count = trimmed.chars().take_while(|&c| c == marker).count();
             if in_fence {
-                if marker == fence_marker {
+                if Some(marker) == fence_marker && count >= fence_len {
                     in_fence = false;
                     fence_marker = None;
+                    fence_len = 0;
                 }
             } else {
                 in_fence = true;
-                fence_marker = marker;
+                fence_marker = Some(marker);
+                fence_len = count;
             }
             // Pass through fencing lines exactly as is
             output.push_str(line_body);
@@ -208,10 +215,41 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
     let lines: Vec<&str> = input.lines().collect();
     let mut output = String::with_capacity(input.len() + 100);
     let mut i = 0;
+    let mut in_fence = false;
+    let mut fence_marker: Option<char> = None;
+    let mut fence_len: usize = 0;
+    let mut fence_indent: usize = 0;
 
     while i < lines.len() {
         let line = lines[i];
         let trimmed = line.trim_start();
+
+        // Code fence tracking: skip all lines inside fenced code blocks
+        let line_indent = line.len() - trimmed.len();
+        let fence = (trimmed.starts_with("```") || trimmed.starts_with("~~~"))
+            && if in_fence { line_indent <= fence_indent + 3 } else { true };
+        if fence {
+            let marker = trimmed.chars().next().unwrap();
+            let count = trimmed.chars().take_while(|&c| c == marker).count();
+            if in_fence {
+                if Some(marker) == fence_marker && count >= fence_len {
+                    in_fence = false;
+                    fence_marker = None;
+                    fence_len = 0;
+                }
+            } else {
+                in_fence = true;
+                fence_marker = Some(marker);
+                fence_len = count;
+                fence_indent = line_indent;
+            }
+        }
+        if in_fence || fence {
+            output.push_str(line);
+            output.push('\n');
+            i += 1;
+            continue;
+        }
 
         // Check if this is a list JSX component (opening tag)
         if let Some(tag_info) = parse_jsx_tag(trimmed).filter(is_list_jsx_component) {
@@ -324,6 +362,7 @@ const LIST_JSX_COMPONENTS: &[&str] = &[
     // Tutorial/content components
     "Steps",
     "Box",
+    "FileTree",
 ];
 
 /// Checks if a tag is a list-embedded JSX component that needs special handling.
@@ -556,6 +595,62 @@ mod tests {
             "Should NOT insert blank line between nested closing Box tags. Got:\n{}",
             result
         );
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_skips_code_fences() {
+        // Tags inside code fences should NOT be processed
+        let input = "1. Install:\n\n    ```astro\n    <builder-component model=\"page\" />\n    </builder-component>\n    ```\n\n2. Next step\n";
+        let result = normalize_list_jsx_components(input);
+        assert_eq!(result, input, "Code fence content should be passed through unchanged");
+    }
+
+    #[test]
+    fn test_list_fence_indented_4_spaces_not_treated_as_close() {
+        // Inside a top-level fence, a 4-space-indented backtick line is content, not a closer
+        let input = "```\n    ```\nstill in fence\n```\n";
+        let result = normalize_list_jsx_components(input);
+        assert_eq!(result, input, "Indented backtick line should not close the fence");
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_code_fence_no_duplication() {
+        // Regression: <custom-element> inside a code fence caused content duplication
+        let input = "Text before\n\n```astro\n<mux-video\n  data-testid=\"video\"\n></mux-video>\n```\n\nText after\n";
+        let result = normalize_list_jsx_components(input);
+        assert_eq!(result, input, "Content inside code fences must not be duplicated");
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_filetree_inside_numbered_list() {
+        let input = "1. Create the following files:\n\t\t<FileTree>\n\t\t- src/\n\t\t  - content/\n\t\t</FileTree>\n";
+        let result = normalize_list_jsx_components(input);
+        assert!(
+            result.contains("Create the following files:\n\n"),
+            "Should insert blank line before FileTree in numbered list. Got:\n{}",
+            result
+        );
+        assert!(
+            result.contains("</FileTree>\n"),
+            "Should preserve FileTree closing tag. Got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_fence_indented_4_spaces_not_treated_as_close() {
+        // A line with 4+ spaces of indent containing backticks is content, not a fence closer
+        let input = "```\n    ```\nstill in fence\n```\n";
+        let result = normalize_mdx_jsx_indentation(input);
+        assert_eq!(result, input, "Indented backtick line should not close the fence");
+    }
+
+    #[test]
+    fn test_fence_length_tracking_no_premature_close() {
+        // A 4-backtick fence should not be closed by a 3-backtick line inside it
+        let input = "1. Example:\n\n    ````md\n    ```\n    nested\n    ```\n    ````\n\n2. Next\n";
+        let result = normalize_list_jsx_components(input);
+        assert_eq!(result, input, "4-tick fence containing 3-tick lines should not be prematurely closed");
     }
 
     #[test]
