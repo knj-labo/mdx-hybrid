@@ -189,15 +189,22 @@ fn find_tag_end(bytes: &[u8]) -> Option<usize> {
     while i < bytes.len() {
         let b = bytes[i];
         if in_quote {
-            if b == quote_char {
+            if brace_depth > 0 && b == b'\\' {
+                // Skip escaped character in JSX string context
+                i += 2;
+                continue;
+            } else if b == quote_char {
                 in_quote = false;
             }
         } else if brace_depth > 0 {
-            // Inside JSX expression - track nested braces
+            // Inside JSX expression - track nested braces and strings
             if b == b'{' {
                 brace_depth += 1;
             } else if b == b'}' {
                 brace_depth -= 1;
+            } else if b == b'"' || b == b'\'' {
+                in_quote = true;
+                quote_char = b;
             }
         } else if b == b'"' || b == b'\'' {
             in_quote = true;
@@ -1211,6 +1218,31 @@ mod tests {
             html_entities_to_jsx("<Card title=&#123;foo&#125;>content</Card>"),
             "<Card title={foo}>content</Card>"
         );
+    }
+
+    #[test]
+    fn test_html_entities_to_jsx_unbalanced_braces_in_code_prop() {
+        // Code block with unbalanced { in JSX expression prop
+        let input = r#"<Code code={"if (x) {\n  console.log('hi');\n"} /><p>text with {astro}</p>"#;
+        let result = html_entities_to_jsx(input);
+        // The <Code> tag should be preserved, and {astro} in text should be escaped
+        assert!(result.contains("<Code code="));
+        assert!(result.contains(r#"{"{"}"#)); // {astro} → {"{"}astro{"}"}
+    }
+
+    #[test]
+    fn test_html_entities_to_jsx_balanced_braces_in_code_prop() {
+        let input = r#"<Code code={"import { foo } from 'bar';"} />"#;
+        let result = html_entities_to_jsx(input);
+        assert_eq!(result, input); // No text content, no changes needed
+    }
+
+    #[test]
+    fn test_html_entities_to_jsx_escaped_quotes_in_code_prop() {
+        // JSON string with escaped quotes
+        let input = r#"<Code code={"say \"hello\""} />"#;
+        let result = html_entities_to_jsx(input);
+        assert_eq!(result, input);
     }
 
     #[test]
