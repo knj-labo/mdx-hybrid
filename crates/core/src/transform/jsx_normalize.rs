@@ -253,12 +253,26 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
 
         // Check if this is a list JSX component (opening tag)
         if let Some(tag_info) = parse_jsx_tag(trimmed).filter(is_list_jsx_component) {
+            // Detect tab indentation and compute re-indent parameters
+            let needs_reindent = has_leading_tabs(line);
+            let (base_cols, target_indent) = if needs_reindent {
+                let base = leading_column_width(line);
+                let target = find_list_continuation_indent(&lines, i).unwrap_or(base);
+                (base, target)
+            } else {
+                (0, 0)
+            };
+
             // Check if we need a blank line before
             if i > 0 && needs_blank_line_before(&lines, i) {
                 output.push('\n');
             }
 
-            output.push_str(line);
+            if needs_reindent {
+                output.push_str(&reindent_line(line, base_cols, target_indent));
+            } else {
+                output.push_str(line);
+            }
             output.push('\n');
 
             // For self-closing tags, check if we need blank line after
@@ -313,8 +327,30 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
                 }
 
                 if depth > 0 {
-                    // Output inner lines as-is (no blank line insertion)
-                    output.push_str(lines[j]);
+                    // Check for nested list JSX component with tab indentation
+                    if !needs_reindent && has_leading_tabs(lines[j]) {
+                        if let Some(nested_tag) =
+                            parse_jsx_tag(inner_trimmed).filter(is_list_jsx_component)
+                        {
+                            if !nested_tag.self_closing
+                                && !lines[j].contains(&format!("</{}>", nested_tag.name))
+                            {
+                                j = reindent_nested_jsx_block(
+                                    &lines,
+                                    j,
+                                    &nested_tag.name,
+                                    &mut output,
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                    // Output inner lines, re-indenting if needed
+                    if needs_reindent {
+                        output.push_str(&reindent_line(lines[j], base_cols, target_indent));
+                    } else {
+                        output.push_str(lines[j]);
+                    }
                     output.push('\n');
                 }
                 j += 1;
@@ -322,7 +358,11 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
 
             // Output closing tag
             if j > i + 1 && depth == 0 {
-                output.push_str(lines[j - 1]);
+                if needs_reindent {
+                    output.push_str(&reindent_line(lines[j - 1], base_cols, target_indent));
+                } else {
+                    output.push_str(lines[j - 1]);
+                }
                 output.push('\n');
 
                 // Blank line after closing if needed
@@ -437,6 +477,104 @@ fn needs_blank_line_after(lines: &[&str], i: usize) -> bool {
     }
 
     true
+}
+
+/// Compute the column width of leading whitespace (tabs = 4 columns each).
+fn leading_column_width(line: &str) -> usize {
+    let mut cols = 0;
+    for ch in line.chars() {
+        match ch {
+            '\t' => cols += 4,
+            ' ' => cols += 1,
+            _ => break,
+        }
+    }
+    cols
+}
+
+/// Find the continuation indent for the list item containing line `i`.
+/// Returns the number of spaces needed for continuation content.
+fn find_list_continuation_indent(lines: &[&str], i: usize) -> Option<usize> {
+    let mut idx = i.saturating_sub(1);
+    loop {
+        let line = lines[idx];
+        let trimmed = line.trim_start();
+        let leading = leading_column_width(line);
+        // Ordered list: digits followed by ". " or ") "
+        let rest = trimmed.trim_start_matches(|c: char| c.is_ascii_digit());
+        if rest.len() < trimmed.len() && (rest.starts_with(". ") || rest.starts_with(") ")) {
+            let marker_width = trimmed.len() - rest.len() + 2;
+            return Some(leading + marker_width);
+        }
+        // Unordered list: "- ", "* ", "+ "
+        if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("+ ") {
+            return Some(leading + 2);
+        }
+        if idx == 0 {
+            break;
+        }
+        idx -= 1;
+    }
+    None
+}
+
+/// Re-indent a line: strip its leading whitespace and prepend `indent` spaces.
+/// Preserves relative indentation based on column width difference from `base_cols`.
+fn reindent_line(line: &str, base_cols: usize, target_indent: usize) -> String {
+    let line_cols = leading_column_width(line);
+    let extra = line_cols.saturating_sub(base_cols);
+    let content = line.trim_start();
+    let total = target_indent + extra;
+    format!("{}{}", " ".repeat(total), content)
+}
+
+/// Check if a line's leading whitespace contains any tabs.
+fn has_leading_tabs(line: &str) -> bool {
+    line.chars().take_while(|c| c.is_whitespace()).any(|c| c == '\t')
+}
+
+/// Re-indent a nested JSX component block that has tab indentation.
+/// Processes from the opener at `start` through the matching closer.
+/// Returns the index after the last line processed.
+fn reindent_nested_jsx_block(
+    lines: &[&str],
+    start: usize,
+    tag_name: &str,
+    output: &mut String,
+) -> usize {
+    let base_cols = leading_column_width(lines[start]);
+    let target = find_list_continuation_indent(lines, start).unwrap_or(base_cols);
+
+    // Output opener
+    output.push_str(&reindent_line(lines[start], base_cols, target));
+    output.push('\n');
+
+    let close_tag = format!("</{}>", tag_name);
+    let open_prefix = format!("<{}", tag_name);
+    let mut j = start + 1;
+    let mut nested_depth = 1;
+
+    while j < lines.len() && nested_depth > 0 {
+        let t = lines[j].trim_start();
+
+        if t.starts_with(&open_prefix) {
+            let after = t.get(open_prefix.len()..);
+            let is_same = after.is_none_or(|s| {
+                s.is_empty() || s.starts_with('>') || s.starts_with(' ') || s.starts_with('/')
+            });
+            if is_same && !t.trim_end().ends_with("/>") {
+                nested_depth += 1;
+            }
+        }
+        if t.starts_with(&close_tag) {
+            nested_depth -= 1;
+        }
+
+        output.push_str(&reindent_line(lines[j], base_cols, target));
+        output.push('\n');
+        j += 1;
+    }
+    j
 }
 
 /// Detects simple HTML wrapper tags like <p>, <div>, <span>
@@ -687,5 +825,66 @@ mod tests {
 
         // Most importantly: the output should parse correctly
         // (we'll verify this via integration test)
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_tab_indent_reindented() {
+        // Tab-indented FileTree inside numbered list should be re-indented to spaces
+        let input = "4. Description:\n\t\t<FileTree>\n\t\t- src/\n\t\t  - content/\n\t\t</FileTree>\n";
+        let result = normalize_list_jsx_components(input);
+        assert!(
+            !result.contains('\t'),
+            "Tabs should be converted to spaces. Got:\n{}",
+            result
+        );
+        assert!(
+            result.contains("<FileTree>"),
+            "FileTree tag should be preserved"
+        );
+        assert!(
+            result.contains("</FileTree>"),
+            "Closing tag should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_tab_indent_nested_in_steps() {
+        // FileTree with tab indentation nested inside <Steps> (which has no tabs)
+        let input = "<Steps>\n1. First\n\n2. Second\n\n4. Description:\n\t\t<FileTree>\n\t\t- src/\n\t\t  - content/\n\t\t</FileTree>\n\n5. Next\n</Steps>\n";
+        let result = normalize_list_jsx_components(input);
+        assert!(
+            !result.contains('\t'),
+            "Tabs should be converted to spaces. Got:\n{}",
+            result
+        );
+        assert!(
+            result.contains("<FileTree>"),
+            "FileTree tag should be preserved"
+        );
+        assert!(
+            result.contains("</FileTree>"),
+            "Closing tag should be preserved"
+        );
+        assert!(
+            result.contains("<Steps>"),
+            "Steps opener should be preserved"
+        );
+        assert!(
+            result.contains("</Steps>"),
+            "Steps closer should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_tab_indent_with_attributes() {
+        // Tab-indented FileTree with attributes
+        let input =
+            "4. Description:\n\t\t<FileTree title=\"Structure\">\n\t\t- src/\n\t\t</FileTree>\n";
+        let result = normalize_list_jsx_components(input);
+        assert!(
+            !result.contains('\t'),
+            "Tabs should be converted to spaces. Got:\n{}",
+            result
+        );
     }
 }
