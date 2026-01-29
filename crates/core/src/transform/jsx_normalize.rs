@@ -227,7 +227,11 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
         // Code fence tracking: skip all lines inside fenced code blocks
         let line_indent = line.len() - trimmed.len();
         let fence = (trimmed.starts_with("```") || trimmed.starts_with("~~~"))
-            && if in_fence { line_indent <= fence_indent + 3 } else { true };
+            && if in_fence {
+                line_indent <= fence_indent + 3
+            } else {
+                true
+            };
         if fence {
             let marker = trimmed.chars().next().unwrap();
             let count = trimmed.chars().take_while(|&c| c == marker).count();
@@ -335,12 +339,7 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
                         && !nested_tag.self_closing
                         && !lines[j].contains(&format!("</{}>", nested_tag.name))
                     {
-                        j = reindent_nested_jsx_block(
-                            &lines,
-                            j,
-                            &nested_tag.name,
-                            &mut output,
-                        );
+                        j = reindent_nested_jsx_block(&lines, j, &nested_tag.name, &mut output);
                         continue;
                     }
                     // Output inner lines, re-indenting if needed
@@ -528,7 +527,9 @@ fn reindent_line(line: &str, base_cols: usize, target_indent: usize) -> String {
 
 /// Check if a line's leading whitespace contains any tabs.
 fn has_leading_tabs(line: &str) -> bool {
-    line.chars().take_while(|c| c.is_whitespace()).any(|c| c == '\t')
+    line.chars()
+        .take_while(|c| c.is_whitespace())
+        .any(|c| c == '\t')
 }
 
 /// Re-indent a nested JSX component block that has tab indentation.
@@ -738,7 +739,10 @@ mod tests {
         // Tags inside code fences should NOT be processed
         let input = "1. Install:\n\n    ```astro\n    <builder-component model=\"page\" />\n    </builder-component>\n    ```\n\n2. Next step\n";
         let result = normalize_list_jsx_components(input);
-        assert_eq!(result, input, "Code fence content should be passed through unchanged");
+        assert_eq!(
+            result, input,
+            "Code fence content should be passed through unchanged"
+        );
     }
 
     #[test]
@@ -746,7 +750,10 @@ mod tests {
         // Inside a top-level fence, a 4-space-indented backtick line is content, not a closer
         let input = "```\n    ```\nstill in fence\n```\n";
         let result = normalize_list_jsx_components(input);
-        assert_eq!(result, input, "Indented backtick line should not close the fence");
+        assert_eq!(
+            result, input,
+            "Indented backtick line should not close the fence"
+        );
     }
 
     #[test]
@@ -754,7 +761,10 @@ mod tests {
         // Regression: <custom-element> inside a code fence caused content duplication
         let input = "Text before\n\n```astro\n<mux-video\n  data-testid=\"video\"\n></mux-video>\n```\n\nText after\n";
         let result = normalize_list_jsx_components(input);
-        assert_eq!(result, input, "Content inside code fences must not be duplicated");
+        assert_eq!(
+            result, input,
+            "Content inside code fences must not be duplicated"
+        );
     }
 
     #[test]
@@ -778,15 +788,22 @@ mod tests {
         // A line with 4+ spaces of indent containing backticks is content, not a fence closer
         let input = "```\n    ```\nstill in fence\n```\n";
         let result = normalize_mdx_jsx_indentation(input);
-        assert_eq!(result, input, "Indented backtick line should not close the fence");
+        assert_eq!(
+            result, input,
+            "Indented backtick line should not close the fence"
+        );
     }
 
     #[test]
     fn test_fence_length_tracking_no_premature_close() {
         // A 4-backtick fence should not be closed by a 3-backtick line inside it
-        let input = "1. Example:\n\n    ````md\n    ```\n    nested\n    ```\n    ````\n\n2. Next\n";
+        let input =
+            "1. Example:\n\n    ````md\n    ```\n    nested\n    ```\n    ````\n\n2. Next\n";
         let result = normalize_list_jsx_components(input);
-        assert_eq!(result, input, "4-tick fence containing 3-tick lines should not be prematurely closed");
+        assert_eq!(
+            result, input,
+            "4-tick fence containing 3-tick lines should not be prematurely closed"
+        );
     }
 
     #[test]
@@ -828,7 +845,8 @@ mod tests {
     #[test]
     fn test_normalize_list_jsx_tab_indent_reindented() {
         // Tab-indented FileTree inside numbered list should be re-indented to spaces
-        let input = "4. Description:\n\t\t<FileTree>\n\t\t- src/\n\t\t  - content/\n\t\t</FileTree>\n";
+        let input =
+            "4. Description:\n\t\t<FileTree>\n\t\t- src/\n\t\t  - content/\n\t\t</FileTree>\n";
         let result = normalize_list_jsx_components(input);
         assert!(
             !result.contains('\t'),
