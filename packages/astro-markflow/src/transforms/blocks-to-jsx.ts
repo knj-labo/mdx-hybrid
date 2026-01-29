@@ -294,7 +294,7 @@ export function blocksToJsx(
 
       // Convert slotChildren to HTML string for slot processing
       let effectiveSlot = stripParagraphFragmentWrappers(
-        slotChildrenToHtml(block.slotChildren ?? [], options.expressiveCodeComponent, componentImports, registry, userImportedNames)
+        slotChildrenToHtml(block.slotChildren ?? [], options.expressiveCodeComponent, componentImports, registry ?? undefined, userImportedNames)
       );
 
       if (isDirective && registry && block.name) {
