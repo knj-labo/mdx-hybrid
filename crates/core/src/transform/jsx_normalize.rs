@@ -328,22 +328,20 @@ pub fn normalize_list_jsx_components(input: &str) -> String {
 
                 if depth > 0 {
                     // Check for nested list JSX component with tab indentation
-                    if !needs_reindent && has_leading_tabs(lines[j]) {
-                        if let Some(nested_tag) =
+                    if !needs_reindent
+                        && has_leading_tabs(lines[j])
+                        && let Some(nested_tag) =
                             parse_jsx_tag(inner_trimmed).filter(is_list_jsx_component)
-                        {
-                            if !nested_tag.self_closing
-                                && !lines[j].contains(&format!("</{}>", nested_tag.name))
-                            {
-                                j = reindent_nested_jsx_block(
-                                    &lines,
-                                    j,
-                                    &nested_tag.name,
-                                    &mut output,
-                                );
-                                continue;
-                            }
-                        }
+                        && !nested_tag.self_closing
+                        && !lines[j].contains(&format!("</{}>", nested_tag.name))
+                    {
+                        j = reindent_nested_jsx_block(
+                            &lines,
+                            j,
+                            &nested_tag.name,
+                            &mut output,
+                        );
+                        continue;
                     }
                     // Output inner lines, re-indenting if needed
                     if needs_reindent {
