@@ -508,4 +508,11 @@ import { foo } from 'bar'
     // Should NOT contain both in one string
     expect(result[0]).not.toContain('foo');
   });
+
+  it('should preserve URL specifiers with // in multi-line imports', () => {
+    const code = `import {\n  Foo\n} from 'https://example.com/mod.js';`;
+    const result = extractImportStatements(code);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toContain('https://example.com/mod.js');
+  });
 });
