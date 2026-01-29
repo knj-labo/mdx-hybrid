@@ -24,8 +24,8 @@ export interface MdxPatternDetectionResult {
  * Strip code fences from content to avoid false positives.
  */
 export function stripCodeFences(content: string): string {
-  // Remove fenced code blocks (``` or ~~~)
-  return content.replace(/^(?:```|~~~)[^\n]*\n[\s\S]*?^(?:```|~~~)\s*$/gm, '');
+  // Remove fenced code blocks (``` or ~~~), including indented and 3+ marker closers
+  return content.replace(/^[ \t]*`{3,}[^\n`]*\n[\s\S]*?^[ \t]*`{3,}[ \t]*$|^[ \t]*~{3,}[^\n]*\n[\s\S]*?^[ \t]*~{3,}[ \t]*$/gm, '');
 }
 
 /**
