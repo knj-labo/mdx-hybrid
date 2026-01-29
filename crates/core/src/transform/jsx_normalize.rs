@@ -52,6 +52,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
     let mut in_fence = false;
     let mut fence_marker: Option<char> = None;
     let mut fence_len: usize = 0;
+    let mut fence_indent: usize = 0;
 
     // Simple bracket counting to skip logic inside nested structures if needed,
     // but for now strictly generic line-based processing.
@@ -69,10 +70,13 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
         let trimmed = line_body.trim_start();
 
         // 1. Code Fence Tracking
-        let leading_spaces = line_body.len() - trimmed.len();
-        let fence = leading_spaces <= 3
-            && !line_body.starts_with('\t')
-            && (trimmed.starts_with("```") || trimmed.starts_with("~~~"));
+        let line_indent = line_body.len() - trimmed.len();
+        let fence = (trimmed.starts_with("```") || trimmed.starts_with("~~~"))
+            && if in_fence {
+                line_indent <= fence_indent + 3
+            } else {
+                true
+            };
         if fence {
             let marker = trimmed.chars().next().unwrap();
             let count = trimmed.chars().take_while(|&c| c == marker).count();
@@ -86,6 +90,7 @@ pub fn normalize_mdx_jsx_indentation(input: &str) -> String {
                 in_fence = true;
                 fence_marker = Some(marker);
                 fence_len = count;
+                fence_indent = line_indent;
             }
             // Pass through fencing lines exactly as is
             output.push_str(line_body);
