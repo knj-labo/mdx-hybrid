@@ -54,6 +54,7 @@ export default defineConfig({
         Sidebar: "./src/components/starlight/Sidebar.astro",
         MobileMenuFooter: "./src/components/starlight/MobileMenuFooter.astro",
         PageTitle: "./src/components/starlight/PageTitle.astro",
+        Head: "./src/components/starlight/Head.astro",
       },
       routeMiddleware: "./src/routeData.ts",
       editLink: {
@@ -89,6 +90,7 @@ export default defineConfig({
   ],
   trailingSlash: "always",
   scopedStyleStrategy: "where",
+  build: { inlineStylesheets: "never" },
   compressHTML: false,
   markdown: {
     // Override with our own config

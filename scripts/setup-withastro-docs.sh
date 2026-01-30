@@ -61,6 +61,10 @@ if [ -d "$OVERLAY_DIR" ]; then
   cp "$OVERLAY_DIR/package.json" "$TARGET_DIR/"
   # Copy ec.config.mjs if present (needed when expressiveCode is enabled)
   [ -f "$OVERLAY_DIR/ec.config.mjs" ] && cp "$OVERLAY_DIR/ec.config.mjs" "$TARGET_DIR/"
+  # Copy src/ overlay (e.g. custom Head.astro for CSS @layer ordering)
+  if [ -d "$OVERLAY_DIR/src" ]; then
+    cp -R "$OVERLAY_DIR/src/." "$TARGET_DIR/src/"
+  fi
 fi
 
 echo "Done. Repository is at $TARGET_DIR (ref: $REF)"
