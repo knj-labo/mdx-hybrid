@@ -59,6 +59,8 @@ if [ -d "$OVERLAY_DIR" ]; then
   echo "Applying markflow overlay from $OVERLAY_DIR"
   cp "$OVERLAY_DIR/astro.config.ts" "$TARGET_DIR/"
   cp "$OVERLAY_DIR/package.json" "$TARGET_DIR/"
+  # Copy ec.config.mjs if present (needed when expressiveCode is enabled)
+  [ -f "$OVERLAY_DIR/ec.config.mjs" ] && cp "$OVERLAY_DIR/ec.config.mjs" "$TARGET_DIR/"
 fi
 
 echo "Done. Repository is at $TARGET_DIR (ref: $REF)"

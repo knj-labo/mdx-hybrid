@@ -24,8 +24,39 @@ export interface MdxPatternDetectionResult {
  * Strip code fences from content to avoid false positives.
  */
 export function stripCodeFences(content: string): string {
-  // Remove fenced code blocks (``` or ~~~), including indented and 3+ marker closers
-  return content.replace(/^[ \t]*`{3,}[^\n`]*\n[\s\S]*?^[ \t]*`{3,}[ \t]*$|^[ \t]*~{3,}[^\n]*\n[\s\S]*?^[ \t]*~{3,}[ \t]*$/gm, '');
+  const lines = content.split('\n');
+  const result: string[] = [];
+  let inFence = false;
+  let fenceMarker = '';
+  let fenceLen = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    const backtickMatch = trimmed.match(/^(`{3,})/);
+    const tildeMatch = trimmed.match(/^(~{3,})/);
+    const match = backtickMatch || tildeMatch;
+
+    if (match && match[1]) {
+      const marker = match[1][0]!;
+      const len = match[1].length;
+
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = marker;
+        fenceLen = len;
+        continue;
+      } else if (marker === fenceMarker && len >= fenceLen && trimmed.replace(/^[`~]+/, '').trim() === '') {
+        // Closing fence: same marker, >= length, no info string
+        inFence = false;
+        continue;
+      }
+    }
+
+    if (!inFence) {
+      result.push(line);
+    }
+  }
+  return result.join('\n');
 }
 
 /**

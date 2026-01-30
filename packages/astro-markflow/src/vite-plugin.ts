@@ -247,6 +247,18 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       // to avoid Vite module runner timing issues with async imports
     },
 
+    transformIndexHtml() {
+      // Only inject in dev mode — build mode uses Head.astro component override
+      if (resolvedConfig?.command !== 'serve' || !hasStarlightConfigured) {
+        return;
+      }
+      return [{
+        tag: 'style',
+        children: '@layer starlight.base, starlight.reset, starlight.core, starlight.content, starlight.components, starlight.utils;',
+        injectTo: 'head-prepend' as const,
+      }];
+    },
+
     async buildStart() {
       // Only batch compile in build mode (not dev/serve)
       if (resolvedConfig?.command !== 'build') return;
