@@ -32,11 +32,12 @@ export function stripCodeFences(content: string): string {
 
   for (const line of lines) {
     const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
     const backtickMatch = trimmed.match(/^(`{3,})/);
     const tildeMatch = trimmed.match(/^(~{3,})/);
     const match = backtickMatch || tildeMatch;
 
-    if (match && match[1]) {
+    if (match && match[1] && indent <= 3) {
       const marker = match[1][0]!;
       const len = match[1].length;
 

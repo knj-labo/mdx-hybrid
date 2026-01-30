@@ -436,9 +436,6 @@ export function normalizeHtml(html) {
   processed = processed.replace(/\u2014/g, '--');
   processed = processed.replace(/\u2026/g, '...');
 
-  // HTML entity decoding (numeric/hex → characters)
-  processed = processed.replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-  processed = processed.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
 
   // Strip style attributes with CSS custom properties (Starlight icon sizing)
   processed = processed.replace(/\s+style="--sl-icon-size:[^"]*"/gi, '');
@@ -598,11 +595,15 @@ function decodeHtmlEntities(text) {
 }
 
 function normalizeText(text) {
-  return text.replace(/\s+/g, ' ');
+  let t = text.replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  t = t.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
+  return t.replace(/\s+/g, ' ');
 }
 
 function normalizeCodeText(text) {
-  return text.replace(/\r\n?/g, '\n');
+  let t = text.replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  t = t.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
+  return t.replace(/\r\n?/g, '\n');
 }
 
 function normalizeTag(tag) {
