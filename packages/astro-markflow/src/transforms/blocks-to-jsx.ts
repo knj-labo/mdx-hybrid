@@ -82,12 +82,31 @@ function slotChildrenToHtml(
       }
     } else if (block.type === 'component') {
       const innerHtml = slotChildrenToHtml(block.slotChildren ?? [], ecComponent, componentImports, registry, userImportedNames);
-      result += `<${block.name}`;
+
+      // Fragment-with-slot: render as <div style="display:contents" slot="name">
+      // so Astro's slot distribution works (Fragment VNodes are unwrapped,
+      // losing the slot prop).
+      const slotProp = block.props?.slot;
+      const slotName =
+        typeof slotProp === 'object' && slotProp !== null && 'type' in slotProp && 'value' in slotProp
+          ? (slotProp as PropValue).value
+          : typeof slotProp === 'string'
+            ? slotProp
+            : undefined;
+      const isFragmentSlot = block.name === 'Fragment' && slotName !== undefined;
+      const tag = isFragmentSlot ? 'div' : (block.name ?? '');
+
+      result += `<${tag}`;
+      if (isFragmentSlot) {
+        result += ' style="display:contents"';
+      }
       if (block.props) {
         for (const [key, value] of Object.entries(block.props)) {
           if (typeof value === 'object' && value !== null && 'type' in value && 'value' in value) {
             const pv = value as PropValue;
-            if (pv.type === 'literal') {
+            if (isFragmentSlot && key === 'slot') {
+              result += ` slot="${escapeJsString(pv.value)}"`;
+            } else if (pv.type === 'literal') {
               result += ` ${key}="${escapeJsString(pv.value)}"`;
             } else {
               result += ` ${key}={${pv.value}}`;
@@ -95,7 +114,7 @@ function slotChildrenToHtml(
           }
         }
       }
-      result += `>${innerHtml}</${block.name}>`;
+      result += `>${innerHtml}</${tag}>`;
     }
   }
   return result;
@@ -292,9 +311,38 @@ export function blocksToJsx(
       let componentName = block.name ?? '';
       let effectiveProps = block.props;
 
-      // Convert slotChildren to HTML string for slot processing
+      // Separate Fragment-with-slot children from regular children.
+      // Fragment VNodes with `slot` props are unwrapped by Astro's renderJSX
+      // before slot distribution, losing the slot assignment. We render them
+      // as <div style="display:contents" slot="name"> instead.
+      const allChildren = block.slotChildren ?? [];
+      const regularChildren: Block[] = [];
+      const fragmentSlotChildren: { slotName: string; inner: Block[] }[] = [];
+
+      for (const child of allChildren) {
+        if (
+          child.type === 'component' &&
+          child.name === 'Fragment' &&
+          child.props
+        ) {
+          const slotProp = child.props.slot;
+          const slotName =
+            typeof slotProp === 'object' && slotProp !== null && 'type' in slotProp && 'value' in slotProp
+              ? (slotProp as PropValue).value
+              : typeof slotProp === 'string'
+                ? slotProp
+                : undefined;
+          if (slotName) {
+            fragmentSlotChildren.push({ slotName, inner: child.slotChildren ?? [] });
+            continue;
+          }
+        }
+        regularChildren.push(child);
+      }
+
+      // Convert regular (non-fragment-slot) children to HTML string for slot processing
       let effectiveSlot = stripParagraphFragmentWrappers(
-        slotChildrenToHtml(block.slotChildren ?? [], options.expressiveCodeComponent, componentImports, registry ?? undefined, userImportedNames)
+        slotChildrenToHtml(regularChildren, options.expressiveCodeComponent, componentImports, registry ?? undefined, userImportedNames)
       );
 
       if (isDirective && registry && block.name) {
@@ -351,24 +399,47 @@ export function blocksToJsx(
         : '';
 
       // Handle slot content: use set:html for pure HTML, but embed JSX directly for nested components
-      if (effectiveSlot) {
+      const hasAnyContent = effectiveSlot || fragmentSlotChildren.length > 0;
+      if (hasAnyContent) {
         const propsAttr = propsStr ? ` ${propsStr}` : '';
+        let children = '';
 
-        // Check if slot contains JSX components (true PascalCase tags like <Card, <Aside, etc.)
-        // These need to be embedded directly so Astro processes them as components
-        // Uses Rust implementation for consistency with codegen
-        const hasNestedComponents = hasPascalCaseTag(effectiveSlot);
+        // Default slot content (regular children)
+        if (effectiveSlot) {
+          // Check if slot contains JSX components (true PascalCase tags like <Card, <Aside, etc.)
+          // These need to be embedded directly so Astro processes them as components
+          // Uses Rust implementation for consistency with codegen
+          const hasNestedComponents = hasPascalCaseTag(effectiveSlot);
 
-        // Fragment components should NEVER use set:html wrapper
-        // The Fragment itself is the slot container, content should be direct children
-        if (componentName === 'Fragment' || hasNestedComponents) {
-          // Embed JSX directly so Astro processes slot content correctly
-          // Convert HTML entities to JSX expressions so they render as text, not markup
-          fragments.push(`<${componentName}${propsAttr}>${htmlEntitiesToJsx(effectiveSlot)}</${componentName}>`);
-        } else {
-          // Pure HTML content - use set:html for non-Fragment components
-          fragments.push(`<${componentName}${propsAttr}><_Fragment set:html={${JSON.stringify(effectiveSlot)}} /></${componentName}>`);
+          // Fragment components should NEVER use set:html wrapper
+          // The Fragment itself is the slot container, content should be direct children
+          if (componentName === 'Fragment' || hasNestedComponents) {
+            // Embed JSX directly so Astro processes slot content correctly
+            // Convert HTML entities to JSX expressions so they render as text, not markup
+            children += htmlEntitiesToJsx(effectiveSlot);
+          } else {
+            // Pure HTML content - use set:html for non-Fragment components
+            children += `<_Fragment set:html={${JSON.stringify(effectiveSlot)}} />`;
+          }
         }
+
+        // Named slot children: render as <div style="display:contents" slot="name">
+        // Using a real HTML element (not Fragment) so Astro's slot distribution
+        // correctly assigns the content to the named slot.
+        for (const { slotName, inner } of fragmentSlotChildren) {
+          const innerHtml = slotChildrenToHtml(inner, options.expressiveCodeComponent, componentImports, registry ?? undefined, userImportedNames);
+          children += `<div style="display:contents" slot="${escapeJsString(slotName)}">`;
+          if (innerHtml) {
+            if (hasPascalCaseTag(innerHtml)) {
+              children += htmlEntitiesToJsx(innerHtml);
+            } else {
+              children += `<_Fragment set:html={${JSON.stringify(innerHtml)}} />`;
+            }
+          }
+          children += '</div>';
+        }
+
+        fragments.push(`<${componentName}${propsAttr}>${children}</${componentName}>`);
       } else {
         fragments.push(propsStr ? `<${componentName} ${propsStr} />` : `<${componentName} />`);
       }
