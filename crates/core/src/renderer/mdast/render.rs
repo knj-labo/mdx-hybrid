@@ -210,9 +210,21 @@ fn render_jsx(
             .as_ref()
             .map(|c| format!(" class=\"{}\"", c))
             .unwrap_or_default();
-        ctx.push_raw(&format!("<ul{}>", class_attr));
-        ctx.push_raw(&slot_html);
-        ctx.push_raw("</ul>");
+        let trimmed = slot_html.trim();
+        if trimmed.starts_with("<ul") && trimmed.ends_with("</ul>") {
+            // Children already rendered as a <ul>; strip the outer <ul>...</ul>
+            // and re-wrap with our normalized wrapper to avoid double nesting.
+            let inner_start = trimmed.find('>').map(|i| i + 1).unwrap_or(0);
+            let inner_end = trimmed.len() - 5; // strip trailing "</ul>"
+            let inner = &trimmed[inner_start..inner_end];
+            ctx.push_raw(&format!("<ul{}>", class_attr));
+            ctx.push_raw(inner);
+            ctx.push_raw("</ul>");
+        } else {
+            ctx.push_raw(&format!("<ul{}>", class_attr));
+            ctx.push_raw(&slot_html);
+            ctx.push_raw("</ul>");
+        }
         return;
     }
 

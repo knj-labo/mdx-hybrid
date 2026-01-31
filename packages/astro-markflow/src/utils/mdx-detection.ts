@@ -37,7 +37,7 @@ export function stripCodeFences(content: string): string {
     const tildeMatch = trimmed.match(/^(~{3,})/);
     const match = backtickMatch || tildeMatch;
 
-    if (match && match[1] && indent <= 3) {
+    if (match && match[1]) {
       const marker = match[1][0]!;
       const len = match[1].length;
 

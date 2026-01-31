@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-01-30T05:22:44.471Z",
-  "baselineMs": 125236,
-  "markflowMs": 77187,
+  "timestamp": "2026-01-31T01:05:07.616Z",
+  "baselineMs": 125837,
+  "markflowMs": 121195,
   "mode": "semantic",
   "semantic": {
     "compared": 12,
@@ -17,51 +17,51 @@
         "hexAtDiffA": " (0x20) t(0x74) a(0x61) g(0x67) s(0x73)  (0x20) t(0x74) h(0x68) a(0x61) t(0x74)  (0x20) m(0x6d) a(0x61) k(0x6b) e(0x65)  (0x20) S(0x53) E(0x45) O(0x4f)  (0x20)",
         "hexAtDiffB": "<(0x3c) m(0x6d) e(0x65) t(0x74) a(0x61) >(0x3e)  (0x20) t(0x74) a(0x61) g(0x67) s(0x73)  (0x20) t(0x74) h(0x68) a(0x61) t(0x74)  (0x20) m(0x6d) a(0x61) k(0x6b)",
         "lengthA": 16680,
-        "lengthB": 18431
+        "lengthB": 16860
       },
       {
         "file": "/en/basics/project-structure/",
         "reason": "structure-diff",
-        "diffIndex": 55726,
+        "diffIndex": 55775,
         "previewA": "tory might look like this:</p> <starlight-file-tree class data-pagefind-ignore=\"true\"><ul><li class=\"directory\"><details open><summary><span class=\"tr",
-        "previewB": "tory might look like this:</p><ul><ul><li>public/<ul><li>robots.txt</li><li>favicon.svg</li><li>my-cv.pdf</li></ul></li><li>src/<ul><li>blog/<ul><li>p",
+        "previewB": "tory might look like this:</p><starlight-file-tree class data-pagefind-ignore=\"true\"><ul><ul><li class=\"directory\"><details open><summary><span class=",
         "hexAtDiffA": " (0x20) <(0x3c) s(0x73) t(0x74) a(0x61) r(0x72) l(0x6c) i(0x69) g(0x67) h(0x68) t(0x74) -(0x2d) f(0x66) i(0x69) l(0x6c) e(0x65) -(0x2d) t(0x74) r(0x72) e(0x65)",
-        "hexAtDiffB": "<(0x3c) u(0x75) l(0x6c) >(0x3e) <(0x3c) u(0x75) l(0x6c) >(0x3e) <(0x3c) l(0x6c) i(0x69) >(0x3e) p(0x70) u(0x75) b(0x62) l(0x6c) i(0x69) c(0x63) /(0x2f) <(0x3c)",
-        "lengthA": 67583,
-        "lengthB": 64090
+        "hexAtDiffB": "<(0x3c) s(0x73) t(0x74) a(0x61) r(0x72) l(0x6c) i(0x69) g(0x67) h(0x68) t(0x74) -(0x2d) f(0x66) i(0x69) l(0x6c) e(0x65) -(0x2d) t(0x74) r(0x72) e(0x65) e(0x65)",
+        "lengthA": 67632,
+        "lengthB": 67642
       },
       {
         "file": "/en/guides/markdown-content/",
         "reason": "content-diff",
-        "diffIndex": 6966,
-        "previewA": "ter data and body content. ---title: 'The greatest post of all time'author: 'Ben'---Here is my _great_ post! ---import * as greatPost from './posts/gr",
-        "previewB": "ter data and body content. ---\ntitle: 'The greatest post of all time'\nauthor: 'Ben'\n---\nHere is my _great_ post! ---\nimport * as greatPost from './pos",
-        "hexAtDiffA": "t(0x74) i(0x69) t(0x74) l(0x6c) e(0x65) :(0x3a)  (0x20) '(0x27) T(0x54) h(0x68) e(0x65)  (0x20) g(0x67) r(0x72) e(0x65) a(0x61) t(0x74) e(0x65) s(0x73) t(0x74)",
-        "hexAtDiffB": "\n(0xa) t(0x74) i(0x69) t(0x74) l(0x6c) e(0x65) :(0x3a)  (0x20) '(0x27) T(0x54) h(0x68) e(0x65)  (0x20) g(0x67) r(0x72) e(0x65) a(0x61) t(0x74) e(0x65) s(0x73)",
+        "diffIndex": 8329,
+        "previewA": "s YAML (or TOML) frontmatter.  - A component that returns the full, rendered contents of the file. rawContent() - A function that returns the raw Mark",
+        "previewB": "s YAML (or TOML) frontmatter. <Content /> - A component that returns the full, rendered contents of the file. rawContent() - A function that returns t",
+        "hexAtDiffA": " (0x20) -(0x2d)  (0x20) A(0x41)  (0x20) c(0x63) o(0x6f) m(0x6d) p(0x70) o(0x6f) n(0x6e) e(0x65) n(0x6e) t(0x74)  (0x20) t(0x74) h(0x68) a(0x61) t(0x74)  (0x20)",
+        "hexAtDiffB": "<(0x3c) C(0x43) o(0x6f) n(0x6e) t(0x74) e(0x65) n(0x6e) t(0x74)  (0x20) /(0x2f) >(0x3e)  (0x20) -(0x2d)  (0x20) A(0x41)  (0x20) c(0x63) o(0x6f) m(0x6d) p(0x70)",
         "lengthA": 20225,
-        "lengthB": 20633
+        "lengthB": 20409
       },
       {
         "file": "/en/guides/routing/",
         "reason": "content-diff",
         "diffIndex": 4643,
         "previewA": "ages Astro uses standard HTML  elements to navigate between routes. There is no framework-specific  component provided. p>Read more a href=\"/about/\">a",
-        "previewB": "ages Astro uses standard HTML <a> elements to navigate between routes. There is no framework-specific <Link> component provided. <p>Read more <a href=",
+        "previewB": "ages Astro uses standard HTML <a> elements to navigate between routes. There is no framework-specific <Link> component provided. p>Read more a href=\"/",
         "hexAtDiffA": " (0x20) e(0x65) l(0x6c) e(0x65) m(0x6d) e(0x65) n(0x6e) t(0x74) s(0x73)  (0x20) t(0x74) o(0x6f)  (0x20) n(0x6e) a(0x61) v(0x76) i(0x69) g(0x67) a(0x61) t(0x74)",
         "hexAtDiffB": "<(0x3c) a(0x61) >(0x3e)  (0x20) e(0x65) l(0x6c) e(0x65) m(0x6d) e(0x65) n(0x6e) t(0x74) s(0x73)  (0x20) t(0x74) o(0x6f)  (0x20) n(0x6e) a(0x61) v(0x76) i(0x69)",
         "lengthA": 23865,
-        "lengthB": 24402
+        "lengthB": 23874
       },
       {
         "file": "/en/guides/content-collections/",
         "reason": "content-diff",
-        "diffIndex": 6291,
-        "previewA": "ML, TOML, or JSON files: src/ ... newsletter/ the \"newsletter\" collection week-1.md a collection entry week-2.md a collection entry week-3.md a collec",
-        "previewB": "ML, TOML, or JSON files: src/ newsletter/ the \"newsletter\" collection week-1.md a collection entry week-2.md a collection entry week-3.md a collection",
-        "hexAtDiffA": ".(0x2e) .(0x2e) .(0x2e)  (0x20) n(0x6e) e(0x65) w(0x77) s(0x73) l(0x6c) e(0x65) t(0x74) t(0x74) e(0x65) r(0x72) /(0x2f)  (0x20) t(0x74) h(0x68) e(0x65)  (0x20)",
-        "hexAtDiffB": "n(0x6e) e(0x65) w(0x77) s(0x73) l(0x6c) e(0x65) t(0x74) t(0x74) e(0x65) r(0x72) /(0x2f)  (0x20) t(0x74) h(0x68) e(0x65)  (0x20) \"(0x22) n(0x6e) e(0x65) w(0x77)",
+        "diffIndex": 20403,
+        "previewA": "TML content, including both a  component and a list of all rendered headings. ---import { getEntry, render } from 'astro:content';const entry = await ",
+        "previewB": "TML content, including both a <Content /> component and a list of all rendered headings. ---import { getEntry, render } from 'astro:content';const ent",
+        "hexAtDiffA": " (0x20) c(0x63) o(0x6f) m(0x6d) p(0x70) o(0x6f) n(0x6e) e(0x65) n(0x6e) t(0x74)  (0x20) a(0x61) n(0x6e) d(0x64)  (0x20) a(0x61)  (0x20) l(0x6c) i(0x69) s(0x73)",
+        "hexAtDiffB": "<(0x3c) C(0x43) o(0x6f) n(0x6e) t(0x74) e(0x65) n(0x6e) t(0x74)  (0x20) /(0x2f) >(0x3e)  (0x20) c(0x63) o(0x6f) m(0x6d) p(0x70) o(0x6f) n(0x6e) e(0x65) n(0x6e)",
         "lengthA": 31428,
-        "lengthB": 31726
+        "lengthB": 31450
       }
     ]
   },
