@@ -130,6 +130,7 @@ pub fn has_pascal_case_tag(s: &str) -> bool {
 pub fn html_entities_to_jsx(s: &str) -> String {
     let mut result = String::with_capacity(s.len() * 2);
     let mut i = 0;
+    let mut pre_depth: usize = 0;
 
     // First pass: Handle curly braces in JSX expression attribute contexts
     // =&#123; → ={ and &#125;> → }> etc.
@@ -143,8 +144,17 @@ pub fn html_entities_to_jsx(s: &str) -> String {
         if bytes[i] == b'<' {
             // Find the end of the tag
             if let Some(tag_end) = find_tag_end(&bytes[i..]) {
-                // Copy tag as-is (don't convert entities in attributes)
                 let tag_slice = &preprocessed[i..i + tag_end + 1];
+
+                // Track <pre> depth
+                let tag_lower = tag_slice.to_ascii_lowercase();
+                if tag_lower.starts_with("<pre") && (tag_slice.len() == 5 || !tag_slice.as_bytes()[4].is_ascii_alphanumeric()) {
+                    pre_depth += 1;
+                } else if tag_lower.starts_with("</pre") && (tag_slice.len() == 6 || !tag_slice.as_bytes()[5].is_ascii_alphanumeric()) {
+                    pre_depth = pre_depth.saturating_sub(1);
+                }
+
+                // Copy tag as-is (don't convert entities in attributes)
                 result.push_str(tag_slice);
                 i += tag_end + 1;
                 continue;
@@ -162,7 +172,12 @@ pub fn html_entities_to_jsx(s: &str) -> String {
             .position(|&b| b == b'<')
             .unwrap_or(len - i);
         let text_slice = &preprocessed[i..i + text_end];
-        result.push_str(&convert_entities_in_text(text_slice));
+        if pre_depth > 0 {
+            // Inside <pre>, preserve entities as-is for correct browser rendering
+            result.push_str(text_slice);
+        } else {
+            result.push_str(&convert_entities_in_text(text_slice));
+        }
         i += text_end;
     }
 
@@ -1140,6 +1155,24 @@ mod tests {
         assert_eq!(
             html_entities_to_jsx("<p>こんにちは &lt;world&gt;</p>"),
             "<p>こんにちは {\"<\"}world{\">\"}</p>"
+        );
+
+        // Entities inside <pre> should be preserved (not converted to JSX)
+        assert_eq!(
+            html_entities_to_jsx("<Comp><pre><code>&lt;html&gt;</code></pre></Comp>"),
+            "<Comp><pre><code>&lt;html&gt;</code></pre></Comp>"
+        );
+
+        // Entities outside <pre> still converted, inside preserved
+        assert_eq!(
+            html_entities_to_jsx("<p>&lt;b&gt;</p><pre>&lt;b&gt;</pre><p>&lt;b&gt;</p>"),
+            "<p>{\"<\"}b{\">\"}</p><pre>&lt;b&gt;</pre><p>{\"<\"}b{\">\"}</p>"
+        );
+
+        // Nested <pre> tags
+        assert_eq!(
+            html_entities_to_jsx("<pre><pre>&amp;</pre></pre>"),
+            "<pre><pre>&amp;</pre></pre>"
         );
     }
 

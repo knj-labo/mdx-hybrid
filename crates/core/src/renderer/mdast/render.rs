@@ -196,39 +196,7 @@ fn render_jsx(
         return;
     }
 
-    // 3. Handle FileTree: apply slot normalization if configured in registry
-    // Extract normalization info before borrowing ctx mutably
-    let ul_normalization = ctx
-        .registry()
-        .get_slot_normalization(tag_name)
-        .filter(|n| n.strategy == "wrap_in_ul")
-        .map(|n| n.wrapper_class.clone());
-
-    if let Some(wrapper_class) = ul_normalization {
-        let slot_html = ctx.render_children_to_html(children);
-        let class_attr = wrapper_class
-            .as_ref()
-            .map(|c| format!(" class=\"{}\"", c))
-            .unwrap_or_default();
-        let trimmed = slot_html.trim();
-        if trimmed.starts_with("<ul") && trimmed.ends_with("</ul>") {
-            // Children already rendered as a <ul>; strip the outer <ul>...</ul>
-            // and re-wrap with our normalized wrapper to avoid double nesting.
-            let inner_start = trimmed.find('>').map(|i| i + 1).unwrap_or(0);
-            let inner_end = trimmed.len() - 5; // strip trailing "</ul>"
-            let inner = &trimmed[inner_start..inner_end];
-            ctx.push_raw(&format!("<ul{}>", class_attr));
-            ctx.push_raw(inner);
-            ctx.push_raw("</ul>");
-        } else {
-            ctx.push_raw(&format!("<ul{}>", class_attr));
-            ctx.push_raw(&slot_html);
-            ctx.push_raw("</ul>");
-        }
-        return;
-    }
-
-    // 4. Extract props from JSX attributes
+    // 3. Extract props from JSX attributes
     let mut props = HashMap::new();
     for attr in attributes {
         match attr {
