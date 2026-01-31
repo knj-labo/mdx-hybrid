@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-01-28T14:56:11.101Z",
-  "baselineMs": 124550,
-  "markflowMs": 62129,
+  "timestamp": "2026-01-31T01:05:07.616Z",
+  "baselineMs": 125837,
+  "markflowMs": 121195,
   "mode": "semantic",
   "semantic": {
     "compared": 12,
@@ -11,57 +11,57 @@
       {
         "file": "/en/basics/astro-components/",
         "reason": "content-diff",
-        "diffIndex": 10204,
-        "previewA": "al Astro.props object. ---\n// Usage: <GreetingHeadline greeting=\"Howdy\" name=\"Partner\" />\nconst { greeting, name } = Astro.props;\n---\n<h2>{greeting}, ",
-        "previewB": "al Astro.props object. ---\n// src/components/GreetingHeadline.astro\n// Usage: <GreetingHeadline greeting=\"Howdy\" name=\"Partner\" />\nconst { greeting, n",
-        "hexAtDiffA": "U(0x55) s(0x73) a(0x61) g(0x67) e(0x65) :(0x3a)  (0x20) <(0x3c) G(0x47) r(0x72) e(0x65) e(0x65) t(0x74) i(0x69) n(0x6e) g(0x67) H(0x48) e(0x65) a(0x61) d(0x64)",
-        "hexAtDiffB": "s(0x73) r(0x72) c(0x63) /(0x2f) c(0x63) o(0x6f) m(0x6d) p(0x70) o(0x6f) n(0x6e) e(0x65) n(0x6e) t(0x74) s(0x73) /(0x2f) G(0x47) r(0x72) e(0x65) e(0x65) t(0x74)",
-        "lengthA": 18068,
-        "lengthB": 18431
+        "diffIndex": 4789,
+        "previewA": ", like a collection of common  tags that make SEO easy to work with. Components can be reusable UI elements, like a header or a profile card. Astro co",
+        "previewB": ", like a collection of common <meta> tags that make SEO easy to work with. Components can be reusable UI elements, like a header or a profile card. As",
+        "hexAtDiffA": " (0x20) t(0x74) a(0x61) g(0x67) s(0x73)  (0x20) t(0x74) h(0x68) a(0x61) t(0x74)  (0x20) m(0x6d) a(0x61) k(0x6b) e(0x65)  (0x20) S(0x53) E(0x45) O(0x4f)  (0x20)",
+        "hexAtDiffB": "<(0x3c) m(0x6d) e(0x65) t(0x74) a(0x61) >(0x3e)  (0x20) t(0x74) a(0x61) g(0x67) s(0x73)  (0x20) t(0x74) h(0x68) a(0x61) t(0x74)  (0x20) m(0x6d) a(0x61) k(0x6b)",
+        "lengthA": 16680,
+        "lengthB": 16860
       },
       {
         "file": "/en/basics/project-structure/",
         "reason": "structure-diff",
-        "diffIndex": 5792,
-        "previewA": "ss\" rel=\"stylesheet\"> <style>.action:where(.astro-vnzlvqnm){gap:.5em;align-items:center;border-radius:999rem;padding:.5rem 1.125rem;color:var(--sl-col",
-        "previewB": "ss\" rel=\"stylesheet\"> <style>.neutral-badge{border-color:var(--sl-color-gray-5);background-color:var(--sl-color-gray-6);color:var(--sl-color-text)}\n.a",
-        "hexAtDiffA": "a(0x61) c(0x63) t(0x74) i(0x69) o(0x6f) n(0x6e) :(0x3a) w(0x77) h(0x68) e(0x65) r(0x72) e(0x65) ((0x28) .(0x2e) a(0x61) s(0x73) t(0x74) r(0x72) o(0x6f) -(0x2d)",
-        "hexAtDiffB": "n(0x6e) e(0x65) u(0x75) t(0x74) r(0x72) a(0x61) l(0x6c) -(0x2d) b(0x62) a(0x61) d(0x64) g(0x67) e(0x65) {(0x7b) b(0x62) o(0x6f) r(0x72) d(0x64) e(0x65) r(0x72)",
-        "lengthA": 166542,
-        "lengthB": 141353
+        "diffIndex": 55775,
+        "previewA": "tory might look like this:</p> <starlight-file-tree class data-pagefind-ignore=\"true\"><ul><li class=\"directory\"><details open><summary><span class=\"tr",
+        "previewB": "tory might look like this:</p><starlight-file-tree class data-pagefind-ignore=\"true\"><ul><ul><li class=\"directory\"><details open><summary><span class=",
+        "hexAtDiffA": " (0x20) <(0x3c) s(0x73) t(0x74) a(0x61) r(0x72) l(0x6c) i(0x69) g(0x67) h(0x68) t(0x74) -(0x2d) f(0x66) i(0x69) l(0x6c) e(0x65) -(0x2d) t(0x74) r(0x72) e(0x65)",
+        "hexAtDiffB": "<(0x3c) s(0x73) t(0x74) a(0x61) r(0x72) l(0x6c) i(0x69) g(0x67) h(0x68) t(0x74) -(0x2d) f(0x66) i(0x69) l(0x6c) e(0x65) -(0x2d) t(0x74) r(0x72) e(0x65) e(0x65)",
+        "lengthA": 67632,
+        "lengthB": 67642
       },
       {
         "file": "/en/guides/markdown-content/",
         "reason": "content-diff",
-        "diffIndex": 11895,
-        "previewA": "eConfig } from 'astro/config';import { rehypeHeadingIds } from '@astrojs/markdown-remark';\nimport { otherPluginThatReliesOnHeadingIDs } from 'some/plu",
-        "previewB": "eConfig } from 'astro/config';\nimport { rehypeHeadingIds } from '@astrojs/markdown-remark';\nimport { otherPluginThatReliesOnHeadingIDs } from 'some/pl",
-        "hexAtDiffA": "i(0x69) m(0x6d) p(0x70) o(0x6f) r(0x72) t(0x74)  (0x20) {(0x7b)  (0x20) r(0x72) e(0x65) h(0x68) y(0x79) p(0x70) e(0x65) H(0x48) e(0x65) a(0x61) d(0x64) i(0x69)",
-        "hexAtDiffB": "\n(0xa) i(0x69) m(0x6d) p(0x70) o(0x6f) r(0x72) t(0x74)  (0x20) {(0x7b)  (0x20) r(0x72) e(0x65) h(0x68) y(0x79) p(0x70) e(0x65) H(0x48) e(0x65) a(0x61) d(0x64)",
-        "lengthA": 20630,
-        "lengthB": 20585
+        "diffIndex": 8329,
+        "previewA": "s YAML (or TOML) frontmatter.  - A component that returns the full, rendered contents of the file. rawContent() - A function that returns the raw Mark",
+        "previewB": "s YAML (or TOML) frontmatter. <Content /> - A component that returns the full, rendered contents of the file. rawContent() - A function that returns t",
+        "hexAtDiffA": " (0x20) -(0x2d)  (0x20) A(0x41)  (0x20) c(0x63) o(0x6f) m(0x6d) p(0x70) o(0x6f) n(0x6e) e(0x65) n(0x6e) t(0x74)  (0x20) t(0x74) h(0x68) a(0x61) t(0x74)  (0x20)",
+        "hexAtDiffB": "<(0x3c) C(0x43) o(0x6f) n(0x6e) t(0x74) e(0x65) n(0x6e) t(0x74)  (0x20) /(0x2f) >(0x3e)  (0x20) -(0x2d)  (0x20) A(0x41)  (0x20) c(0x63) o(0x6f) m(0x6d) p(0x70)",
+        "lengthA": 20225,
+        "lengthB": 20409
       },
       {
         "file": "/en/guides/routing/",
         "reason": "content-diff",
-        "diffIndex": 4910,
-        "previewA": "/\">reference</a> section!</p> Static routes .astro page components as well as Markdown and MDX Files (.md, .mdx) within the src/pages/ directory autom",
-        "previewB": "/\">reference</a> section!</p>  Static routes .astro page components as well as Markdown and MDX Files (.md, .mdx) within the src/pages/ directory auto",
-        "hexAtDiffA": "S(0x53) t(0x74) a(0x61) t(0x74) i(0x69) c(0x63)  (0x20) r(0x72) o(0x6f) u(0x75) t(0x74) e(0x65) s(0x73)  (0x20) .(0x2e) a(0x61) s(0x73) t(0x74) r(0x72) o(0x6f)",
-        "hexAtDiffB": " (0x20) S(0x53) t(0x74) a(0x61) t(0x74) i(0x69) c(0x63)  (0x20) r(0x72) o(0x6f) u(0x75) t(0x74) e(0x65) s(0x73)  (0x20) .(0x2e) a(0x61) s(0x73) t(0x74) r(0x72)",
-        "lengthA": 24345,
-        "lengthB": 24403
+        "diffIndex": 4643,
+        "previewA": "ages Astro uses standard HTML  elements to navigate between routes. There is no framework-specific  component provided. p>Read more a href=\"/about/\">a",
+        "previewB": "ages Astro uses standard HTML <a> elements to navigate between routes. There is no framework-specific <Link> component provided. p>Read more a href=\"/",
+        "hexAtDiffA": " (0x20) e(0x65) l(0x6c) e(0x65) m(0x6d) e(0x65) n(0x6e) t(0x74) s(0x73)  (0x20) t(0x74) o(0x6f)  (0x20) n(0x6e) a(0x61) v(0x76) i(0x69) g(0x67) a(0x61) t(0x74)",
+        "hexAtDiffB": "<(0x3c) a(0x61) >(0x3e)  (0x20) e(0x65) l(0x6c) e(0x65) m(0x6d) e(0x65) n(0x6e) t(0x74) s(0x73)  (0x20) t(0x74) o(0x6f)  (0x20) n(0x6e) a(0x61) v(0x76) i(0x69)",
+        "lengthA": 23865,
+        "lengthB": 23874
       },
       {
         "file": "/en/guides/content-collections/",
         "reason": "content-diff",
-        "diffIndex": 6291,
-        "previewA": "ML, TOML, or JSON files: src/ ... newsletter/ the \"newsletter\" collection week-1.md a collection entry week-2.md a collection entry week-3.md a collec",
-        "previewB": "ML, TOML, or JSON files: src/ newsletter/ the \"newsletter\" collection week-1.md a collection entry week-2.md a collection entry week-3.md a collection",
-        "hexAtDiffA": ".(0x2e) .(0x2e) .(0x2e)  (0x20) n(0x6e) e(0x65) w(0x77) s(0x73) l(0x6c) e(0x65) t(0x74) t(0x74) e(0x65) r(0x72) /(0x2f)  (0x20) t(0x74) h(0x68) e(0x65)  (0x20)",
-        "hexAtDiffB": "n(0x6e) e(0x65) w(0x77) s(0x73) l(0x6c) e(0x65) t(0x74) t(0x74) e(0x65) r(0x72) /(0x2f)  (0x20) t(0x74) h(0x68) e(0x65)  (0x20) \"(0x22) n(0x6e) e(0x65) w(0x77)",
-        "lengthA": 31711,
-        "lengthB": 31727
+        "diffIndex": 20403,
+        "previewA": "TML content, including both a  component and a list of all rendered headings. ---import { getEntry, render } from 'astro:content';const entry = await ",
+        "previewB": "TML content, including both a <Content /> component and a list of all rendered headings. ---import { getEntry, render } from 'astro:content';const ent",
+        "hexAtDiffA": " (0x20) c(0x63) o(0x6f) m(0x6d) p(0x70) o(0x6f) n(0x6e) e(0x65) n(0x6e) t(0x74)  (0x20) a(0x61) n(0x6e) d(0x64)  (0x20) a(0x61)  (0x20) l(0x6c) i(0x69) s(0x73)",
+        "hexAtDiffB": "<(0x3c) C(0x43) o(0x6f) n(0x6e) t(0x74) e(0x65) n(0x6e) t(0x74)  (0x20) /(0x2f) >(0x3e)  (0x20) c(0x63) o(0x6f) m(0x6d) p(0x70) o(0x6f) n(0x6e) e(0x65) n(0x6e)",
+        "lengthA": 31428,
+        "lengthB": 31450
       }
     ]
   },

@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { transformWithEsbuild, type ResolvedConfig, type Plugin } from 'vite';
+import MagicString from 'magic-string';
 import { build as esbuildBuild, type BuildResult } from 'esbuild';
 import type { SourceMapInput } from 'rollup';
 import {
@@ -29,6 +30,7 @@ import {
   OUTPUT_EXTENSION,
   ESBUILD_JSX_CONFIG,
   DEFAULT_IGNORE_PATTERNS,
+  STARLIGHT_LAYER_ORDER,
 } from './constants.js';
 import type { MarkflowPlugin, PluginHooks, TransformContext } from './types.js';
 
@@ -245,6 +247,20 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       (config as Record<string, any>).ssr = ssr;
       // Note: Binding/compiler initialization deferred to buildStart/load hooks
       // to avoid Vite module runner timing issues with async imports
+    },
+
+    transform(code, id) {
+      // Dev mode only — build uses Head.astro overlay for layer ordering.
+      if (resolvedConfig?.command !== 'serve' || !hasStarlightConfigured) return;
+      // Target .astro files containing <head> (root layouts like Page.astro)
+      if (!id.endsWith('.astro') || !code.includes('<head>')) return;
+
+      const ms = new MagicString(code, { filename: id });
+      ms.replace('<head>', `<head><style is:inline>${STARLIGHT_LAYER_ORDER}</style>`);
+      return {
+        code: ms.toString(),
+        map: ms.generateMap({ hires: 'boundary' }),
+      };
     },
 
     async buildStart() {

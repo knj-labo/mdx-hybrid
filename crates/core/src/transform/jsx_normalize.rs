@@ -505,12 +505,19 @@ fn find_list_continuation_indent(lines: &[&str], i: usize) -> Option<usize> {
         // Ordered list: digits followed by ". " or ") "
         let rest = trimmed.trim_start_matches(|c: char| c.is_ascii_digit());
         if rest.len() < trimmed.len() && (rest.starts_with(". ") || rest.starts_with(") ")) {
-            let marker_width = trimmed.len() - rest.len() + 2;
-            return Some(leading + marker_width);
+            let digits = trimmed.len() - rest.len();
+            // 1 for delimiter char ('.' or ')'), then count actual spaces
+            let after_delim = &rest[1..]; // skip '.' or ')'
+            let spaces = after_delim.len() - after_delim.trim_start().len();
+            let spaces = spaces.max(1); // at least 1 space
+            return Some(leading + digits + 1 + spaces);
         }
         // Unordered list: "- ", "* ", "+ "
         if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("+ ") {
-            return Some(leading + 2);
+            let after_marker = &trimmed[1..]; // skip marker char
+            let spaces = after_marker.len() - after_marker.trim_start().len();
+            let spaces = spaces.max(1);
+            return Some(leading + 1 + spaces);
         }
         if idx == 0 {
             break;
@@ -893,6 +900,24 @@ mod tests {
         assert!(
             result.contains("</Steps>"),
             "Steps closer should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_normalize_list_jsx_multi_space_marker() {
+        // "1.  Item" has two spaces after the dot; continuation indent = 1 digit + '.' + 2 spaces = 4
+        let input = "1.  Item\n\t<FileTree>\n\t- src/\n\t</FileTree>\n";
+        let result = normalize_list_jsx_components(input);
+        // The FileTree should be indented to 4 spaces (1 digit + '.' + 2 spaces)
+        assert!(
+            result.contains("    <FileTree>"),
+            "FileTree should be indented to 4 spaces for '1.  ' marker. Got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains('\t'),
+            "Tabs should be converted to spaces. Got:\n{}",
+            result
         );
     }
 

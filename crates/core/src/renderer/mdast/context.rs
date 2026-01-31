@@ -260,7 +260,22 @@ impl<'a> Context<'a> {
     /// Used to determine if JSX components should be rendered inline
     /// to avoid fragmenting list structures.
     pub fn is_in_list(&self) -> bool {
-        self.stack.iter().any(|scope| matches!(scope, Scope::List))
+        self.stack
+            .iter()
+            .any(|scope| matches!(scope, Scope::List { .. }))
+    }
+
+    /// Returns true if inside a tight (non-spread) list.
+    ///
+    /// Used to suppress `<p>` wrappers around list item content when the
+    /// list is tight, matching the CommonMark distinction between tight
+    /// and loose lists.
+    pub fn is_in_tight_list(&self) -> bool {
+        self.stack
+            .iter()
+            .rev()
+            .find(|scope| matches!(scope, Scope::List { .. }))
+            .is_some_and(|scope| matches!(scope, Scope::List { spread: false }))
     }
 
     /// Returns true if any scope in the stack is within a table structure.

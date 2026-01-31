@@ -51,7 +51,9 @@ fn extract_text_from_node(node: &Node, buffer: &mut String) {
 fn render_list(list: &markdown::mdast::List, ctx: &mut Context) {
     let tag = if list.ordered { "ol" } else { "ul" };
     ctx.push_raw(&format!("<{}>", tag));
-    ctx.enter(Scope::List);
+    ctx.enter(Scope::List {
+        spread: list.spread,
+    });
 
     for child in &list.children {
         render_node(child, ctx);
@@ -196,27 +198,7 @@ fn render_jsx(
         return;
     }
 
-    // 3. Handle FileTree: apply slot normalization if configured in registry
-    // Extract normalization info before borrowing ctx mutably
-    let ul_normalization = ctx
-        .registry()
-        .get_slot_normalization(tag_name)
-        .filter(|n| n.strategy == "wrap_in_ul")
-        .map(|n| n.wrapper_class.clone());
-
-    if let Some(wrapper_class) = ul_normalization {
-        let slot_html = ctx.render_children_to_html(children);
-        let class_attr = wrapper_class
-            .as_ref()
-            .map(|c| format!(" class=\"{}\"", c))
-            .unwrap_or_default();
-        ctx.push_raw(&format!("<ul{}>", class_attr));
-        ctx.push_raw(&slot_html);
-        ctx.push_raw("</ul>");
-        return;
-    }
-
-    // 4. Extract props from JSX attributes
+    // 3. Extract props from JSX attributes
     let mut props = HashMap::new();
     for attr in attributes {
         match attr {
@@ -273,15 +255,20 @@ pub fn render_node(node: &Node, ctx: &mut Context) {
         }
 
         Node::Paragraph(para) => {
-            ctx.push_raw("<p>");
-            ctx.enter(Scope::Paragraph);
+            let in_tight_list = ctx.is_in_tight_list();
+            if !in_tight_list {
+                ctx.push_raw("<p>");
+                ctx.enter(Scope::Paragraph);
+            }
 
             for child in &para.children {
                 render_node(child, ctx);
             }
 
-            ctx.exit();
-            ctx.push_raw("</p>");
+            if !in_tight_list {
+                ctx.exit();
+                ctx.push_raw("</p>");
+            }
         }
 
         Node::Link(link) => {

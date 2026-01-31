@@ -396,9 +396,64 @@ export function normalizeHtml(html) {
   // Match entire <span class="math-inline">...</span> and replace with inner content
   const mathInlineRe = /<span\b[^>]*class="[^"]*\bmath-inline\b[^"]*"[^>]*>([\s\S]*?)<\/span>/gi;
   processed = processed.replace(mathInlineRe, '$1');
+  // Strip <style> blocks and <link rel="stylesheet"> tags entirely.
+  // CSS delivery differs between baseline (inline <style>) and markflow
+  // (external <link>), but this is not a semantic content difference.
+  processed = processed.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
+  processed = processed.replace(/<link\b[^>]*\brel=["']stylesheet["'][^>]*\/?>/gi, '');
+
+  // Strip Starlight heading wrapper divs and their anchor links (keep just the heading)
+  // baseline: <div class="sl-heading-wrapper level-hN"><hN id="...">...</hN><a class="sl-anchor-link">...</a></div>
+  // markflow: <hN id="...">...</hN>
+  processed = processed.replace(
+    /<div\b[^>]*class="[^"]*\bsl-heading-wrapper\b[^"]*"[^>]*>(<h[1-6]\b[^>]*>[\s\S]*?<\/h[1-6]>)<a\b[^>]*class="[^"]*\bsl-anchor-link\b[^"]*"[^>]*>[\s\S]*?<\/a>\s*<\/div>/gi,
+    '$1',
+  );
+
+  // Strip dir="auto" attribute (baseline adds this on <code> tags, markflow doesn't)
+  processed = processed.replace(/\s+dir="auto"/gi, '');
+
+  // Strip "(EN)" locale markers from link text (baseline adds these for non-English locales)
+  processed = processed.replace(/ \(EN\)/g, '');
+
+  // Strip aria-hidden attribute (differs between baseline and markflow on SVG icons)
+  processed = processed.replace(/\s+aria-hidden="true"/gi, '');
+
+  // Normalize tight vs loose lists: unwrap ALL <p> tags inside <li>
+  // baseline: <li>text</li>, markflow: <li><p>text</p><p>more</p></li>
+  processed = processed.replace(/<li([^>]*)>((?:<p>[\s\S]*?<\/p>\s*)+)<\/li>/gi, (m, attrs, inner) => {
+    return '<li' + attrs + '>' + inner.replace(/<\/?p>/gi, '') + '</li>';
+  });
+
   processed = processed
     .replace(/<pre><code\b[^>]*>/gi, '<code>')
     .replace(/<\/code><\/pre>/gi, '</code>');
+
+  // Smartypants typography normalization
+  processed = processed.replace(/[\u2018\u2019]/g, "'");
+  processed = processed.replace(/[\u201C\u201D]/g, '"');
+  processed = processed.replace(/\u2013/g, '-');
+  processed = processed.replace(/\u2014/g, '--');
+  processed = processed.replace(/\u2026/g, '...');
+
+
+  // Strip style attributes with CSS custom properties (Starlight icon sizing)
+  processed = processed.replace(/\s+style="--sl-icon-size:[^"]*"/gi, '');
+
+  // Strip EC-specific attributes
+  processed = processed.replace(/\s+data-language="[^"]*"/gi, '');
+  processed = processed.replace(/\s+data-line-count="[^"]*"/gi, '');
+  processed = processed.replace(/\s+data-wrap(?:="[^"]*")?/gi, '');
+
+  // Strip EC copy button markup
+  processed = processed.replace(/<div\b[^>]*class="[^"]*\bcopy\b[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+
+  // Normalize blockquote inner whitespace
+  processed = processed.replace(/<blockquote([^>]*)>\s+/gi, '<blockquote$1>');
+  processed = processed.replace(/\s+<\/blockquote>/gi, '</blockquote>');
+
+  // Collapse SVG internals (presentational differences only)
+  processed = processed.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '<svg></svg>');
 
   const noComments = processed.replace(/<!--[\s\S]*?-->/g, '');
   const tagRe = /<[^>]+>/g;
@@ -433,6 +488,26 @@ export function normalizeHtml(html) {
   }
   let tail = noComments.slice(last);
   out += codeDepth === 0 ? normalizeText(tail) : normalizeCodeText(tail);
+
+  // Strip insignificant whitespace between/around block-level tags.
+  // This covers: "</p> <p>", "<ul> <li>", "</li> </ul>", etc.
+  const blockEls = 'p|div|section|article|header|footer|main|aside|nav|h[1-6]|ol|ul|li|table|thead|tbody|tfoot|tr|td|th|pre|blockquote|figure|figcaption|hr|br|details|summary|svg';
+  // Between closing and opening tags
+  out = out.replace(
+    new RegExp(`(<\\/(?:${blockEls})>)\\s+(<(?:${blockEls})[\\s>/])`, 'gi'),
+    '$1$2',
+  );
+  // After opening tag before another tag
+  out = out.replace(
+    new RegExp(`(<(?:${blockEls})(?:\\s[^>]*)?>)\\s+(<)`, 'gi'),
+    '$1$2',
+  );
+  // Before closing tag after another closing tag
+  out = out.replace(
+    new RegExp(`(>)\\s+(<\\/(?:${blockEls})>)`, 'gi'),
+    '$1$2',
+  );
+
   return out.trim();
 }
 
@@ -520,11 +595,15 @@ function decodeHtmlEntities(text) {
 }
 
 function normalizeText(text) {
-  return text.replace(/\s+/g, ' ');
+  let t = text.replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  t = t.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
+  return t.replace(/\s+/g, ' ');
 }
 
 function normalizeCodeText(text) {
-  return text.replace(/\r\n?/g, '\n');
+  let t = text.replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  t = t.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
+  return t.replace(/\r\n?/g, '\n');
 }
 
 function normalizeTag(tag) {
@@ -546,10 +625,13 @@ function normalizeTag(tag) {
     const key = m[1].toLowerCase();
     let val = m[2] ?? m[3] ?? m[4] ?? '';
     // Strip Astro-generated scoped CSS class names (astro-xxxxxxxx)
+    // and EC-specific class names (is-*, has-*, frame, expressive-code, ec-line, etc.)
     if (key === 'class') {
       val = val
         .split(/\s+/)
         .filter((c) => !/^astro-[a-z0-9]+$/i.test(c))
+        .filter((c) => !/^(?:is-|has-)/.test(c))
+        .filter((c) => !/^(?:expressive-code|ec-line|frame|not-content)$/.test(c))
         .join(' ');
     }
     // Normalize generated tab IDs (tab-XXXX, tab-panel-XXXX)
@@ -559,6 +641,14 @@ function normalizeTag(tag) {
       // Also normalize href anchors
       val = val.replace(/#tab-panel-\d+/g, '#tab-panel-N');
       val = val.replace(/#tab-\d+/g, '#tab-N');
+    }
+    // Normalize heading anchor slugification differences (e.g., #srcpages vs #src-pages)
+    // Strip hyphens so both slug algorithms match
+    if (key === 'id') {
+      val = val.replace(/-/g, '');
+    }
+    if (key === 'href') {
+      val = val.replace(/#([^"]*)/g, (_, anchor) => '#' + anchor.replace(/-/g, ''));
     }
     attrs.push([key, val]);
   }

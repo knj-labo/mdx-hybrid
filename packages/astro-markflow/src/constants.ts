@@ -42,3 +42,9 @@ export const SHIKI_THEME = {
  * Default glob patterns to ignore when scanning for markdown files.
  */
 export const DEFAULT_IGNORE_PATTERNS = ['node_modules/**', 'dist/**'] as const;
+
+/**
+ * CSS @layer order declaration for Starlight.
+ * Injected as inline <style> in dev mode, Head.astro overlay in build.
+ */
+export const STARLIGHT_LAYER_ORDER = '@layer starlight.base, starlight.reset, starlight.core, starlight.content, starlight.components, starlight.utils;';

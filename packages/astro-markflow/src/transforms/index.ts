@@ -30,13 +30,15 @@ export function transformExpressiveCode(ctx: TransformContext): TransformContext
 
   const componentName = ctx.config.expressiveCode.component;
 
-  // First, rewrite loose <pre><code> blocks
-  let { code, changed } = rewriteExpressiveCodeBlocks(ctx.code, componentName);
+  // First, rewrite code blocks inside set:html JSON strings (must run before
+  // the loose pattern, which would otherwise match <pre> inside JSON strings
+  // and corrupt the set:html wrapper)
+  let { code, changed } = rewriteSetHtmlCodeBlocks(ctx.code, componentName);
 
-  // Then, rewrite code blocks inside set:html JSON strings
-  const setHtmlResult = rewriteSetHtmlCodeBlocks(code, componentName);
-  code = setHtmlResult.code;
-  changed = changed || setHtmlResult.changed;
+  // Then, rewrite any remaining loose <pre><code> blocks
+  const looseResult = rewriteExpressiveCodeBlocks(code, componentName);
+  code = looseResult.code;
+  changed = changed || looseResult.changed;
 
   if (changed) {
     return {

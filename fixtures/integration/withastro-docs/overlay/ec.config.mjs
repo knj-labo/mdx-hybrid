@@ -2,5 +2,5 @@ import { pluginCollapsibleSections } from '@expressive-code/plugin-collapsible-s
 
 /** @type {import('astro-expressive-code').AstroExpressiveCodeOptions} */
 export default {
-	plugins: [pluginCollapsibleSections()],
+  plugins: [pluginCollapsibleSections()],
 };

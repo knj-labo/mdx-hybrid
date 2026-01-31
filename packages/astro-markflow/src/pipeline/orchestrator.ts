@@ -11,7 +11,6 @@ import {
   transformShikiHighlight,
 } from '../transforms/index.js';
 import { normalizeSteps } from '../transforms/normalize-steps.js';
-import { normalizeFileTree } from '../transforms/normalize-filetree.js';
 
 /**
  * Default context values for transforms.
@@ -102,14 +101,6 @@ export function createPipeline(options: PipelineOptions = {}): Transform {
     (ctx) => {
       if (!ctx.code) return ctx;
       const { code, changed } = normalizeSteps(ctx.code);
-      if (!changed) return ctx;
-      return { ...ctx, code };
-    },
-
-    // Built-in: Normalize FileTree to single <ul>
-    (ctx) => {
-      if (!ctx.code) return ctx;
-      const { code, changed } = normalizeFileTree(ctx.code);
       if (!changed) return ctx;
       return { ...ctx, code };
     },
