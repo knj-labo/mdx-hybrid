@@ -431,7 +431,7 @@ fn slot_children_to_html(blocks: &[RenderBlock]) -> String {
             } => {
                 let slot_html = slot_children_to_html(slot_children);
 
-                // Fragment-with-slot: render as <div style="display:contents" slot="name">
+                // Fragment-with-slot: render as <span style="display:contents" slot="name">
                 // so Astro's slot distribution works (Fragment VNodes are unwrapped,
                 // losing the slot prop).
                 let is_fragment_slot = name == "Fragment" && props.contains_key("slot");
@@ -443,7 +443,7 @@ fn slot_children_to_html(blocks: &[RenderBlock]) -> String {
                 };
 
                 let tag = if is_fragment_slot {
-                    "div"
+                    "span"
                 } else {
                     name.as_str()
                 };
@@ -682,12 +682,12 @@ where
                         }
                     }
 
-                    // Named slot children: render as <div style="display:contents" slot="name">
+                    // Named slot children: render as <span style="display:contents" slot="name">
                     // Using a real HTML element (not Fragment) so Astro's slot distribution
                     // correctly assigns the content to the named slot.
                     for (slot_name, inner_children) in &fragment_slot_children {
                         let inner_html = slot_children_to_html(inner_children);
-                        result.push_str("<div style=\"display:contents\" slot=\"");
+                        result.push_str("<span style=\"display:contents\" slot=\"");
                         result.push_str(slot_name);
                         result.push_str("\">");
                         if !inner_html.is_empty() {
@@ -699,7 +699,7 @@ where
                                 result.push_str("} />");
                             }
                         }
-                        result.push_str("</div>");
+                        result.push_str("</span>");
                     }
 
                     result.push_str("</");
@@ -1439,8 +1439,8 @@ mod tests {
     }
 
     #[test]
-    fn test_blocks_to_jsx_string_fragment_slot_uses_div_wrapper() {
-        // Fragment-with-slot children should be rendered as <div style="display:contents" slot="name">
+    fn test_blocks_to_jsx_string_fragment_slot_uses_span_wrapper() {
+        // Fragment-with-slot children should be rendered as <span style="display:contents" slot="name">
         // instead of <Fragment slot="name"> because Astro's renderJSX unwraps Fragment VNodes
         // before slot distribution, losing the slot assignment.
         let blocks = vec![RenderBlock::Component {
@@ -1473,15 +1473,15 @@ mod tests {
         }];
         let jsx = blocks_to_jsx_string(&blocks, None::<fn(&str) -> Option<DirectiveMappingResult>>);
 
-        // Should use <div style="display:contents" slot="..."> instead of <Fragment slot="...">
+        // Should use <span style="display:contents" slot="..."> instead of <Fragment slot="...">
         assert!(
             jsx.contains("style=\"display:contents\" slot=\"headerApp\""),
-            "Expected div with display:contents for headerApp slot, got: {}",
+            "Expected span with display:contents for headerApp slot, got: {}",
             jsx
         );
         assert!(
             jsx.contains("style=\"display:contents\" slot=\"footer\""),
-            "Expected div with display:contents for footer slot, got: {}",
+            "Expected span with display:contents for footer slot, got: {}",
             jsx
         );
         // Should NOT contain <Fragment slot=
@@ -1537,9 +1537,9 @@ mod tests {
     }
 
     #[test]
-    fn test_slot_children_to_html_fragment_slot_uses_div() {
+    fn test_slot_children_to_html_fragment_slot_uses_span() {
         // When Fragment-with-slot appears in slot_children_to_html (nested case),
-        // it should also be rendered as <div style="display:contents" slot="name">
+        // it should also be rendered as <span style="display:contents" slot="name">
         let blocks = vec![RenderBlock::Component {
             name: "Fragment".to_string(),
             props: {
@@ -1553,8 +1553,8 @@ mod tests {
         }];
         let html = slot_children_to_html(&blocks);
         assert!(
-            html.contains("<div style=\"display:contents\" slot=\"test\">"),
-            "Expected div wrapper in slot_children_to_html, got: {}",
+            html.contains("<span style=\"display:contents\" slot=\"test\">"),
+            "Expected span wrapper in slot_children_to_html, got: {}",
             html
         );
         assert!(

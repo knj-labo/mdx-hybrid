@@ -83,7 +83,7 @@ function slotChildrenToHtml(
     } else if (block.type === 'component') {
       const innerHtml = slotChildrenToHtml(block.slotChildren ?? [], ecComponent, componentImports, registry, userImportedNames);
 
-      // Fragment-with-slot: render as <div style="display:contents" slot="name">
+      // Fragment-with-slot: render as <span style="display:contents" slot="name">
       // so Astro's slot distribution works (Fragment VNodes are unwrapped,
       // losing the slot prop).
       const slotProp = block.props?.slot;
@@ -94,7 +94,7 @@ function slotChildrenToHtml(
             ? slotProp
             : undefined;
       const isFragmentSlot = block.name === 'Fragment' && slotName !== undefined;
-      const tag = isFragmentSlot ? 'div' : (block.name ?? '');
+      const tag = isFragmentSlot ? 'span' : (block.name ?? '');
 
       result += `<${tag}`;
       if (isFragmentSlot) {
@@ -314,7 +314,7 @@ export function blocksToJsx(
       // Separate Fragment-with-slot children from regular children.
       // Fragment VNodes with `slot` props are unwrapped by Astro's renderJSX
       // before slot distribution, losing the slot assignment. We render them
-      // as <div style="display:contents" slot="name"> instead.
+      // as <span style="display:contents" slot="name"> instead.
       const allChildren = block.slotChildren ?? [];
       const regularChildren: Block[] = [];
       const fragmentSlotChildren: { slotName: string; inner: Block[] }[] = [];
@@ -423,12 +423,12 @@ export function blocksToJsx(
           }
         }
 
-        // Named slot children: render as <div style="display:contents" slot="name">
+        // Named slot children: render as <span style="display:contents" slot="name">
         // Using a real HTML element (not Fragment) so Astro's slot distribution
         // correctly assigns the content to the named slot.
         for (const { slotName, inner } of fragmentSlotChildren) {
           const innerHtml = slotChildrenToHtml(inner, options.expressiveCodeComponent, componentImports, registry ?? undefined, userImportedNames);
-          children += `<div style="display:contents" slot="${escapeJsString(slotName)}">`;
+          children += `<span style="display:contents" slot="${escapeJsString(slotName)}">`;
           if (innerHtml) {
             if (hasPascalCaseTag(innerHtml)) {
               children += htmlEntitiesToJsx(innerHtml);
@@ -436,7 +436,7 @@ export function blocksToJsx(
               children += `<_Fragment set:html={${JSON.stringify(innerHtml)}} />`;
             }
           }
-          children += '</div>';
+          children += '</span>';
         }
 
         fragments.push(`<${componentName}${propsAttr}>${children}</${componentName}>`);
