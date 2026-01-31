@@ -275,7 +275,7 @@ impl<'a> Context<'a> {
             .iter()
             .rev()
             .find(|scope| matches!(scope, Scope::List { .. }))
-            .map_or(false, |scope| {
+            .is_some_and(|scope| {
                 matches!(scope, Scope::List { spread: false })
             })
     }
