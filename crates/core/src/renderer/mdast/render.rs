@@ -51,7 +51,7 @@ fn extract_text_from_node(node: &Node, buffer: &mut String) {
 fn render_list(list: &markdown::mdast::List, ctx: &mut Context) {
     let tag = if list.ordered { "ol" } else { "ul" };
     ctx.push_raw(&format!("<{}>", tag));
-    ctx.enter(Scope::List);
+    ctx.enter(Scope::List { spread: list.spread });
 
     for child in &list.children {
         render_node(child, ctx);
@@ -273,15 +273,20 @@ pub fn render_node(node: &Node, ctx: &mut Context) {
         }
 
         Node::Paragraph(para) => {
-            ctx.push_raw("<p>");
-            ctx.enter(Scope::Paragraph);
+            let in_tight_list = ctx.is_in_tight_list();
+            if !in_tight_list {
+                ctx.push_raw("<p>");
+                ctx.enter(Scope::Paragraph);
+            }
 
             for child in &para.children {
                 render_node(child, ctx);
             }
 
-            ctx.exit();
-            ctx.push_raw("</p>");
+            if !in_tight_list {
+                ctx.exit();
+                ctx.push_raw("</p>");
+            }
         }
 
         Node::Link(link) => {

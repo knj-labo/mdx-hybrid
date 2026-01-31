@@ -106,7 +106,7 @@ pub enum Scope {
     /// Inside a paragraph element (`<p>`).
     Paragraph,
     /// Inside a list element (`<ul>` or `<ol>`).
-    List,
+    List { spread: bool },
     /// Inside a table element (`<table>`).
     Table,
     /// Inside a table row element (`<tr>`).
