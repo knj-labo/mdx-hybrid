@@ -9,6 +9,11 @@ import { collectImportedNames, insertAfterImports } from '../utils/imports.js';
 import { resolveStarlightConfig, type StarlightUserConfig } from '../utils/config.js';
 import { stripHeadingsMeta } from '../utils/validation.js';
 
+/** Strip set:html={...} string content to avoid false component matches in code blocks */
+function stripSetHtmlContent(code: string): string {
+  return code.replace(/set:html=\{("(?:[^"\\]|\\.)*")\}/g, 'set:html={""}');
+}
+
 /**
  * Generic component import injection.
  * Scans code for component usage and injects missing imports.
@@ -30,7 +35,7 @@ export function injectComponentImports(
   if (!code || typeof code !== 'string' || components.length === 0) {
     return code;
   }
-  const scanTarget = stripHeadingsMeta(code);
+  const scanTarget = stripSetHtmlContent(stripHeadingsMeta(code));
 
   // PERF: Use single combined regex instead of per-component regex
   // This reduces from O(n) regex compilations to O(1)
@@ -123,7 +128,7 @@ export function injectComponentImportsFromRegistry(
     return code;
   }
 
-  const scanTarget = stripHeadingsMeta(code);
+  const scanTarget = stripSetHtmlContent(stripHeadingsMeta(code));
   const imported = collectImportedNames(code);
 
   // PERF: Use single combined regex instead of per-component regex
