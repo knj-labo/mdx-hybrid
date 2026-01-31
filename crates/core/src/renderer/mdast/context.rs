@@ -275,9 +275,7 @@ impl<'a> Context<'a> {
             .iter()
             .rev()
             .find(|scope| matches!(scope, Scope::List { .. }))
-            .is_some_and(|scope| {
-                matches!(scope, Scope::List { spread: false })
-            })
+            .is_some_and(|scope| matches!(scope, Scope::List { spread: false }))
     }
 
     /// Returns true if any scope in the stack is within a table structure.
