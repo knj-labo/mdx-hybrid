@@ -51,7 +51,9 @@ fn extract_text_from_node(node: &Node, buffer: &mut String) {
 fn render_list(list: &markdown::mdast::List, ctx: &mut Context) {
     let tag = if list.ordered { "ol" } else { "ul" };
     ctx.push_raw(&format!("<{}>", tag));
-    ctx.enter(Scope::List { spread: list.spread });
+    ctx.enter(Scope::List {
+        spread: list.spread,
+    });
 
     for child in &list.children {
         render_node(child, ctx);

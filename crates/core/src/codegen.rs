@@ -148,9 +148,13 @@ pub fn html_entities_to_jsx(s: &str) -> String {
 
                 // Track <pre> depth
                 let tag_lower = tag_slice.to_ascii_lowercase();
-                if tag_lower.starts_with("<pre") && (tag_slice.len() == 5 || !tag_slice.as_bytes()[4].is_ascii_alphanumeric()) {
+                if tag_lower.starts_with("<pre")
+                    && (tag_slice.len() == 5 || !tag_slice.as_bytes()[4].is_ascii_alphanumeric())
+                {
                     pre_depth += 1;
-                } else if tag_lower.starts_with("</pre") && (tag_slice.len() == 6 || !tag_slice.as_bytes()[5].is_ascii_alphanumeric()) {
+                } else if tag_lower.starts_with("</pre")
+                    && (tag_slice.len() == 6 || !tag_slice.as_bytes()[5].is_ascii_alphanumeric())
+                {
                     pre_depth = pre_depth.saturating_sub(1);
                 }
 
