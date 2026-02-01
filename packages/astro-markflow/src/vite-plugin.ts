@@ -60,7 +60,7 @@ import type {
 import { loadMarkflowBinding, ENABLE_SHIKI, IS_MDAST } from './vite-plugin/binding-loader.js';
 import { wrapHtmlInJsxModule, compileFallbackModule } from './vite-plugin/jsx-module.js';
 import { normalizeStarlightComponents } from './vite-plugin/normalize-config.js';
-import { createShikiHighlighter } from './vite-plugin/shiki-highlighter.js';
+import { ShikiManager } from './vite-plugin/shiki-manager.js';
 
 /**
  * Resolves library configuration from options.
@@ -150,6 +150,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
   const plugins = userOptions.plugins ?? [];
   const hooks = collectHooks(plugins);
 
+  // Create pipeline once (shared across buildStart and load hooks)
+  const transformPipeline = createPipeline({
+    afterParse: hooks.afterParse,
+    beforeInject: hooks.beforeInject,
+    beforeOutput: hooks.beforeOutput,
+  });
+
   // Build compiler options with default code_sample_components
   const compilerOptions = {
     ...(userOptions.compiler ?? {}),
@@ -182,20 +189,10 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       ? value.slice(VIRTUAL_MODULE_PREFIX.length)
       : value;
 
-  let shikiReady: Promise<(code: string, lang?: string) => Promise<string>> | undefined;
-
   // Enable Shiki when:
   // 1. MARKFLOW_SHIKI=1 env var is set, OR
   // 2. ExpressiveCode is explicitly disabled (fallback highlighting)
-  const shouldEnableShiki = ENABLE_SHIKI || !expressiveCode;
-
-  const getShiki = (): Promise<(code: string, lang?: string) => Promise<string>> | null => {
-    if (!shouldEnableShiki) return null;
-    if (!shikiReady) {
-      shikiReady = createShikiHighlighter();
-    }
-    return shikiReady;
-  };
+  const shikiManager = new ShikiManager(ENABLE_SHIKI || !expressiveCode);
 
   // Lazy compiler initialization to avoid Vite module runner timing issues
   const getCompiler = async (): Promise<MarkflowCompiler> => {
@@ -405,22 +402,11 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         const jsxInputs: Array<{ id: string; virtualId: string; jsx: string }> = [];
 
         debugTime('buildStart:shikiInit');
-
-        // Initialize shiki highlighter if enabled (shared across all files)
-        const shikiHighlighter = getShiki();
-        const resolvedShiki = shikiHighlighter ? await shikiHighlighter : null;
-
+        const resolvedShiki = await shikiManager.init();
         debugTimeEnd('buildStart:shikiInit');
 
         // Normalize starlightComponents for TransformContext
         const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
-
-        // Create pipeline once (reusable)
-        const transformPipeline = createPipeline({
-          afterParse: hooks.afterParse,
-          beforeInject: hooks.beforeInject,
-          beforeOutput: hooks.beforeOutput,
-        });
 
         debugTime('buildStart:pipelineProcessing');
 
@@ -455,9 +441,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             hasUserDefaultExport: cached.hasUserDefaultExport,
           });
 
-          // PERF: Only enable shiki for files with code blocks
-          const hasCodeBlocks = /<pre[\s>]/.test(jsxCode);
-
           // Get source for hooks
           const sourceForHooks =
             originalSourceCache.get(filename) ??
@@ -477,7 +460,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             config: {
               expressiveCode,
               starlightComponents: normalizedStarlightComponents,
-              shiki: hasCodeBlocks ? resolvedShiki : null,
+              shiki: shikiManager.forCode(jsxCode, resolvedShiki),
             },
           };
 
@@ -698,9 +681,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             totalProcessingTimeMs += endTime - startTime;
             processedFiles.add(filename);
 
-            // PERF: Only enable shiki for files with code blocks
-            const hasCodeBlocks = /<pre[\s>]/.test(result.code);
-            const shikiHighlighter = hasCodeBlocks ? getShiki() : null;
             const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
             const sourceForHooks =
               originalSourceCache.get(filename) ??
@@ -718,15 +698,9 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
               config: {
                 expressiveCode,
                 starlightComponents: normalizedStarlightComponents,
-                shiki: shikiHighlighter ? await shikiHighlighter : null,
+                shiki: await shikiManager.getFor(result.code),
               },
             };
-
-            const transformPipeline = createPipeline({
-              afterParse: hooks.afterParse,
-              beforeInject: hooks.beforeInject,
-              beforeOutput: hooks.beforeOutput,
-            });
 
             const transformed = await transformPipeline(ctx);
             result.code = transformed.code;
@@ -793,9 +767,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           frontmatter = frontmatterResult.frontmatter || {};
 
           result = {
-            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry, filename, userImports, {
-              expressiveCodeComponent: expressiveCode?.component,
-            }),
+            code: blocksToJsx(parseResult.blocks, frontmatter, headings, registry, filename, userImports),
             map: null,
             frontmatter_json: JSON.stringify(frontmatter),
             headings,
@@ -828,9 +800,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           }
         }
 
-        // PERF: Only enable shiki for files with code blocks
-        const hasCodeBlocks = /<pre[\s>]/.test(result.code);
-        const shikiHighlighter = hasCodeBlocks ? getShiki() : null;
         const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
         const ctx: TransformContext = {
           code: result.code,
@@ -842,15 +811,9 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           config: {
             expressiveCode,
             starlightComponents: normalizedStarlightComponents,
-            shiki: shikiHighlighter ? await shikiHighlighter : null,
+            shiki: await shikiManager.getFor(result.code),
           },
         };
-
-        const transformPipeline = createPipeline({
-          afterParse: hooks.afterParse,
-          beforeInject: hooks.beforeInject,
-          beforeOutput: hooks.beforeOutput,
-        });
 
         const transformed = await transformPipeline(ctx);
         result.code = transformed.code;

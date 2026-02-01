@@ -3,8 +3,18 @@
  * @module transforms/blocks-to-jsx
  */
 
-import type { Registry } from 'markflow/registry';
 import type { HeadingEntry } from 'markflow';
+
+/**
+ * Minimal registry interface consumed by blocksToJsx.
+ * Avoids coupling to the full Registry type.
+ */
+export interface BlocksRegistry {
+  getSupportedDirectives(): string[];
+  getDirectiveMapping(directive: string): { component: string; injectProps?: Record<string, { source: string; value?: string }> } | undefined;
+  getSlotNormalization(component: string): { strategy: 'wrap_in_ol' | 'wrap_in_ul' } | undefined;
+  getComponent(name: string): { modulePath: string; exportType: string } | undefined;
+}
 import { htmlEntitiesToJsx, hasPascalCaseTag } from 'markflow-napi';
 
 /**
@@ -52,9 +62,8 @@ function escapeHtml(s: string): string {
  */
 function slotChildrenToHtml(
   blocks: Block[],
-  ecComponent?: string,
   componentImports?: Map<string, { modulePath: string; exportType: string }>,
-  registry?: Registry,
+  registry?: BlocksRegistry,
   userImportedNames?: Set<string>,
 ): string {
   let result = '';
@@ -63,25 +72,11 @@ function slotChildrenToHtml(
       // Escape braces so JSX text does not become expressions
       result += (block.content ?? '').replace(/\{/g, '&#123;').replace(/\}/g, '&#125;');
     } else if (block.type === 'code') {
-      if (ecComponent) {
-        // Direct ExpressiveCode component rendering
-        const langProp = block.lang ? ` lang="${escapeJsString(block.lang)}"` : '';
-        const metaProp = block.meta ? ` meta="${escapeJsString(block.meta)}"` : '';
-        result += `<${ecComponent} code={${JSON.stringify(block.code ?? '')}}${langProp}${metaProp} />`;
-        // Register EC import for slot children
-        if (componentImports && !userImportedNames?.has(ecComponent)) {
-          const componentDef = registry?.getComponent(ecComponent);
-          const modulePath = componentDef?.modulePath ?? 'astro-expressive-code/components';
-          const exportType = componentDef?.exportType ?? 'default';
-          componentImports.set(ecComponent, { modulePath, exportType });
-        }
-      } else {
-        // Render code block as HTML
-        const langAttr = block.lang ? ` class="language-${escapeHtml(block.lang)}"` : '';
-        result += `<pre class="astro-code" tabindex="0"><code${langAttr}>${escapeHtml(block.code ?? '')}</code></pre>`;
-      }
+      // Always render as HTML <pre><code>; ExpressiveCode rewriting happens in pipeline
+      const langAttr = block.lang ? ` class="language-${escapeHtml(block.lang)}"` : '';
+      result += `<pre class="astro-code" tabindex="0"><code${langAttr}>${escapeHtml(block.code ?? '')}</code></pre>`;
     } else if (block.type === 'component') {
-      const innerHtml = slotChildrenToHtml(block.slotChildren ?? [], ecComponent, componentImports, registry, userImportedNames);
+      const innerHtml = slotChildrenToHtml(block.slotChildren ?? [], componentImports, registry, userImportedNames);
 
       // Fragment-with-slot: render as <span style="display:contents" slot="name">
       // so Astro's slot distribution works (Fragment VNodes are unwrapped,
@@ -259,18 +254,13 @@ function extractNamesFromImports(imports: string[]): Set<string> {
  * @param userImports - User import statements to preserve (these take precedence over registry)
  * @returns Complete JSX module code with imports, exports, and default component
  */
-export interface BlocksToJsxOptions {
-  expressiveCodeComponent?: string;
-}
-
 export function blocksToJsx(
   blocks: Block[],
   frontmatter: Record<string, unknown> = {},
   headings: HeadingEntry[] = [],
-  registry: Registry | null = null,
+  registry: BlocksRegistry | null = null,
   filename?: string,
   userImports: string[] = [],
-  options: BlocksToJsxOptions = {}
 ): string {
   const fragments: string[] = [];
   const componentImports = new Map<string, { modulePath: string; exportType: string }>();
@@ -287,24 +277,10 @@ export function blocksToJsx(
       // JSON.stringify handles all escaping; Astro parses the HTML at runtime
       fragments.push(`<_Fragment set:html={${JSON.stringify(block.content ?? '')}} />`);
     } else if (block.type === 'code') {
-      if (options.expressiveCodeComponent) {
-        // Direct ExpressiveCode rendering - avoids HTML→regex→component roundtrip
-        const comp = options.expressiveCodeComponent;
-        const langProp = block.lang ? ` lang="${escapeJsString(block.lang)}"` : '';
-        const metaProp = block.meta ? ` meta="${escapeJsString(block.meta)}"` : '';
-        fragments.push(`<${comp} code={${JSON.stringify(block.code ?? '')}}${langProp}${metaProp} />`);
-        if (!userImportedNames.has(comp)) {
-          const componentDef = registry?.getComponent(comp);
-          const modulePath = componentDef?.modulePath ?? 'astro-expressive-code/components';
-          const exportType = componentDef?.exportType ?? 'default';
-          componentImports.set(comp, { modulePath, exportType });
-        }
-      } else {
-        // Render as HTML <pre><code> for pipeline processing
-        const langAttr = block.lang ? ` class="language-${escapeHtml(block.lang)}"` : '';
-        const html = `<pre class="astro-code" tabindex="0"><code${langAttr}>${escapeHtml(block.code ?? '')}</code></pre>`;
-        fragments.push(`<_Fragment set:html={${JSON.stringify(html)}} />`);
-      }
+      // Always render as HTML <pre><code>; ExpressiveCode rewriting happens in pipeline
+      const langAttr = block.lang ? ` class="language-${escapeHtml(block.lang)}"` : '';
+      const html = `<pre class="astro-code" tabindex="0"><code${langAttr}>${escapeHtml(block.code ?? '')}</code></pre>`;
+      fragments.push(`<_Fragment set:html={${JSON.stringify(html)}} />`);
     } else if (block.type === 'component') {
       // Handle directive components using registry
       const isDirective = block.name ? supportedDirectives.includes(block.name) : false;
@@ -342,7 +318,7 @@ export function blocksToJsx(
 
       // Convert regular (non-fragment-slot) children to HTML string for slot processing
       let effectiveSlot = stripParagraphFragmentWrappers(
-        slotChildrenToHtml(regularChildren, options.expressiveCodeComponent, componentImports, registry ?? undefined, userImportedNames)
+        slotChildrenToHtml(regularChildren, componentImports, registry ?? undefined, userImportedNames)
       );
 
       if (isDirective && registry && block.name) {
@@ -427,7 +403,7 @@ export function blocksToJsx(
         // Using a real HTML element (not Fragment) so Astro's slot distribution
         // correctly assigns the content to the named slot.
         for (const { slotName, inner } of fragmentSlotChildren) {
-          const innerHtml = slotChildrenToHtml(inner, options.expressiveCodeComponent, componentImports, registry ?? undefined, userImportedNames);
+          const innerHtml = slotChildrenToHtml(inner, componentImports, registry ?? undefined, userImportedNames);
           children += `<span style="display:contents" slot="${escapeJsString(slotName)}">`;
           if (innerHtml) {
             if (hasPascalCaseTag(innerHtml)) {
