@@ -133,6 +133,34 @@ export default function Content() {
     expect(result).toContain('import { Aside }');
   });
 
+  it('should strip single-line getHeadings before scanning', () => {
+    const code = `
+export function getHeadings() { return [{"depth":1,"slug":"aside","text":"Aside"}]; }
+
+export default function Content() {
+  return <Aside>Content</Aside>;
+}`;
+
+    const result = injectComponentImports(code, ['Aside'], '@astrojs/starlight/components');
+
+    expect(result).toContain('import { Aside }');
+  });
+
+  it('should not false-positive when heading text contains semicolons before component names', () => {
+    const code = `
+export const headings = [
+  { depth: 2, slug: 'use-aside', text: 'Use; <Aside> wisely' }
+];
+
+export default function Content() {
+  return <div>No components here</div>;
+}`;
+
+    const result = injectComponentImports(code, ['Aside'], '@astrojs/starlight/components');
+
+    expect(result).not.toContain('import');
+  });
+
   it('should handle components in nested structures', () => {
     const code = `
 export default function Content() {
