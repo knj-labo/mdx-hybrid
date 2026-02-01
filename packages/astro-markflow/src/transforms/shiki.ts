@@ -268,19 +268,20 @@ export async function rewriteAstroSetHtml(
   }
 
   const marker = '<_Fragment set:html={';
-  let result = code;
+
+  // Collect all occurrences first
+  const blocks: { start: number; end: number; html: string }[] = [];
   let searchStart = 0;
 
-  // Process ALL occurrences in a loop
   while (true) {
-    const idx = result.indexOf(marker, searchStart);
+    const idx = code.indexOf(marker, searchStart);
     if (idx === -1) break;
 
     const start = idx + marker.length;
-    const end = result.indexOf('} />', start);
+    const end = code.indexOf('} />', start);
     if (end === -1) break;
 
-    const literal = result.slice(start, end).trim();
+    const literal = code.slice(start, end).trim();
     if (!literal) {
       searchStart = end;
       continue;
@@ -294,10 +295,23 @@ export async function rewriteAstroSetHtml(
       continue;
     }
 
-    const rewritten = await highlightHtmlBlocks(html, highlight);
-    const encoded = JSON.stringify(rewritten);
-    result = result.slice(0, start) + encoded + result.slice(end);
-    searchStart = start + encoded.length + 4; // Move past this occurrence
+    blocks.push({ start, end, html });
+    searchStart = end + 4;
+  }
+
+  if (blocks.length === 0) return code;
+
+  // Highlight all blocks in parallel
+  const highlighted = await Promise.all(
+    blocks.map((b) => highlightHtmlBlocks(b.html, highlight))
+  );
+
+  // Apply replacements in reverse order to preserve indices
+  let result = code;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]!;
+    const encoded = JSON.stringify(highlighted[i]);
+    result = result.slice(0, b.start) + encoded + result.slice(b.end);
   }
 
   return result;

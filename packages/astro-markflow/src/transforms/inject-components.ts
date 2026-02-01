@@ -9,12 +9,14 @@ import { collectImportedNames, insertAfterImports } from '../utils/imports.js';
 import { resolveStarlightConfig, type StarlightUserConfig } from '../utils/config.js';
 
 
+/** Combined regex to strip set:html content and headings metadata in a single pass */
+const RE_SCAN_NOISE = /set:html=\{"(?:[^"\\]|\\.)*"\}|export const headings[\s\S]*?;\n?|export function getHeadings[\s\S]*?\n}\n?/g;
+
 /** Strip set:html content and headings metadata in a single pass to avoid false component matches */
 function stripScanNoise(code: string): string {
-  return code
-    .replace(/set:html=\{("(?:[^"\\]|\\.)*")\}/g, 'set:html={""}')
-    .replace(/export const headings[\s\S]*?;\n?/g, '')
-    .replace(/export function getHeadings[\s\S]*?\n}\n?/g, '');
+  return code.replace(RE_SCAN_NOISE, (match) =>
+    match.startsWith('set:html=') ? 'set:html={""}' : ''
+  );
 }
 
 /** Cache compiled regex per registry instance (registry is immutable after init) */
@@ -68,7 +70,7 @@ export function injectComponentImports(
   const used = components.filter((name) => usedSet.has(name));
   if (used.length === 0) return code;
 
-  const imported = collectImportedNames(code);
+  const imported = collectImportedNames(code, { skipCodeFences: true });
   const missing = used.filter((name) => !imported.has(name));
   if (missing.length === 0) return code;
 
@@ -143,7 +145,7 @@ export function injectComponentImportsFromRegistry(
   if (!combinedPattern) return code;
 
   const scanTarget = stripScanNoise(code);
-  const imported = collectImportedNames(code);
+  const imported = collectImportedNames(code, { skipCodeFences: true });
 
   combinedPattern.lastIndex = 0;
   const matches = scanTarget.match(combinedPattern);

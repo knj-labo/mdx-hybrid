@@ -5,9 +5,17 @@
 
 import { stripCodeFences } from './mdx-detection.js';
 
+export interface CollectImportedNamesOptions {
+  /** Skip stripping code fences (safe when input is compiled JSX, not raw MDX) */
+  skipCodeFences?: boolean;
+}
+
 /**
  * Collect all imported names from JavaScript/JSX code.
  * Handles default imports, namespace imports, and named imports.
+ *
+ * Stops scanning after the import region (first non-import/comment/blank line)
+ * for better performance on large files.
  *
  * @example
  * const code = `
@@ -18,19 +26,35 @@ import { stripCodeFences } from './mdx-detection.js';
  * const names = collectImportedNames(code);
  * // Set { 'React', 'useState', 'useEffect', 'utils' }
  */
-export function collectImportedNames(code: string): Set<string> {
+export function collectImportedNames(
+  code: string,
+  options?: CollectImportedNamesOptions
+): Set<string> {
   const imported = new Set<string>();
   if (!code || typeof code !== 'string') {
     return imported;
   }
   // Strip code fences to avoid false positives from code examples
-  const codeWithoutFences = stripCodeFences(code);
-  const lines = codeWithoutFences.split(/\r?\n/);
+  // Can be skipped when input is compiled JSX (no code fences possible)
+  const scanTarget = options?.skipCodeFences ? code : stripCodeFences(code);
+  const lines = scanTarget.split(/\r?\n/);
+  let seenImport = false;
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed.startsWith('import ') || trimmed.startsWith('import(')) {
+
+    // Skip blank lines and comments
+    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*')) {
       continue;
     }
+
+    if (!trimmed.startsWith('import ') || trimmed.startsWith('import(')) {
+      // Early termination: once we've seen imports and hit a non-import line,
+      // there won't be more imports in well-formed JSX modules
+      if (seenImport) break;
+      continue;
+    }
+
+    seenImport = true;
 
     // Default import: import Foo from 'module'
     const defaultMatch = trimmed.match(

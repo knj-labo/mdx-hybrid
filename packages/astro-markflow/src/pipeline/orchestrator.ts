@@ -29,6 +29,103 @@ const DEFAULT_CONTEXT: TransformContext = {
   },
 };
 
+const PIPELINE_PROFILE =
+  typeof process !== 'undefined' && process.env?.MARKFLOW_PIPELINE_PROFILE === '1';
+const PIPELINE_PROFILE_VERBOSE =
+  typeof process !== 'undefined' && process.env?.MARKFLOW_PIPELINE_PROFILE_VERBOSE === '1';
+
+type PipelineProfileStats = {
+  totalMs: number;
+  count: number;
+  maxMs: number;
+};
+
+const pipelineProfileStats = new Map<string, PipelineProfileStats>();
+let pipelineProfileHookRegistered = false;
+const now = (): number =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+
+function registerPipelineProfileExitHook(): void {
+  if (pipelineProfileHookRegistered || !PIPELINE_PROFILE) return;
+  pipelineProfileHookRegistered = true;
+
+  if (typeof process === 'undefined' || typeof process.on !== 'function') {
+    return;
+  }
+
+  process.on('exit', () => {
+    if (!pipelineProfileStats.size) return;
+    const entries = [...pipelineProfileStats.entries()]
+      .sort((a, b) => b[1].totalMs - a[1].totalMs);
+    const totalMs = entries.reduce((sum, [, stats]) => sum + stats.totalMs, 0);
+    console.log('[markflow:pipeline] summary (total ms)');
+    for (const [label, stats] of entries) {
+      const avgMs = stats.totalMs / stats.count;
+      const pct = totalMs > 0 ? (stats.totalMs / totalMs) * 100 : 0;
+      console.log(
+        `[markflow:pipeline] ${label} total=${stats.totalMs.toFixed(2)}ms ` +
+        `avg=${avgMs.toFixed(2)}ms max=${stats.maxMs.toFixed(2)}ms ` +
+        `n=${stats.count} ${pct.toFixed(1)}%`
+      );
+    }
+  });
+}
+
+function recordPipelineProfile(label: string, filename: string, durationMs: number): void {
+  const stats = pipelineProfileStats.get(label) ?? {
+    totalMs: 0,
+    count: 0,
+    maxMs: 0,
+  };
+  stats.totalMs += durationMs;
+  stats.count += 1;
+  stats.maxMs = Math.max(stats.maxMs, durationMs);
+  pipelineProfileStats.set(label, stats);
+
+  if (PIPELINE_PROFILE_VERBOSE) {
+    const basename = filename.split(/[\\/]/).pop() ?? filename;
+    const suffix = basename ? ` (${basename})` : '';
+    console.log(`[markflow:pipeline] ${label} ${durationMs.toFixed(2)}ms${suffix}`);
+  }
+}
+
+function withPipelineTiming(label: string, transform: Transform): Transform {
+  if (!PIPELINE_PROFILE) return transform;
+  registerPipelineProfileExitHook();
+  return async (ctx: TransformContext): Promise<TransformContext> => {
+    const start = now();
+    try {
+      return await transform(ctx);
+    } finally {
+      const durationMs = now() - start;
+      recordPipelineProfile(label, ctx.filename, durationMs);
+    }
+  };
+}
+
+function labelHook(group: string, index: number, transform: Transform): Transform {
+  const name = transform.name ? `:${transform.name}` : '';
+  return withPipelineTiming(`${group}[${index}]${name}`, transform);
+}
+
+function labelBuiltIn(name: string, transform: Transform): Transform {
+  return withPipelineTiming(`builtin:${name}`, transform);
+}
+
+function labelCustom(index: number, transform: Transform): Transform {
+  const name = transform.name ? `:${transform.name}` : '';
+  return withPipelineTiming(`custom[${index}]${name}`, transform);
+}
+
+const transformNormalizeSteps: Transform = (ctx) => {
+  if (!ctx.code) return ctx;
+  const { code, changed } = normalizeSteps(ctx.code);
+  if (!changed) return ctx;
+  return { ...ctx, code };
+};
+
 /**
  * Creates a TransformContext with default values.
  * Useful for standalone pipeline usage outside of Vite.
@@ -83,30 +180,25 @@ export function createPipeline(options: PipelineOptions = {}): Transform {
 
   return pipe<TransformContext>(
     // User hooks: afterParse
-    ...afterParse,
+    ...afterParse.map((hook, index) => labelHook('afterParse', index, hook)),
 
     // Built-in: ExpressiveCode rewriting
-    transformExpressiveCode,
+    labelBuiltIn('expressiveCode', transformExpressiveCode),
 
     // User hooks: beforeInject
-    ...beforeInject,
+    ...beforeInject.map((hook, index) => labelHook('beforeInject', index, hook)),
 
     // Built-in: Component injection (unified, registry-driven)
-    transformInjectComponentsFromRegistry,
+    labelBuiltIn('injectComponents', transformInjectComponentsFromRegistry),
 
     // Built-in: Shiki highlighting
-    transformShikiHighlight,
+    labelBuiltIn('shikiHighlight', transformShikiHighlight),
 
     // Built-in: Normalize Steps to single <ol>
-    (ctx) => {
-      if (!ctx.code) return ctx;
-      const { code, changed } = normalizeSteps(ctx.code);
-      if (!changed) return ctx;
-      return { ...ctx, code };
-    },
+    labelBuiltIn('normalizeSteps', transformNormalizeSteps),
 
     // User hooks: beforeOutput
-    ...beforeOutput
+    ...beforeOutput.map((hook, index) => labelHook('beforeOutput', index, hook))
   );
 }
 
@@ -126,5 +218,7 @@ export function createPipeline(options: PipelineOptions = {}): Transform {
  * const result = await testPipeline(ctx);
  */
 export function createCustomPipeline(...transforms: Transform[]): Transform {
-  return pipe<TransformContext>(...transforms);
+  return pipe<TransformContext>(
+    ...transforms.map((transform, index) => labelCustom(index, transform))
+  );
 }
