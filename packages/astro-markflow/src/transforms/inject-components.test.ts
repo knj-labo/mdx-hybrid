@@ -252,7 +252,7 @@ export default function Content() {
     expect(result).toContain(ASTRO_COMPONENTS_MODULE);
   });
 
-  it('should inject Prism component', () => {
+  it('should not inject Prism (not a built-in Astro component)', () => {
     const code = `
 export default function Content() {
   return <Prism lang="js">const x = 1;</Prism>;
@@ -260,11 +260,11 @@ export default function Content() {
 
     const result = injectAstroComponents(code);
 
-    expect(result).toContain('import { Prism }');
-    expect(result).toContain(ASTRO_COMPONENTS_MODULE);
+    expect(result).not.toContain('import { Prism }');
+    expect(result).toBe(code);
   });
 
-  it('should inject both Code and Prism', () => {
+  it('should only inject Code when both Code and Prism are used', () => {
     const code = `
 export default function Content() {
   return (
@@ -277,7 +277,8 @@ export default function Content() {
 
     const result = injectAstroComponents(code);
 
-    expect(result).toContain('import { Code, Prism }');
+    expect(result).toContain('import { Code }');
+    expect(result).not.toContain('import { Code, Prism }');
   });
 
   it('should not inject if no Astro components used', () => {

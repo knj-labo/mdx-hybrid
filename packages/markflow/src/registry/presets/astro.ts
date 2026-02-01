@@ -11,7 +11,6 @@ export const astroLibrary: ComponentLibrary = {
   defaultModulePath: 'astro/components',
   components: [
     { name: 'Code', modulePath: 'astro/components', exportType: 'named' },
-    { name: 'Prism', modulePath: 'astro/components', exportType: 'named' },
   ],
   directiveMappings: [],
 };
