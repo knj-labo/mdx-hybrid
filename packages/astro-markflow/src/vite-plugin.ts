@@ -138,6 +138,8 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
   const originalSourceCache = new Map<string, string>();   // Raw markdown before preprocess hooks
   const processedSourceCache = new Map<string, string>();  // Preprocessed markdown fed to compiler
   const compilationCache = new Map<string, CachedCompileResult>();
+  const resolveIdCache = new Map<string, { source: string; processedSource: string }>();  // Dev mode: reuse resolveId file reads in load()
+  const detectionCache = new Map<string, { hasProblematicPatterns: boolean; reason?: string; disallowedImports?: string[]; allImports?: string[] }>();  // Reuse detection results across buildStart → load
   const esbuildCache = new Map<string, { code: string; map?: SourceMapInput }>();  // Pre-compiled esbuild results
   const fallbackFiles = new Set<string>();
   const fallbackReasons = new Map<string, string>();
@@ -313,6 +315,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
           // Pre-detect problematic patterns - these files will be handled by Astro's MDX plugin
           const detection = detectProblematicMdxPatterns(processedSource, mdxOptions);
+          detectionCache.set(file, detection);
           if (detection.hasProblematicPatterns) {
             fallbackFiles.add(file);
             fallbackReasons.set(file, detection.reason ?? 'Unknown pattern');
@@ -634,6 +637,8 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             fallbackReasons.set(resolvedId, detection.reason ?? 'Pre-detected problematic MDX patterns (dev mode)');
             return null; // Delegate to Astro's MDX plugin
           }
+          // Cache source/processedSource for reuse in load()
+          resolveIdCache.set(resolvedId, { source, processedSource });
         } catch {
           // File read failed, let normal path handle it
         }
@@ -743,21 +748,29 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         // Lazy initialize compiler on first use (only needed for cache miss path)
         const currentCompiler = await getCompiler();
 
-        // Only read file if cache miss
-        const source = await readFile(filename, 'utf8');
+        // Only read file if cache miss — reuse resolveId results when available
+        const resolveIdCached = resolveIdCache.get(filename);
+        resolveIdCache.delete(filename);
+
+        const source = resolveIdCached?.source ?? await readFile(filename, 'utf8');
         originalSourceCache.set(filename, source);
 
-        // Apply preprocess hooks
-        let processedSource = source;
-        for (const preprocessHook of hooks.preprocess) {
-          processedSource = preprocessHook(processedSource, filename);
+        // Apply preprocess hooks (skip if already done in resolveId)
+        let processedSource = resolveIdCached?.processedSource ?? source;
+        if (!resolveIdCached) {
+          for (const preprocessHook of hooks.preprocess) {
+            processedSource = preprocessHook(processedSource, filename);
+          }
         }
         processedSourceCache.set(filename, processedSource);
 
         // Early detection of problematic patterns - skip to fallback
         // Note: Pre-detected files from buildStart are handled by resolveId returning null
         // This catches files that weren't pre-detected (e.g., preprocess hooks revealed the pattern)
-        const detection = detectProblematicMdxPatterns(processedSource, mdxOptions);
+        // Reuse detection from buildStart or resolveId when available
+        const detection = detectionCache.get(filename)
+          ?? detectProblematicMdxPatterns(processedSource, mdxOptions);
+        detectionCache.delete(filename);
         if (detection.hasProblematicPatterns) {
           this.warn(
             `[markflow] Skipping ${filename}: ${detection.reason ?? 'contains patterns incompatible with markdown-rs'}`
@@ -901,13 +914,10 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             }
           }
 
-          // Re-read and process the file for fallback compilation
-          const fallbackSource = await readFile(filename, 'utf8');
-          let processedFallbackSource = fallbackSource;
-          for (const preprocessHook of hooks.preprocess) {
-            processedFallbackSource = preprocessHook(processedFallbackSource, filename);
-          }
-          return compileFallbackModule(filename, processedFallbackSource, id, registry, hasStarlightConfigured);
+          // Reuse already-read source from the try block via processedSourceCache
+          const fallbackProcessedSource = processedSourceCache.get(filename)
+            ?? await readFile(filename, 'utf8');
+          return compileFallbackModule(filename, fallbackProcessedSource, id, registry, hasStarlightConfigured);
         }
         throw new Error(`[markflow] Compile failed for ${filename}: ${message}`);
       }
