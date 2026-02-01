@@ -211,6 +211,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
     return compiler;
   };
 
+  const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
+  const transformPipeline = createPipeline({
+    afterParse: hooks.afterParse,
+    beforeInject: hooks.beforeInject,
+    beforeOutput: hooks.beforeOutput,
+  });
+
   return {
     name: 'vite-plugin-markflow',
     enforce: 'pre',
@@ -414,16 +421,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         const resolvedShiki = shikiHighlighter ? await shikiHighlighter : null;
 
         debugTimeEnd('buildStart:shikiInit');
-
-        // Normalize starlightComponents for TransformContext
-        const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
-
-        // Create pipeline once (reusable)
-        const transformPipeline = createPipeline({
-          afterParse: hooks.afterParse,
-          beforeInject: hooks.beforeInject,
-          beforeOutput: hooks.beforeOutput,
-        });
 
         debugTime('buildStart:pipelineProcessing');
 
@@ -706,7 +703,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             // PERF: Only enable shiki for files with code blocks
             const hasCodeBlocks = /<pre[\s>]/.test(result.code);
             const shikiHighlighter = hasCodeBlocks ? getShiki() : null;
-            const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
             const sourceForHooks =
               originalSourceCache.get(filename) ??
               cached.originalSource ??
@@ -726,12 +722,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
                 shiki: shikiHighlighter ? await shikiHighlighter : null,
               },
             };
-
-            const transformPipeline = createPipeline({
-              afterParse: hooks.afterParse,
-              beforeInject: hooks.beforeInject,
-              beforeOutput: hooks.beforeOutput,
-            });
 
             const transformed = await transformPipeline(ctx);
             result.code = transformed.code;
@@ -844,7 +834,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         // PERF: Only enable shiki for files with code blocks
         const hasCodeBlocks = /<pre[\s>]/.test(result.code);
         const shikiHighlighter = hasCodeBlocks ? getShiki() : null;
-        const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
         const ctx: TransformContext = {
           code: result.code,
           source,
@@ -858,12 +847,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             shiki: shikiHighlighter ? await shikiHighlighter : null,
           },
         };
-
-        const transformPipeline = createPipeline({
-          afterParse: hooks.afterParse,
-          beforeInject: hooks.beforeInject,
-          beforeOutput: hooks.beforeOutput,
-        });
 
         const transformed = await transformPipeline(ctx);
         result.code = transformed.code;
