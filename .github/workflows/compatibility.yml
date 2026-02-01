@@ -134,6 +134,11 @@ jobs:
         working-directory: crates/napi
         run: pnpm run smoke:napi -- fixtures/core/markdown/hello.md
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Run NAPI tests
         working-directory: crates/napi
         run: pnpm test
