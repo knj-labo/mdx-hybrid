@@ -11,6 +11,9 @@ import type { DocumentFragment, Node, Element, TextNode } from '../vite-plugin/t
  */
 export type ShikiHighlighter = (code: string, lang?: string) => Promise<string>;
 
+const RE_HAS_PRE = /<pre[\s>]/;
+const RE_PRE_CODE_JSX = /<pre[^>]*><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g;
+
 /**
  * Walks an HTML AST tree and applies a visitor function to each node.
  */
@@ -56,7 +59,7 @@ export async function highlightHtmlBlocks(
   highlight: ShikiHighlighter
 ): Promise<string> {
   // PERF: Early skip if no <pre> tags exist (avoids expensive parse5 parsing)
-  if (!/<pre[\s>]/.test(html)) {
+  if (!RE_HAS_PRE.test(html)) {
     return html;
   }
 
@@ -170,18 +173,16 @@ export async function highlightJsxCodeBlocks(
   }
 
   // Early skip if no <pre> tags in JSX context
-  if (!/<pre[\s>]/.test(code)) {
+  if (!RE_HAS_PRE.test(code)) {
     return code;
   }
 
-  // Match <pre> with optional attributes followed by <code class="language-xxx">content</code></pre>
-  // Content may contain JSX expressions like {"text"} or HTML entities
-  const preCodeRegex = /<pre[^>]*><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g;
+  // Collect all matches first, then highlight in parallel
+  const pending: { index: number; length: number; lang: string | undefined; codeText: string }[] = [];
 
-  const replacements: { match: string; replacement: string }[] = [];
-
+  RE_PRE_CODE_JSX.lastIndex = 0;
   let match;
-  while ((match = preCodeRegex.exec(code)) !== null) {
+  while ((match = RE_PRE_CODE_JSX.exec(code)) !== null) {
     const [fullMatch, lang, rawContent = ''] = match;
 
     // Skip if already processed by Shiki (has shiki class or data-language)
@@ -232,17 +233,22 @@ export async function highlightJsxCodeBlocks(
       continue;
     }
 
-    // eslint-disable-next-line no-await-in-loop
-    const highlighted = await highlight(codeText, lang || undefined);
-    // Wrap in set:html to avoid raw { } in JSX context being parsed as expressions
-    const safeReplacement = `<_Fragment set:html={${JSON.stringify(highlighted)}} />`;
-    replacements.push({ match: fullMatch, replacement: safeReplacement });
+    pending.push({ index: match.index, length: fullMatch.length, lang: lang || undefined, codeText });
   }
 
-  // Apply replacements
+  if (pending.length === 0) return code;
+
+  // Highlight all blocks in parallel
+  const highlighted = await Promise.all(
+    pending.map(p => highlight(p.codeText, p.lang))
+  );
+
+  // Apply replacements in reverse order to preserve indices
   let result = code;
-  for (const { match, replacement } of replacements) {
-    result = result.replace(match, replacement);
+  for (let i = pending.length - 1; i >= 0; i--) {
+    const p = pending[i]!;
+    const safeReplacement = `<_Fragment set:html={${JSON.stringify(highlighted[i])}} />`;
+    result = result.slice(0, p.index) + safeReplacement + result.slice(p.index + p.length);
   }
 
   return result;

@@ -6,6 +6,8 @@
 import { collectImportedNames, insertAfterImports } from '../utils/imports.js';
 import type { ExpressiveCodeConfig } from '../utils/config.js';
 
+const RE_PRE_CODE_BLOCK = /<pre[^>]*><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
+
 /**
  * Decodes HTML entities in a string.
  */
@@ -47,10 +49,9 @@ export function rewriteExpressiveCodeBlocks(
   }
   // Pattern matches <pre> with optional attributes (class, tabindex, etc.)
   // followed by <code> with optional language class
-  const pattern =
-    /<pre[^>]*><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g;
+  RE_PRE_CODE_BLOCK.lastIndex = 0;
   let changed = false;
-  const next = code.replace(pattern, (_match, lang: string | undefined, raw: string) => {
+  const next = code.replace(RE_PRE_CODE_BLOCK, (_match, lang: string | undefined, raw: string) => {
     changed = true;
     const decoded = decodeHtmlEntities(raw);
     const props = [`code={${JSON.stringify(decoded)}}`];

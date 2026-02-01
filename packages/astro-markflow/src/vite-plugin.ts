@@ -34,6 +34,17 @@ import {
 } from './constants.js';
 import type { MarkflowPlugin, PluginHooks, TransformContext } from './types.js';
 
+// Hoisted regex constants (avoid per-file allocations)
+const RE_PRE_TAG = /<pre[\s>]/;
+const RE_JSX_COMPONENT = /\{\.\.\.|\<[A-Z]/;
+const RE_OUTPUT_EXTENSION = new RegExp(`${OUTPUT_EXTENSION.replace('.', '\\.')}$`);
+
+function parseFrontmatterJson(json: string | undefined): Record<string, unknown> {
+  if (!json) return {};
+  try { return JSON.parse(json) as Record<string, unknown>; }
+  catch { return {}; }
+}
+
 // Debug timing utilities
 const DEBUG_TIMING = process.env.MARKFLOW_DEBUG_TIMING === '1';
 
@@ -212,6 +223,10 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
   };
 
   const normalizedStarlightComponents = normalizeStarlightComponents(starlightComponents);
+  const baseTransformConfig = {
+    expressiveCode,
+    starlightComponents: normalizedStarlightComponents,
+  };
   const transformPipeline = createPipeline({
     afterParse: hooks.afterParse,
     beforeInject: hooks.beforeInject,
@@ -432,21 +447,14 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           if (isMdx) continue;
 
           const hasUserImports = (cached.hoistedImports?.length ?? 0) > 0;
-          const hasJsxComponents = cached.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
+          const hasJsxComponents = cached.html && RE_JSX_COMPONENT.test(cached.html);
 
           // Skip files with imports or JSX components - these need complex resolution
           // Exports are handled by Rust and injected into the module
           if (hasUserImports || hasJsxComponents) continue;
 
           // Parse frontmatter
-          let frontmatter: Record<string, unknown> = {};
-          if (cached.frontmatterJson) {
-            try {
-              frontmatter = JSON.parse(cached.frontmatterJson) as Record<string, unknown>;
-            } catch {
-              frontmatter = {};
-            }
-          }
+          const frontmatter = parseFrontmatterJson(cached.frontmatterJson);
           const headings = cached.headings || [];
 
           // Wrap HTML in JSX module with hoisted exports
@@ -456,7 +464,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           });
 
           // PERF: Only enable shiki for files with code blocks
-          const hasCodeBlocks = /<pre[\s>]/.test(jsxCode);
+          const hasCodeBlocks = RE_PRE_TAG.test(jsxCode);
 
           // Get source for hooks
           const sourceForHooks =
@@ -474,11 +482,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             frontmatter,
             headings,
             registry,
-            config: {
-              expressiveCode,
-              starlightComponents: normalizedStarlightComponents,
-              shiki: hasCodeBlocks ? resolvedShiki : null,
-            },
+            config: { ...baseTransformConfig, shiki: hasCodeBlocks ? resolvedShiki : null },
           };
 
           const transformed = await transformPipeline(ctx);
@@ -652,7 +656,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
       }
       const filename =
         sourceLookup.get(id) ??
-        stripQuery(id.slice(VIRTUAL_MODULE_PREFIX.length).replace(new RegExp(`${OUTPUT_EXTENSION.replace('.', '\\.')}$`), ''));
+        stripQuery(id.slice(VIRTUAL_MODULE_PREFIX.length).replace(RE_OUTPUT_EXTENSION, ''));
 
       try {
         // FASTEST PATH: Check esbuild cache first (O(1) lookup, populated in buildStart)
@@ -668,20 +672,13 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
         if (cached && !isMdx) {
           const hasUserImports = (cached.hoistedImports?.length ?? 0) > 0;
-          const hasJsxComponents = cached.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
+          const hasJsxComponents = cached.html && RE_JSX_COMPONENT.test(cached.html);
 
           // Exports are handled by Rust and injected into the module
           if (!hasUserImports && !hasJsxComponents) {
             // FAST PATH: Use cached result without file I/O
             const startTime = performance.now();
-            let frontmatter: Record<string, unknown> = {};
-            if (cached.frontmatterJson) {
-              try {
-                frontmatter = JSON.parse(cached.frontmatterJson) as Record<string, unknown>;
-              } catch {
-                frontmatter = {};
-              }
-            }
+            const frontmatter = parseFrontmatterJson(cached.frontmatterJson);
             const headings = cached.headings || [];
 
             const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename, {
@@ -701,7 +698,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
             processedFiles.add(filename);
 
             // PERF: Only enable shiki for files with code blocks
-            const hasCodeBlocks = /<pre[\s>]/.test(result.code);
+            const hasCodeBlocks = RE_PRE_TAG.test(result.code);
             const shikiHighlighter = hasCodeBlocks ? getShiki() : null;
             const sourceForHooks =
               originalSourceCache.get(filename) ??
@@ -807,13 +804,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         } else {
           const fileOptions = deriveFileOptions(filename, resolvedConfig?.root);
           result = currentCompiler.compile(processedSource, filename, fileOptions);
-          if (result.frontmatter_json) {
-            try {
-              frontmatter = JSON.parse(result.frontmatter_json) as Record<string, unknown>;
-            } catch {
-              frontmatter = {};
-            }
-          }
+          frontmatter = parseFrontmatterJson(result.frontmatter_json);
           headings = result.headings || [];
         }
 
@@ -832,7 +823,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         }
 
         // PERF: Only enable shiki for files with code blocks
-        const hasCodeBlocks = /<pre[\s>]/.test(result.code);
+        const hasCodeBlocks = RE_PRE_TAG.test(result.code);
         const shikiHighlighter = hasCodeBlocks ? getShiki() : null;
         const ctx: TransformContext = {
           code: result.code,
@@ -841,11 +832,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           frontmatter,
           headings,
           registry,
-          config: {
-            expressiveCode,
-            starlightComponents: normalizedStarlightComponents,
-            shiki: shikiHighlighter ? await shikiHighlighter : null,
-          },
+          config: { ...baseTransformConfig, shiki: shikiHighlighter ? await shikiHighlighter : null },
         };
 
         const transformed = await transformPipeline(ctx);

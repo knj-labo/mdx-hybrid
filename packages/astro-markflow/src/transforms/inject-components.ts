@@ -7,11 +7,27 @@ import type { Registry } from 'markflow/registry';
 import { astroLibrary } from 'markflow/registry';
 import { collectImportedNames, insertAfterImports } from '../utils/imports.js';
 import { resolveStarlightConfig, type StarlightUserConfig } from '../utils/config.js';
-import { stripHeadingsMeta } from '../utils/validation.js';
 
-/** Strip set:html={...} string content to avoid false component matches in code blocks */
-function stripSetHtmlContent(code: string): string {
-  return code.replace(/set:html=\{("(?:[^"\\]|\\.)*")\}/g, 'set:html={""}');
+
+/** Strip set:html content and headings metadata in a single pass to avoid false component matches */
+function stripScanNoise(code: string): string {
+  return code
+    .replace(/set:html=\{("(?:[^"\\]|\\.)*")\}/g, 'set:html={""}')
+    .replace(/export const headings[\s\S]*?;\n?/g, '')
+    .replace(/export function getHeadings[\s\S]*?\n}\n?/g, '');
+}
+
+/** Cache compiled regex per registry instance (registry is immutable after init) */
+const registryRegexCache = new WeakMap<Registry, RegExp>();
+
+function getComponentPattern(registry: Registry): RegExp | null {
+  let cached = registryRegexCache.get(registry);
+  if (cached) return cached;
+  const all = registry.getAllComponents();
+  if (all.length === 0) return null;
+  cached = new RegExp(`<(${all.map(c => c.name).join('|')})\\b`, 'g');
+  registryRegexCache.set(registry, cached);
+  return cached;
 }
 
 /**
@@ -35,7 +51,7 @@ export function injectComponentImports(
   if (!code || typeof code !== 'string' || components.length === 0) {
     return code;
   }
-  const scanTarget = stripSetHtmlContent(stripHeadingsMeta(code));
+  const scanTarget = stripScanNoise(code);
 
   // PERF: Use single combined regex instead of per-component regex
   // This reduces from O(n) regex compilations to O(1)
@@ -123,18 +139,13 @@ export function injectComponentImportsFromRegistry(
     return code;
   }
 
-  const allComponents = registry.getAllComponents();
-  if (allComponents.length === 0) {
-    return code;
-  }
+  const combinedPattern = getComponentPattern(registry);
+  if (!combinedPattern) return code;
 
-  const scanTarget = stripSetHtmlContent(stripHeadingsMeta(code));
+  const scanTarget = stripScanNoise(code);
   const imported = collectImportedNames(code);
 
-  // PERF: Use single combined regex instead of per-component regex
-  // This reduces from O(n) regex compilations to O(1)
-  const componentNames = allComponents.map((c) => c.name);
-  const combinedPattern = new RegExp(`<(${componentNames.join('|')})\\b`, 'g');
+  combinedPattern.lastIndex = 0;
   const matches = scanTarget.match(combinedPattern);
   if (!matches) return code;
 
@@ -148,6 +159,7 @@ export function injectComponentImportsFromRegistry(
   // Find used components that are missing imports
   const missingByModule = new Map<string, Array<{ name: string; exportType: string }>>();
 
+  const allComponents = registry.getAllComponents();
   for (const comp of allComponents) {
     if (usedNames.has(comp.name) && !imported.has(comp.name)) {
       const modulePath = comp.modulePath;
