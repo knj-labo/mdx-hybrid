@@ -13,11 +13,10 @@
     "build": "napi build --platform --release --esm",
     "build:napi": "pnpm run build",
     "smoke:napi": "node ../../scripts/smoke-napi.mjs",
-    "test": "ava"
+    "test": "bun test"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.4.1",
-    "ava": "^6.4.1",
     "prettier": "^3.6.2"
   },
   "keywords": [
@@ -37,12 +36,5 @@
   },
   "engines": {
     "node": ">= 10"
-  },
-  "ava": {
-    "files": [
-      "tests/**/*.test.js"
-    ],
-    "timeout": "30s",
-    "workerThreads": false
   }
 }

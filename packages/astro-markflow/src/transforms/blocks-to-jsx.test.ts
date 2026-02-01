@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { blocksToJsx, type Block, type BlocksToJsxOptions } from './blocks-to-jsx.js';
+import { blocksToJsx, type Block } from './blocks-to-jsx.js';
 import { createRegistry, starlightLibrary } from 'markflow/registry';
 
 describe('blocksToJsx', () => {
@@ -445,22 +445,20 @@ describe('blocksToJsx', () => {
       expect(result).toContain('let x = 1;');
     });
 
-    it('should render as ExpressiveCode component when expressiveCodeComponent is set', () => {
+    it('should always render code blocks as <pre><code> (EC rewriting is pipeline-only)', () => {
       const blocks: Block[] = [
         { type: 'code', code: 'const x = 1;', lang: 'js', meta: 'title="example"' },
       ];
 
-      const result = blocksToJsx(blocks, {}, [], null, undefined, [], {
-        expressiveCodeComponent: 'Code',
-      });
+      const result = blocksToJsx(blocks);
 
-      expect(result).toContain('<Code code=');
-      expect(result).toContain('lang="js"');
-      expect(result).toContain('meta="title=\\"example\\""');
-      expect(result).not.toContain('<pre');
+      expect(result).toContain('astro-code');
+      expect(result).toContain('language-js');
+      expect(result).toContain('const x = 1;');
+      expect(result).not.toContain('<Code code=');
     });
 
-    it('should render ExpressiveCode in slots when expressiveCodeComponent is set', () => {
+    it('should render code blocks as <pre><code> in slots too', () => {
       const blocks: Block[] = [
         {
           type: 'component',
@@ -472,13 +470,12 @@ describe('blocksToJsx', () => {
         },
       ];
 
-      const result = blocksToJsx(blocks, {}, [], null, undefined, [], {
-        expressiveCodeComponent: 'Code',
-      });
+      const result = blocksToJsx(blocks);
 
-      expect(result).toContain('<Code code=');
-      expect(result).toContain('lang="py"');
-      expect(result).not.toContain('<pre');
+      expect(result).toContain('astro-code');
+      expect(result).toContain('language-py');
+      expect(result).toContain('hello()');
+      expect(result).not.toContain('<Code code=');
     });
 
     it('should handle mixed code and HTML in slot', () => {
