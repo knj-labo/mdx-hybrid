@@ -4,6 +4,7 @@ use super::Options;
 use super::types::{BlocksResult, HeadingEntry, PropValue, RenderBlock, Scope};
 use crate::RegistryConfig;
 use crate::registry::defaults::default_starlight_registry;
+use markflow_core::Slugger;
 use markdown::mdast::Node;
 use std::collections::HashMap;
 
@@ -146,7 +147,7 @@ pub struct Context<'a> {
     pub headings: Vec<HeadingEntry>,
 
     /// Slugger for generating unique heading IDs.
-    slugger: crate::Slugger,
+    slugger: Slugger,
 
     stack: Vec<Scope>,
     #[allow(dead_code)]
@@ -170,7 +171,7 @@ impl<'a> Context<'a> {
             blocks: Vec::new(),
             current_html: String::with_capacity(4096),
             headings: Vec::new(),
-            slugger: crate::Slugger::new(),
+            slugger: Slugger::new(),
             stack: vec![Scope::Root],
             options,
             registry: registry.unwrap_or_else(default_starlight_registry),

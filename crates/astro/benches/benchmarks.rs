@@ -1,14 +1,15 @@
-//! Criterion benchmarks for markflow-core performance analysis.
+//! Criterion benchmarks for markflow-astro performance analysis.
 //!
-//! Run with: `cargo bench -p markflow-core`
-//! Or with specific benchmark: `cargo bench -p markflow-core -- to_blocks`
+//! Run with: `cargo bench -p markflow-astro`
+//! Or with specific benchmark: `cargo bench -p markflow-astro -- to_blocks`
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use markflow_core::{
+use markflow_astro::{
     renderer::MdastOptions,
-    slugify, to_blocks,
+    to_blocks,
     transform::{jsx_normalize, smartypants},
 };
+use markflow_core::slugify;
 
 /// Sample markdown content for benchmarking - simple case
 const SIMPLE_MARKDOWN: &str = r#"# Hello World

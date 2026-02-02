@@ -1,7 +1,7 @@
-use markflow_core::MdastOptions;
-use markflow_core::code_fence::collect_root_statements;
-use markflow_core::codegen::{AstroModuleOptions, DirectiveMappingResult, blocks_to_jsx_string};
-use markflow_core::renderer::mdast::to_blocks;
+use markflow_astro::MdastOptions;
+use markflow_astro::code_fence::collect_root_statements;
+use markflow_astro::codegen::{AstroModuleOptions, DirectiveMappingResult, blocks_to_jsx_string};
+use markflow_astro::renderer::mdast::to_blocks;
 use serde::Serialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
@@ -99,7 +99,7 @@ pub fn compile(source: &str, filepath: &str) -> Result<JsValue, JsError> {
     let headings_json = serde_json::to_string(&headings).unwrap_or_else(|_| "[]".to_string());
 
     // 6. Generate module code
-    let code = markflow_core::codegen::generate_astro_module(&AstroModuleOptions {
+    let code = markflow_astro::codegen::generate_astro_module(&AstroModuleOptions {
         jsx: &jsx_body,
         hoisted_imports: &hoisted_imports,
         hoisted_exports: &hoisted_exports,
@@ -166,7 +166,7 @@ pub fn compile(source: &str, filepath: &str) -> Result<JsValue, JsError> {
 /// ```
 #[wasm_bindgen(js_name = parse_blocks)]
 pub fn parse_blocks(input: &str, opts: JsValue) -> Result<JsValue, JsError> {
-    use markflow_core::renderer::mdast::{Options, to_blocks};
+    use markflow_astro::renderer::mdast::{Options, to_blocks};
 
     // Parse options from JavaScript
     let options: Options = if opts.is_undefined() || opts.is_null() {

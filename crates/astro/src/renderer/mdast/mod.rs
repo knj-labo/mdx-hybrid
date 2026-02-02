@@ -86,7 +86,7 @@ impl Default for Options {
 /// # Examples
 ///
 /// ```
-/// use markflow_core::renderer::mdast::{to_blocks, Options};
+/// use markflow_astro::renderer::mdast::{to_blocks, Options};
 ///
 /// let input = "Hello, [world](https://example.com)!";
 /// let options = Options {

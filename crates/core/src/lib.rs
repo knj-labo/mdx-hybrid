@@ -1,33 +1,21 @@
 #![deny(missing_docs)]
-//! Markflow core: MDAST-based markdown rendering with code generation utilities.
+//! Markflow core: markdown parsing utilities, frontmatter extraction, and slugs.
 
-/// Code generation utilities for WASM and NAPI bindings.
-pub mod codegen;
-/// Debugging utilities.
-pub mod debug;
-/// Error types and utilities.
+/// Core error and diagnostic types.
 pub mod error;
 /// YAML frontmatter extraction helpers.
 pub mod frontmatter;
-/// Parsing layer (markdown-rs adapter + config).
-pub mod parser;
-/// Component registry for managing component and directive mappings.
-pub mod registry;
-/// Rendering layer (MDAST-based block renderer).
-pub mod renderer;
+/// Markdown parsing utilities and extension hooks.
+pub mod parse;
 /// Slug generation utilities.
 pub mod slug;
-/// Transform utilities (code fences, directives, smartypants).
-pub mod transform;
 
-pub use error::MarkflowError;
-pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
-pub use parser::{ParseConfig, ParseConstructs};
-#[allow(deprecated)]
-pub use registry::{
-    ComponentDef, ComponentDefinition, DirectiveMapping, PropSource, RegistryConfig,
-    SlotNormalization,
+pub use error::{
+    ErrorSeverity, MarkflowError, ParseDiagnostics, ParseWarning, RecoverableError, SourceLocation,
 };
-pub use renderer::{BlocksResult, HeadingEntry, MdastOptions, PropValue, RenderBlock, to_blocks};
+pub use frontmatter::{FrontmatterError, FrontmatterExtraction, extract_frontmatter};
+pub use parse::{
+    AstTransform, ParseOptions, ParserPipeline, TextTransform, parse_mdast,
+    parse_mdast_with_options,
+};
 pub use slug::{Slugger, slugify};
-pub use transform::{code_fence, directives};

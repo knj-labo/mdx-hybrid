@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 markflow-core = { path = "../core" }
+markflow-astro = { path = "../astro" }
 napi = { workspace = true }
 napi-derive = { workspace = true }
 rayon = { workspace = true }

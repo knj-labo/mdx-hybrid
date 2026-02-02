@@ -19,7 +19,7 @@ use std::collections::HashMap;
 /// # Example
 ///
 /// ```
-/// use markflow_core::registry::defaults::default_starlight_registry;
+/// use markflow_astro::registry::defaults::default_starlight_registry;
 ///
 /// let registry = default_starlight_registry();
 /// assert!(registry.is_supported_directive("note"));

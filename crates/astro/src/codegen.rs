@@ -15,7 +15,7 @@ use std::fmt::Write as FmtWrite;
 /// # Examples
 ///
 /// ```
-/// use markflow_core::codegen::js_string_literal;
+/// use markflow_astro::codegen::js_string_literal;
 ///
 /// assert_eq!(js_string_literal("hello"), "\"hello\"");
 /// assert_eq!(js_string_literal("say \"hi\""), "\"say \\\"hi\\\"\"");
@@ -31,7 +31,7 @@ pub fn js_string_literal(value: &str) -> String {
 /// # Examples
 ///
 /// ```
-/// use markflow_core::codegen::escape_js_string_value;
+/// use markflow_astro::codegen::escape_js_string_value;
 ///
 /// assert_eq!(escape_js_string_value("hello"), "hello");
 /// assert_eq!(escape_js_string_value("say \"hi\""), "say \\\"hi\\\"");
@@ -54,7 +54,7 @@ pub fn escape_js_string_value(value: &str) -> String {
 /// # Examples
 ///
 /// ```
-/// use markflow_core::codegen::has_pascal_case_tag;
+/// use markflow_astro::codegen::has_pascal_case_tag;
 ///
 /// assert!(has_pascal_case_tag("<Card>content</Card>"));
 /// assert!(has_pascal_case_tag("<p><Aside>nested</Aside></p>"));
@@ -111,7 +111,7 @@ pub fn has_pascal_case_tag(s: &str) -> bool {
 /// # Examples
 ///
 /// ```
-/// use markflow_core::codegen::html_entities_to_jsx;
+/// use markflow_astro::codegen::html_entities_to_jsx;
 ///
 /// // Text content - entities are converted
 /// assert_eq!(html_entities_to_jsx("&amp;"), "{\"&\"}");
@@ -524,8 +524,8 @@ fn slot_children_to_html(blocks: &[RenderBlock]) -> String {
 /// # Example
 ///
 /// ```
-/// use markflow_core::codegen::{blocks_to_jsx_string, DirectiveMappingResult};
-/// use markflow_core::RenderBlock;
+/// use markflow_astro::codegen::{blocks_to_jsx_string, DirectiveMappingResult};
+/// use markflow_astro::RenderBlock;
 ///
 /// let blocks = vec![RenderBlock::Html {
 ///     content: "<p>Hello</p>".to_string(),

@@ -31,7 +31,7 @@ pub(crate) use utils::{build_import_list, dedupe_imports};
 /// - JSX expression attributes: curly braces decoded (e.g., `=&#123;` → `={`)
 #[napi(js_name = "htmlEntitiesToJsx")]
 pub fn html_entities_to_jsx_napi(s: String) -> String {
-    markflow_core::codegen::html_entities_to_jsx(&s)
+    markflow_astro::codegen::html_entities_to_jsx(&s)
 }
 
 /// Checks if string contains PascalCase JSX tags (e.g., `<Card`, `<Aside`).
@@ -41,7 +41,7 @@ pub fn html_entities_to_jsx_napi(s: String) -> String {
 /// so that Astro processes them as components rather than raw HTML.
 #[napi(js_name = "hasPascalCaseTag")]
 pub fn has_pascal_case_tag_napi(s: String) -> bool {
-    markflow_core::codegen::has_pascal_case_tag(&s)
+    markflow_astro::codegen::has_pascal_case_tag(&s)
 }
 
 /// Extracts YAML or TOML frontmatter without compiling the entire Markdown document.
@@ -60,8 +60,8 @@ pub fn parse_frontmatter(content: String) -> napi::Result<FrontmatterResult> {
 }
 
 /// Converts a core RenderBlock to an NAPI RenderBlock.
-fn convert_render_block(block: markflow_core::renderer::mdast::RenderBlock) -> RenderBlock {
-    use markflow_core::renderer::mdast;
+fn convert_render_block(block: markflow_astro::renderer::mdast::RenderBlock) -> RenderBlock {
+    use markflow_astro::renderer::mdast;
     match block {
         mdast::RenderBlock::Html { content } => RenderBlock {
             r#type: "html".to_string(),
@@ -149,7 +149,7 @@ fn convert_render_block(block: markflow_core::renderer::mdast::RenderBlock) -> R
 /// ```
 #[napi(js_name = "parseBlocks")]
 pub fn parse_blocks(input: String, opts: Option<BlockOptions>) -> napi::Result<ParseBlocksResult> {
-    use markflow_core::renderer::mdast;
+    use markflow_astro::renderer::mdast;
 
     // Parse options from JavaScript
     let options = if let Some(o) = opts {

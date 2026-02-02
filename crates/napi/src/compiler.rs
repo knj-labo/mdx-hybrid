@@ -2,8 +2,9 @@
 
 use crate::batch::*;
 use crate::types::*;
-use markflow_core::codegen::{DirectiveMappingResult, blocks_to_jsx_string};
-use markflow_core::{MarkflowError, MdastOptions, code_fence, to_blocks};
+use markflow_astro::codegen::{DirectiveMappingResult, blocks_to_jsx_string};
+use markflow_astro::{MdastOptions, code_fence, to_blocks};
+use markflow_core::MarkflowError;
 use napi_derive::napi;
 use rayon::prelude::*;
 use std::path::Path;

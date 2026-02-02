@@ -1,7 +1,7 @@
 //! Generates Astro-compatible module code from the compilation IR.
 
 use crate::types::CompileIrResult;
-use markflow_core::codegen::{AstroModuleOptions, generate_astro_module};
+use markflow_astro::codegen::{AstroModuleOptions, generate_astro_module};
 use napi::bindgen_prelude::Result;
 
 #[allow(clippy::too_many_arguments)]
