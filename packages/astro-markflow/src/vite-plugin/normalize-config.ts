@@ -20,6 +20,9 @@ export function normalizeStarlightComponents(
   value: boolean | { enabled?: boolean; components?: string[]; module?: string }
 ): NormalizedStarlightComponents {
   if (typeof value === 'object' && value !== null) {
+    if (value.enabled === false) {
+      return false;
+    }
     return { components: value.components, module: value.module };
   }
   return Boolean(value);

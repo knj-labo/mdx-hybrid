@@ -1,10 +1,14 @@
 import markflow from "astro-markflow";
 import starlight from "@astrojs/starlight";
 import { defineConfig, sharpImageService } from "astro/config";
+import { cpus } from "node:os";
 import rehypeSlug from "rehype-slug";
 import remarkSmartypants from "remark-smartypants";
 import { sidebar } from "./astro.sidebar";
 import { devServerFileWatcher } from "./config/integrations/dev-server-file-watcher";
+import { buildProfiler } from "./config/integrations/build-profiler";
+import { routeProfiler } from "./config/integrations/route-profiler";
+import { viteBuildTuner } from "./config/integrations/vite-build-tuner";
 import { sitemap } from "./config/integrations/sitemap";
 import { localesConfig } from "./config/locales";
 import { starlightPluginSmokeTest } from "./config/plugins/smoke-test";
@@ -19,11 +23,19 @@ const site = NETLIFY_PREVIEW_SITE || "https://docs.astro.build/";
 
 // Used by CI harness to build without markflow for baseline comparison
 const isBaseline = process.env.MARKFLOW_HARNESS_BASELINE === "1";
+const enableBuildProfiler = process.env.ASTRO_BUILD_PROFILE === "1";
+const enableRouteProfiler = process.env.ASTRO_ROUTE_PROFILE === "1";
+const enableViteTuner = process.env.ASTRO_VITE_TUNER === "1";
+const buildConcurrency = Math.max(1, cpus().length - 1);
 
 // https://astro.build/config
 export default defineConfig({
   site,
+  build: { inlineStylesheets: "never", concurrency: buildConcurrency },
   integrations: [
+    ...(enableBuildProfiler ? [buildProfiler()] : []),
+    ...(enableRouteProfiler ? [routeProfiler()] : []),
+    ...(enableViteTuner ? [viteBuildTuner()] : []),
     ...(isBaseline
       ? []
       : [
@@ -90,7 +102,6 @@ export default defineConfig({
   ],
   trailingSlash: "always",
   scopedStyleStrategy: "where",
-  build: { inlineStylesheets: "never" },
   compressHTML: false,
   markdown: {
     // Override with our own config

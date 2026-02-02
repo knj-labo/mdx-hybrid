@@ -35,6 +35,10 @@ export function wrapHtmlInJsxModule(
   filename: string,
   options?: WrapHtmlOptions
 ): string {
+  const useRenderTemplate =
+    typeof process !== 'undefined' && process.env?.MARKFLOW_RENDER_TEMPLATE === '1';
+  const enableRenderProfile =
+    typeof process !== 'undefined' && process.env?.MARKFLOW_RENDER_PROFILE === '1';
   const frontmatterJson = JSON.stringify(frontmatter);
   const headingsJson = JSON.stringify(headings);
 
@@ -54,6 +58,176 @@ export function wrapHtmlInJsxModule(
     .filter(e => e.isDefault)
     .map(e => e.source)
     .join('\n');
+
+  if (useRenderTemplate && enableRenderProfile) {
+    return `import { createComponent, renderTemplate } from 'astro/runtime/server/index.js';
+
+${nonDefaultExports}
+
+export const frontmatter = ${frontmatterJson};
+export function getHeadings() { return ${headingsJson}; }
+const __markflowHtml = ${JSON.stringify(html)};
+const __markflowId = ${JSON.stringify(filename)};
+  const __markflowProfile = (() => {
+    const key = '__markflowRenderProfile';
+    const g = globalThis;
+    const existing = g[key];
+    if (existing) return existing;
+    const profile = {
+      totals: new Map(),
+      counts: new Map(),
+      hooked: false,
+      dumped: false,
+      top: Number(
+        (typeof process !== 'undefined' && process.env?.MARKFLOW_RENDER_PROFILE_TOP)
+          ? process.env.MARKFLOW_RENDER_PROFILE_TOP
+          : '20'
+      ),
+    };
+    g[key] = profile;
+    if (typeof process !== 'undefined' && typeof process.on === 'function' && !profile.hooked) {
+      profile.hooked = true;
+      const dump = () => {
+        if (profile.dumped) return;
+        profile.dumped = true;
+        const entries = Array.from(profile.totals.entries()).map(([id, total]) => {
+          const count = profile.counts.get(id) ?? 0;
+          return { id, total, count, avg: count > 0 ? total / count : 0 };
+        });
+        entries.sort((a, b) => b.total - a.total);
+        const top = entries.slice(0, profile.top);
+        const total = entries.reduce((acc, entry) => acc + entry.total, 0);
+        console.log(\`[markflow-render-profiler] total=\${total.toFixed(2)}ms pages=\${entries.length}\`);
+        for (const entry of top) {
+          console.log(
+            \`[markflow-render-profiler] \${entry.id} total=\${entry.total.toFixed(2)}ms avg=\${entry.avg.toFixed(2)}ms n=\${entry.count}\`
+          );
+        }
+      };
+      process.on('beforeExit', dump);
+      process.on('exit', dump);
+    }
+    return profile;
+  })();
+const __markflowTotals = __markflowProfile.totals;
+const __markflowCounts = __markflowProfile.counts;
+const __markflowNow = () =>
+  globalThis.performance && typeof globalThis.performance.now === 'function'
+    ? globalThis.performance.now()
+    : Date.now();
+const MarkflowContent = createComponent(
+  (_result, _props, _slots) => {
+    const __markflowStart = __markflowNow();
+    const __markflowOut = renderTemplate([__markflowHtml]);
+    const __markflowDuration = __markflowNow() - __markflowStart;
+    __markflowTotals.set(__markflowId, (__markflowTotals.get(__markflowId) ?? 0) + __markflowDuration);
+    __markflowCounts.set(__markflowId, (__markflowCounts.get(__markflowId) ?? 0) + 1);
+    return __markflowOut;
+  },
+  ${JSON.stringify(filename)}
+);
+export const Content = MarkflowContent;
+${userDefaultExport}
+${defaultExportLine}
+`;
+  }
+
+  if (useRenderTemplate) {
+    return `import { createComponent, renderTemplate } from 'astro/runtime/server/index.js';
+
+${nonDefaultExports}
+
+export const frontmatter = ${frontmatterJson};
+export function getHeadings() { return ${headingsJson}; }
+const __markflowHtml = ${JSON.stringify(html)};
+const MarkflowContent = createComponent(
+  (_result, _props, _slots) => renderTemplate([__markflowHtml]),
+  ${JSON.stringify(filename)}
+);
+export const Content = MarkflowContent;
+${userDefaultExport}
+${defaultExportLine}
+`;
+  }
+
+  if (enableRenderProfile) {
+    return `import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
+import { Fragment as _Fragment, jsx as _jsx } from 'astro/jsx-runtime';
+
+${nonDefaultExports}
+
+export const frontmatter = ${frontmatterJson};
+export function getHeadings() { return ${headingsJson}; }
+const __markflowHtml = ${JSON.stringify(html)};
+const __markflowId = ${JSON.stringify(filename)};
+  const __markflowProfile = (() => {
+    const key = '__markflowRenderProfile';
+    const g = globalThis;
+    const existing = g[key];
+    if (existing) return existing;
+    const profile = {
+      totals: new Map(),
+      counts: new Map(),
+      hooked: false,
+      dumped: false,
+      top: Number(
+        (typeof process !== 'undefined' && process.env?.MARKFLOW_RENDER_PROFILE_TOP)
+          ? process.env.MARKFLOW_RENDER_PROFILE_TOP
+          : '20'
+      ),
+    };
+    g[key] = profile;
+    if (typeof process !== 'undefined' && typeof process.on === 'function' && !profile.hooked) {
+      profile.hooked = true;
+      const dump = () => {
+        if (profile.dumped) return;
+        profile.dumped = true;
+        const entries = Array.from(profile.totals.entries()).map(([id, total]) => {
+          const count = profile.counts.get(id) ?? 0;
+          return { id, total, count, avg: count > 0 ? total / count : 0 };
+        });
+        entries.sort((a, b) => b.total - a.total);
+        const top = entries.slice(0, profile.top);
+        const total = entries.reduce((acc, entry) => acc + entry.total, 0);
+        console.log(\`[markflow-render-profiler] total=\${total.toFixed(2)}ms pages=\${entries.length}\`);
+        for (const entry of top) {
+          console.log(
+            \`[markflow-render-profiler] \${entry.id} total=\${entry.total.toFixed(2)}ms avg=\${entry.avg.toFixed(2)}ms n=\${entry.count}\`
+          );
+        }
+      };
+      process.on('beforeExit', dump);
+      process.on('exit', dump);
+    }
+    return profile;
+  })();
+const __markflowTotals = __markflowProfile.totals;
+const __markflowCounts = __markflowProfile.counts;
+const __markflowNow = () =>
+  globalThis.performance && typeof globalThis.performance.now === 'function'
+    ? globalThis.performance.now()
+    : Date.now();
+function _Content() {
+  return (
+    <_Fragment set:html={__markflowHtml} />
+  );
+}
+const MarkflowContent = createComponent(
+  (result, props, _slots) => {
+    const __markflowStart = __markflowNow();
+    const __markflowOut = renderJSX(result, _jsx(_Content, { ...props }));
+    const __markflowDuration = __markflowNow() - __markflowStart;
+    __markflowTotals.set(__markflowId, (__markflowTotals.get(__markflowId) ?? 0) + __markflowDuration);
+    __markflowCounts.set(__markflowId, (__markflowCounts.get(__markflowId) ?? 0) + 1);
+    return __markflowOut;
+  },
+  ${JSON.stringify(filename)}
+);
+export const Content = MarkflowContent;
+${userDefaultExport}
+${defaultExportLine}
+`;
+  }
 
   return `import { createComponent, renderJSX } from 'astro/runtime/server/index.js';
 import { Fragment as _Fragment, jsx as _jsx } from 'astro/jsx-runtime';

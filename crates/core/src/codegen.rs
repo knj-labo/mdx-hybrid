@@ -400,6 +400,22 @@ fn escape_code_text_for_html(s: &str) -> String {
     result
 }
 
+/// Escapes HTML attribute values for safe output.
+fn escape_attr_value_for_html(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => result.push_str("&amp;"),
+            '<' => result.push_str("&lt;"),
+            '>' => result.push_str("&gt;"),
+            '"' => result.push_str("&quot;"),
+            '\'' => result.push_str("&#39;"),
+            _ => result.push(c),
+        }
+    }
+    result
+}
+
 /// Converts slot children (Vec<RenderBlock>) to an HTML string.
 ///
 /// This recursively converts structured blocks back to HTML for use
@@ -417,7 +433,8 @@ fn slot_children_to_html(blocks: &[RenderBlock]) -> String {
                 // Render code block as HTML
                 result.push_str(r#"<pre class="astro-code" tabindex="0">"#);
                 if let Some(l) = lang {
-                    result.push_str(&format!(r#"<code class="language-{}">"#, l));
+                    let escaped_lang = escape_attr_value_for_html(l);
+                    result.push_str(&format!(r#"<code class="language-{}">"#, escaped_lang));
                 } else {
                     result.push_str("<code>");
                 }
@@ -559,7 +576,8 @@ where
                 let mut html = String::new();
                 html.push_str(r#"<pre class="astro-code" tabindex="0">"#);
                 if let Some(l) = lang {
-                    html.push_str(&format!(r#"<code class="language-{}">"#, l));
+                    let escaped_lang = escape_attr_value_for_html(l);
+                    html.push_str(&format!(r#"<code class="language-{}">"#, escaped_lang));
                 } else {
                     html.push_str("<code>");
                 }
@@ -850,6 +868,58 @@ pub struct AstroModuleOptions<'a> {
     pub has_user_default_export: bool,
 }
 
+fn render_profile_snippet() -> &'static str {
+    r#"const __markflowRenderProfileEnabled = typeof process !== 'undefined' && process.env?.MARKFLOW_RENDER_PROFILE === '1';
+const __markflowRenderProfile = __markflowRenderProfileEnabled ? (() => {
+  const key = '__markflowRenderProfile';
+  const g = globalThis;
+  const existing = g[key];
+  if (existing) return existing;
+  const profile = {
+    totals: new Map(),
+    counts: new Map(),
+    hooked: false,
+    dumped: false,
+    top: Number((typeof process !== 'undefined' && process.env?.MARKFLOW_RENDER_PROFILE_TOP) ? process.env.MARKFLOW_RENDER_PROFILE_TOP : '20'),
+  };
+  g[key] = profile;
+  if (typeof process !== 'undefined' && typeof process.on === 'function' && !profile.hooked) {
+    profile.hooked = true;
+    const dump = () => {
+      if (profile.dumped) return;
+      profile.dumped = true;
+      const entries = Array.from(profile.totals.entries()).map(([id, total]) => {
+        const count = profile.counts.get(id) ?? 0;
+        return { id, total, count, avg: count > 0 ? total / count : 0 };
+      });
+      entries.sort((a, b) => b.total - a.total);
+      const top = entries.slice(0, profile.top);
+      const total = entries.reduce((acc, entry) => acc + entry.total, 0);
+      console.log(`[markflow-render-profiler] total=${total.toFixed(2)}ms pages=${entries.length}`);
+      for (const entry of top) {
+        console.log(`[markflow-render-profiler] ${entry.id} total=${entry.total.toFixed(2)}ms avg=${entry.avg.toFixed(2)}ms n=${entry.count}`);
+      }
+    };
+    process.on('beforeExit', dump);
+    process.on('exit', dump);
+  }
+  return profile;
+})() : null;
+const __markflowRenderTotals = __markflowRenderProfile ? __markflowRenderProfile.totals : null;
+const __markflowRenderCounts = __markflowRenderProfile ? __markflowRenderProfile.counts : null;
+const __markflowRenderNow = () => (globalThis.performance && typeof globalThis.performance.now === 'function') ? globalThis.performance.now() : Date.now();
+"#
+}
+
+fn write_jsx_fragment(code: &mut String, jsx: &str, indent: &str) {
+    let _ = writeln!(code, "{}<>", indent);
+    code.push_str(jsx);
+    if !jsx.ends_with('\n') {
+        code.push('\n');
+    }
+    let _ = writeln!(code, "{}</>", indent);
+}
+
 /// Generates an Astro-compatible JavaScript module from the given options.
 ///
 /// This produces a complete module with:
@@ -913,19 +983,26 @@ pub fn generate_astro_module(options: &AstroModuleOptions<'_>) -> String {
     let _ = writeln!(code, "  return {};", options.headings_json);
     let _ = writeln!(code, "}}");
 
+    code.push_str(render_profile_snippet());
+
     // MarkflowContent component
     let _ = writeln!(code, "// function MarkflowContent");
     let _ = writeln!(
         code,
         "const MarkflowContent = createComponent((result, props) => {{"
     );
+    let _ = writeln!(code, "  if (__markflowRenderProfileEnabled) {{");
+    let _ = writeln!(code, "    const __markflowStart = __markflowRenderNow();");
+    let _ = writeln!(code, "    const __markflowOut = renderJSX(result, (");
+    write_jsx_fragment(&mut code, options.jsx, "    ");
+    let _ = writeln!(code, "    ));");
+    let _ = writeln!(code, "    const __markflowDuration = __markflowRenderNow() - __markflowStart;");
+    let _ = writeln!(code, "    __markflowRenderTotals.set(file, (__markflowRenderTotals.get(file) ?? 0) + __markflowDuration);");
+    let _ = writeln!(code, "    __markflowRenderCounts.set(file, (__markflowRenderCounts.get(file) ?? 0) + 1);");
+    let _ = writeln!(code, "    return __markflowOut;");
+    let _ = writeln!(code, "  }}");
     let _ = writeln!(code, "  return renderJSX(result, (");
-    let _ = writeln!(code, "    <>");
-    code.push_str(options.jsx);
-    if !options.jsx.ends_with('\n') {
-        code.push('\n');
-    }
-    let _ = writeln!(code, "    </>");
+    write_jsx_fragment(&mut code, options.jsx, "    ");
     let _ = writeln!(code, "  ));");
     let _ = writeln!(code, "}}, file);");
 

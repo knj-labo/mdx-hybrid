@@ -49,6 +49,79 @@ function debugLog(message: string): void {
   if (DEBUG_TIMING) console.log(`[markflow:timing] ${message}`);
 }
 
+// Load hook profiler — activated by MARKFLOW_LOAD_PROFILE=1
+const LOAD_PROFILE = process.env.MARKFLOW_LOAD_PROFILE === '1';
+const LOAD_PROFILE_TOP = Number(process.env.MARKFLOW_LOAD_PROFILE_TOP) || 10;
+
+type PhaseStats = { totalMs: number; count: number; maxMs: number };
+
+class LoadProfiler {
+  phases = new Map<string, PhaseStats>();
+  cacheHits = 0;
+  esbuildCacheHits = 0;
+  cacheMisses = 0;
+  callCount = 0;
+  totalMs = 0;
+  slowest: Array<{ file: string; ms: number }> = [];
+  private dumped = false;
+  private rootFallback = '';
+
+  constructor() {
+    process.on('exit', () => {
+      if (!this.dumped) this.dump(this.rootFallback);
+    });
+  }
+
+  setRoot(root: string): void {
+    this.rootFallback = root;
+  }
+
+  private ensure(phase: string): PhaseStats {
+    let s = this.phases.get(phase);
+    if (!s) { s = { totalMs: 0, count: 0, maxMs: 0 }; this.phases.set(phase, s); }
+    return s;
+  }
+
+  record(phase: string, ms: number): void {
+    const s = this.ensure(phase);
+    s.totalMs += ms;
+    s.count++;
+    if (ms > s.maxMs) s.maxMs = ms;
+  }
+
+  recordFile(file: string, ms: number): void {
+    this.callCount++;
+    this.totalMs += ms;
+    // Keep top-N slowest
+    if (this.slowest.length < LOAD_PROFILE_TOP || ms > this.slowest[this.slowest.length - 1]!.ms) {
+      this.slowest.push({ file, ms });
+      this.slowest.sort((a, b) => b.ms - a.ms);
+      if (this.slowest.length > LOAD_PROFILE_TOP) this.slowest.length = LOAD_PROFILE_TOP;
+    }
+  }
+
+  dump(root: string): void {
+    if (this.dumped) return;
+    this.dumped = true;
+    const p = (label: string) => `[markflow:load-profiler] ${label}`;
+    console.info(p(`calls=${this.callCount} total=${this.totalMs.toFixed(0)}ms`));
+    console.info(p(`esbuild-cache-hit=${this.esbuildCacheHits} compilation-cache-hit=${this.cacheHits} cache-miss=${this.cacheMisses}`));
+    for (const [phase, s] of this.phases) {
+      console.info(p(`${phase} total=${s.totalMs.toFixed(0)}ms avg=${s.count ? (s.totalMs / s.count).toFixed(2) : 0}ms max=${s.maxMs.toFixed(2)}ms count=${s.count}`));
+    }
+    const overhead = this.totalMs - [...this.phases.values()].reduce((a, s) => a + s.totalMs, 0);
+    console.info(p(`overhead total=${overhead.toFixed(0)}ms avg=${this.callCount ? (overhead / this.callCount).toFixed(2) : 0}ms`));
+    if (this.slowest.length > 0) {
+      console.info(p(`top ${this.slowest.length} slowest files:`));
+      for (const { file, ms } of this.slowest) {
+        console.info(p(`  ${ms.toFixed(0)}ms ${file.replace(root, '')}`));
+      }
+    }
+  }
+}
+
+const loadProfiler = LOAD_PROFILE ? new LoadProfiler() : null;
+
 // Import from extracted vite-plugin modules
 import type {
   MarkflowBinding,
@@ -212,6 +285,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
     configResolved(config) {
       resolvedConfig = config;
+      loadProfiler?.setRoot(config.root);
       if (config.esbuild == null) {
         (config as { esbuild: object }).esbuild = {
           jsx: 'automatic',
@@ -410,63 +484,69 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
         debugTime('buildStart:pipelineProcessing');
 
-        // Process each cached file through the pipeline
-        // Only batch files eligible for fast-path (non-MDX, no imports, no JSX components)
+        // Collect fast-path eligible entries (non-MDX, no imports, no JSX components)
         // Note: Exports are now handled by Rust and injected via wrapHtmlInJsxModule
+        const fastPathEntries: Array<[string, CachedCompileResult]> = [];
         for (const [filename, cached] of compilationCache) {
-          const isMdx = filename.endsWith('.mdx');
-          if (isMdx) continue;
-
+          if (filename.endsWith('.mdx')) continue;
           const hasUserImports = (cached.hoistedImports?.length ?? 0) > 0;
           const hasJsxComponents = cached.html && /\{\.\.\.|\<[A-Z]/.test(cached.html);
-
-          // Skip files with imports or JSX components - these need complex resolution
-          // Exports are handled by Rust and injected into the module
           if (hasUserImports || hasJsxComponents) continue;
+          fastPathEntries.push([filename, cached]);
+        }
 
-          // Parse frontmatter
-          let frontmatter: Record<string, unknown> = {};
-          if (cached.frontmatterJson) {
-            try {
-              frontmatter = JSON.parse(cached.frontmatterJson) as Record<string, unknown>;
-            } catch {
-              frontmatter = {};
-            }
-          }
-          const headings = cached.headings || [];
+        // Process in chunks to bound concurrency (Shiki highlighting is async)
+        const PIPELINE_CHUNK_SIZE = 50;
+        for (let i = 0; i < fastPathEntries.length; i += PIPELINE_CHUNK_SIZE) {
+          const chunk = fastPathEntries.slice(i, i + PIPELINE_CHUNK_SIZE);
+          const chunkResults = await Promise.all(
+            chunk.map(async ([filename, cached]) => {
+              // Parse frontmatter
+              let frontmatter: Record<string, unknown> = {};
+              if (cached.frontmatterJson) {
+                try {
+                  frontmatter = JSON.parse(cached.frontmatterJson) as Record<string, unknown>;
+                } catch {
+                  frontmatter = {};
+                }
+              }
+              const headings = cached.headings || [];
 
-          // Wrap HTML in JSX module with hoisted exports
-          const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename, {
-            hoistedExports: cached.hoistedExports,
-            hasUserDefaultExport: cached.hasUserDefaultExport,
-          });
+              // Wrap HTML in JSX module with hoisted exports
+              const jsxCode = wrapHtmlInJsxModule(cached.html, frontmatter, headings, filename, {
+                hoistedExports: cached.hoistedExports,
+                hasUserDefaultExport: cached.hasUserDefaultExport,
+              });
 
-          // Get source for hooks
-          const sourceForHooks =
-            originalSourceCache.get(filename) ??
-            cached.originalSource ??
-            processedSourceCache.get(filename) ??
-            cached.processedSource ??
-            '';
+              // Get source for hooks
+              const sourceForHooks =
+                originalSourceCache.get(filename) ??
+                cached.originalSource ??
+                processedSourceCache.get(filename) ??
+                cached.processedSource ??
+                '';
 
-          // Create transform context and run pipeline
-          const ctx: TransformContext = {
-            code: jsxCode,
-            source: sourceForHooks,
-            filename,
-            frontmatter,
-            headings,
-            registry,
-            config: {
-              expressiveCode,
-              starlightComponents: normalizedStarlightComponents,
-              shiki: shikiManager.forCode(jsxCode, resolvedShiki),
-            },
-          };
+              // Create transform context and run pipeline
+              const ctx: TransformContext = {
+                code: jsxCode,
+                source: sourceForHooks,
+                filename,
+                frontmatter,
+                headings,
+                registry,
+                config: {
+                  expressiveCode,
+                  starlightComponents: normalizedStarlightComponents,
+                  shiki: shikiManager.forCode(jsxCode, resolvedShiki),
+                },
+              };
 
-          const transformed = await transformPipeline(ctx);
-          const virtualId = `${VIRTUAL_MODULE_PREFIX}${filename}${OUTPUT_EXTENSION}`;
-          jsxInputs.push({ id: filename, virtualId, jsx: transformed.code });
+              const transformed = await transformPipeline(ctx);
+              const virtualId = `${VIRTUAL_MODULE_PREFIX}${filename}${OUTPUT_EXTENSION}`;
+              return { id: filename, virtualId, jsx: transformed.code };
+            })
+          );
+          jsxInputs.push(...chunkResults);
         }
 
         debugTimeEnd('buildStart:pipelineProcessing');
@@ -637,9 +717,15 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
 
       try {
         // FASTEST PATH: Check esbuild cache first (O(1) lookup, populated in buildStart)
+        const loadStart = LOAD_PROFILE ? performance.now() : 0;
         const cachedEsbuildResult = esbuildCache.get(filename);
         if (cachedEsbuildResult) {
           processedFiles.add(filename);
+          if (loadProfiler) {
+            const elapsed = performance.now() - loadStart;
+            loadProfiler.esbuildCacheHits++;
+            loadProfiler.recordFile(filename, elapsed);
+          }
           return cachedEsbuildResult;
         }
 
@@ -702,10 +788,20 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
               },
             };
 
+            const tpStart = LOAD_PROFILE ? performance.now() : 0;
             const transformed = await transformPipeline(ctx);
             result.code = transformed.code;
+            if (loadProfiler) loadProfiler.record('transform-pipeline', performance.now() - tpStart);
 
+            const esStart = LOAD_PROFILE ? performance.now() : 0;
             const esbuildResult = await transformWithEsbuild(result.code, id, ESBUILD_JSX_CONFIG);
+            if (loadProfiler) loadProfiler.record('esbuild', performance.now() - esStart);
+
+            if (loadProfiler) {
+              const elapsed = performance.now() - loadStart;
+              loadProfiler.cacheHits++;
+              loadProfiler.recordFile(filename, elapsed);
+            }
 
             return {
               code: esbuildResult.code,
@@ -715,6 +811,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         }
 
         // Lazy initialize compiler on first use (only needed for cache miss path)
+        if (loadProfiler) loadProfiler.cacheMisses++;
         const currentCompiler = await getCompiler();
 
         // Only read file if cache miss
@@ -743,6 +840,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         }
 
         const startTime = performance.now();
+        const compileStart = LOAD_PROFILE ? performance.now() : 0;
         let result: CompileResult;
         let frontmatter: Record<string, unknown> = {};
         let headings: Array<{ depth: number; slug: string; text: string }> = [];
@@ -786,6 +884,7 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           headings = result.headings || [];
         }
 
+        if (loadProfiler) loadProfiler.record('compile', performance.now() - compileStart);
         const endTime = performance.now();
         totalProcessingTimeMs += endTime - startTime;
         processedFiles.add(filename);
@@ -815,8 +914,10 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           },
         };
 
+        const tpStart2 = LOAD_PROFILE ? performance.now() : 0;
         const transformed = await transformPipeline(ctx);
         result.code = transformed.code;
+        if (loadProfiler) loadProfiler.record('transform-pipeline', performance.now() - tpStart2);
 
         if (Array.isArray(result?.imports)) {
           for (const dep of result.imports) {
@@ -826,7 +927,14 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
           }
         }
 
+        const esStart2 = LOAD_PROFILE ? performance.now() : 0;
         const esbuildResult = await transformWithEsbuild(result.code, id, ESBUILD_JSX_CONFIG);
+        if (loadProfiler) loadProfiler.record('esbuild', performance.now() - esStart2);
+
+        if (loadProfiler) {
+          const elapsed = performance.now() - loadStart;
+          loadProfiler.recordFile(filename, elapsed);
+        }
 
         return {
           code: esbuildResult.code,
@@ -877,6 +985,8 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
     },
 
     async buildEnd() {
+      if (loadProfiler) loadProfiler.dump(resolvedConfig?.root ?? '');
+
       if (process.env.MARKFLOW_STATS !== '1') return;
 
       const totalFiles = processedFiles.size + fallbackFiles.size;

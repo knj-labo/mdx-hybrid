@@ -65,6 +65,10 @@ if [ -d "$OVERLAY_DIR" ]; then
   if [ -d "$OVERLAY_DIR/src" ]; then
     cp -R "$OVERLAY_DIR/src/." "$TARGET_DIR/src/"
   fi
+  # Copy config/ overlay (custom integrations, plugins)
+  if [ -d "$OVERLAY_DIR/config" ]; then
+    cp -R "$OVERLAY_DIR/config/." "$TARGET_DIR/config/"
+  fi
 fi
 
 echo "Done. Repository is at $TARGET_DIR (ref: $REF)"

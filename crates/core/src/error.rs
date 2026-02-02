@@ -240,8 +240,10 @@ impl ParseDiagnostics {
 
     /// Add a warning with location
     pub fn add_warning_at(&mut self, message: impl Into<String>, line: usize, column: usize) {
-        self.errors
-            .push(RecoverableError::warning(message, line, column));
+        self.warnings.push(ParseWarning::SuspiciousMarkup {
+            location: SourceLocation::new(line, column),
+            message: message.into(),
+        });
     }
 
     /// Check if there are any warnings
