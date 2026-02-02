@@ -10,7 +10,7 @@ import { resolveStarlightConfig, type StarlightUserConfig } from '../utils/confi
 
 
 /** Combined regex to strip set:html content and headings metadata in a single pass */
-const RE_SCAN_NOISE = /set:html=\{"(?:[^"\\]|\\.)*"\}|export const headings[\s\S]*?];\n?|export function getHeadings\(\) \{(?:[^\n]+\n|[\s\S]*?\n\}\n?)/g;
+const RE_SCAN_NOISE = /set:html=\{"(?:[^"\\]|\\.)*"\}|export const headings[\s\S]*?];\r?\n?|export function getHeadings\(\) \{(?:[^\r\n]+\r?\n|[\s\S]*?\r?\n\}\r?\n?)/g;
 
 /** Strip set:html content and headings metadata in a single pass to avoid false component matches */
 function stripScanNoise(code: string): string {

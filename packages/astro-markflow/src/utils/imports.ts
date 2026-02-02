@@ -38,23 +38,34 @@ export function collectImportedNames(
   // Can be skipped when input is compiled JSX (no code fences possible)
   const scanTarget = options?.skipCodeFences ? code : stripCodeFences(code);
   const lines = scanTarget.split(/\r?\n/);
-  let seenImport = false;
+  let inBlockComment = false;
   for (const line of lines) {
     const trimmed = line.trim();
 
-    // Skip blank lines and comments
-    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*')) {
+    // Track multi-line block comments
+    if (inBlockComment) {
+      if (trimmed.includes('*/')) {
+        inBlockComment = false;
+      }
+      continue;
+    }
+
+    // Skip blank lines and single-line comments
+    if (!trimmed || trimmed.startsWith('//')) {
+      continue;
+    }
+
+    // Block comment start
+    if (trimmed.startsWith('/*')) {
+      if (!trimmed.includes('*/')) {
+        inBlockComment = true;
+      }
       continue;
     }
 
     if (!trimmed.startsWith('import ') || trimmed.startsWith('import(')) {
-      // Early termination: once we've seen imports and hit a non-import line,
-      // there won't be more imports in well-formed JSX modules
-      if (seenImport) break;
       continue;
     }
-
-    seenImport = true;
 
     // Default import: import Foo from 'module'
     const defaultMatch = trimmed.match(
