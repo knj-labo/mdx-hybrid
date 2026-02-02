@@ -3,7 +3,7 @@
  * @module vite-plugin
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { transformWithEsbuild, type ResolvedConfig, type Plugin } from 'vite';
@@ -919,7 +919,6 @@ export function markflowPlugin(userOptions: MarkflowPluginOptions = {}): Plugin 
         },
       };
 
-      const { writeFile } = await import('node:fs/promises');
       const outputPath = path.join(resolvedConfig?.root ?? '.', 'markflow-stats.json');
       await writeFile(outputPath, JSON.stringify(stats, null, 2));
       console.info(`[markflow] Stats written to ${outputPath}`);
